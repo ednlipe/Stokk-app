@@ -67,17 +67,35 @@ const APP_HTML = `
         <button class="filter-chip" data-batch="baixado">Dar baixa</button>
       </div>
 
-      <div class="scan-box" id="scan-box">
-        <div class="scan-off" id="scan-off">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:34px;height:34px;"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
-          <div>Toque em "Ligar câmera" para começar a bipar</div>
-          <button class="btn primary" id="btn-start-scan" style="width:auto;padding:11px 20px;">Ligar câmera</button>
-        </div>
-        <video id="scan-video" playsinline muted style="display:none;"></video>
-        <div class="scan-reticle" id="scan-reticle" style="display:none;"></div>
+      <label class="field-label">Modo de leitura</label>
+      <div class="filter-row" id="scan-mode-row" style="margin-bottom:10px;">
+        <button class="filter-chip" data-scanmode="coletor">🔫 Leitor Bluetooth</button>
+        <button class="filter-chip" data-scanmode="camera">📷 Câmera do celular</button>
       </div>
-      <button class="btn primary" id="btn-capture" style="display:none;margin-bottom:4px;">📷 Capturar leitura</button>
-      <p class="hint" id="capture-hint" style="display:none;">Aponte pro código de barras e toque em "Capturar leitura".</p>
+
+      <!-- MODO COLETOR (leitor Bluetooth em modo teclado) -->
+      <div id="scan-coletor-box">
+        <div class="scan-box" style="aspect-ratio:auto;height:auto;padding:22px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:32px;height:32px;color:var(--accent);"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
+          <div class="hint" style="margin:0;text-align:center;">Aponte o leitor Bluetooth pro código e aperte o gatilho</div>
+          <input type="text" id="coletor-code" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
+        </div>
+      </div>
+
+      <!-- MODO CÂMERA -->
+      <div id="scan-camera-box" style="display:none;">
+        <div class="scan-box" id="scan-box">
+          <div class="scan-off" id="scan-off">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:34px;height:34px;"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
+            <div>Toque em "Ligar câmera" para começar a bipar</div>
+            <button class="btn primary" id="btn-start-scan" style="width:auto;padding:11px 20px;">Ligar câmera</button>
+          </div>
+          <video id="scan-video" playsinline muted style="display:none;"></video>
+          <div class="scan-reticle" id="scan-reticle" style="display:none;"></div>
+        </div>
+        <button class="btn primary" id="btn-capture" style="display:none;margin-bottom:4px;">📷 Capturar leitura</button>
+        <p class="hint" id="capture-hint" style="display:none;">Aponte pro código de barras e toque em "Capturar leitura".</p>
+      </div>
 
       <label class="field-label">Ou digite o código manualmente</label>
       <div class="btn-row" style="margin-bottom:14px;">
@@ -566,7 +584,7 @@ function setView(name){
   document.getElementById('view-'+name).classList.add('active');
   document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.nav===name));
   if (name!=='scan' && state.scanning) stopScanner();
-  if (name==='scan'){ setTimeout(()=>{ const el=document.getElementById('manual-code'); if(el) el.focus(); }, 50); renderConfProgress(); }
+  if (name==='scan'){ setTimeout(()=>{ focusScanInput(); }, 50); renderConfProgress(); }
   renderView(name);
 }
 document.querySelectorAll('[data-nav]').forEach(el=>{
@@ -779,6 +797,55 @@ document.getElementById('btn-manual-lookup').addEventListener('click', ()=>{
 });
 document.getElementById('manual-code').addEventListener('keydown', e=>{
   if (e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
+});
+
+/* ---- Modo de leitura: Coletor Bluetooth x Câmera ----
+   O leitor Bluetooth funciona no modo "teclado" (HID): ele só digita o
+   código e aperta Enter sozinho, então basta manter o campo #coletor-code
+   sempre focado que ele funciona sem precisar tocar na tela. */
+state.scanMode = localStorage.getItem('stokk_scan_mode') || 'coletor';
+
+function setScanMode(mode){
+  state.scanMode = mode;
+  localStorage.setItem('stokk_scan_mode', mode);
+  document.querySelectorAll('#scan-mode-row .filter-chip').forEach(c=>{
+    c.classList.toggle('active', c.dataset.scanmode===mode);
+  });
+  document.getElementById('scan-coletor-box').style.display = (mode==='coletor') ? 'block' : 'none';
+  document.getElementById('scan-camera-box').style.display = (mode==='camera') ? 'block' : 'none';
+  if (mode!=='camera' && state.scanning) stopScanner();
+  focusScanInput();
+}
+function focusScanInput(){
+  if (state.view!=='scan') return;
+  const id = state.scanMode==='coletor' ? 'coletor-code' : 'manual-code';
+  const el = document.getElementById(id);
+  if (el) el.focus();
+}
+document.querySelectorAll('#scan-mode-row .filter-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=> setScanMode(chip.dataset.scanmode));
+});
+setScanMode(state.scanMode);
+
+const coletorInput = document.getElementById('coletor-code');
+coletorInput.addEventListener('keydown', e=>{
+  if (e.key==='Enter'){
+    e.preventDefault();
+    const v = coletorInput.value;
+    if (v.trim()){ handleScanned(v); }
+    coletorInput.value='';
+    coletorInput.focus();
+  }
+});
+// Se o dedo do operador tocar em qualquer lugar da tela de bipar (por engano),
+// devolve o foco pro campo do coletor logo em seguida, pra não perder nenhuma leitura.
+document.getElementById('view-scan').addEventListener('click', e=>{
+  if (state.scanMode==='coletor' && e.target.id!=='coletor-code'){
+    setTimeout(()=>{ if (state.view==='scan' && state.scanMode==='coletor') coletorInput.focus(); }, 30);
+  }
+});
+document.addEventListener('visibilitychange', ()=>{
+  if (!document.hidden) focusScanInput();
 });
 
 async function startScanner(){
