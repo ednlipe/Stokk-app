@@ -1,0 +1,51 @@
+name: Build APK (STOKK)
+
+# Gera o APK automaticamente sempre que você enviar (push) mudanças pra branch
+# main, ou quando você rodar manualmente pela aba "Actions" do GitHub.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Compilar o site (Vite)
+        run: npm run build
+
+      - name: Sincronizar com o projeto Android
+        run: npx cap sync android
+
+      - name: Dar permissão de execução ao Gradle
+        run: chmod +x android/gradlew
+
+      - name: Gerar o APK (debug — pronto pra instalar direto no celular)
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Publicar o APK gerado
+        uses: actions/upload-artifact@v4
+        with:
+          name: STOKK-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

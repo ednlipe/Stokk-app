@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">STOKK</string>
+    <string name="title_activity_main">STOKK</string>
+    <string name="package_name">com.stokk.app</string>
+    <string name="custom_url_scheme">com.stokk.app</string>
+</resources>
