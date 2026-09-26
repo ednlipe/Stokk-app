@@ -1589,6 +1589,12 @@ function abrirFiltroEstoque(){
   const codigos = [...new Set([...state.volumes.values()].map(v=>String(v.armazem||'').trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
   [...state.estoqueArmazemFiltro].forEach(cod=>{ if (!codigos.includes(cod)) state.estoqueArmazemFiltro.delete(cod); });
+  // além dos status fixos do app, o operador pode digitar um status livre na tela de
+  // Bipar (ex: "Conferido", "Avariado"...) — esses viram o valor real de v.status e
+  // precisam aparecer aqui também, senão não tem como filtrar por eles.
+  const statusFixos = new Set(['estoque','bloqueado','transferido','baixado']);
+  const statusCustom = [...new Set([...state.volumes.values()].map(v=>v.status).filter(s=>s && !statusFixos.has(s)))]
+    .sort((a,b)=>a.localeCompare(b));
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Filtro</h2>
     <div class="filtro-secao">
@@ -1601,6 +1607,7 @@ function abrirFiltroEstoque(){
         <button class="filter-chip" data-status="bloqueado">Bloqueados</button>
         <button class="filter-chip" data-status="transferido">Transferidos</button>
         <button class="filter-chip" data-status="baixado">Baixados</button>
+        ${statusCustom.map(s=>`<button class="filter-chip" data-status="${esc(s)}">${esc(statusInfo(s).label)}</button>`).join('')}
       </div>
     </div>
     <div class="filtro-secao">
