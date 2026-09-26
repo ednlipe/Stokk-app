@@ -118,10 +118,15 @@ const APP_HTML = `
       <div class="filter-row" id="estoque-filters">
         <button class="filter-chip active" data-status="todos">Todos</button>
         <button class="filter-chip" data-status="estoque">Em estoque</button>
+        <button class="filter-chip" data-status="conferido">Conferidos</button>
+        <button class="filter-chip" data-status="nao_conferido">Não conferidos</button>
         <button class="filter-chip" data-status="bloqueado">Bloqueados</button>
         <button class="filter-chip" data-status="transferido">Transferidos</button>
         <button class="filter-chip" data-status="baixado">Baixados</button>
       </div>
+      <select id="estoque-armazem-filter" style="margin-bottom:12px;">
+        <option value="todos">Todos os armazéns</option>
+      </select>
       <button class="btn ghost" id="btn-toggle-select" data-role="supervisor" style="border:1px solid var(--border);margin-bottom:12px;">Selecionar itens</button>
       <div id="estoque-list"></div>
     </section>
@@ -1254,10 +1259,36 @@ document.querySelectorAll('#estoque-filters .filter-chip').forEach(chip=>{
     renderEstoque();
   });
 });
+document.getElementById('estoque-armazem-filter').addEventListener('change', (e)=>{
+  state.estoqueArmazemFilter = e.target.value;
+  renderEstoque();
+});
+// preenche o filtro de armazém com os códigos que realmente existem no estoque
+// (evita listar armazéns que não têm nenhum item, e mantém a lista sempre atual).
+function atualizarOpcoesArmazem(){
+  const sel = document.getElementById('estoque-armazem-filter');
+  const atual = sel.value || 'todos';
+  const codigos = [...new Set([...state.volumes.values()].map(v=>String(v.armazem||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML = '<option value="todos">Todos os armazéns</option>' +
+    codigos.map(cod=>`<option value="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</option>`).join('');
+  if (codigos.includes(atual) || atual==='todos') sel.value = atual;
+}
+// "Conferido"/"Não conferido" são sub-estados de quem está com status=estoque —
+// os demais status (bloqueado/transferido/baixado) continuam filtrando pelo campo direto.
+function matchEstoqueFiltro(v, filtro){
+  if (filtro==='todos') return true;
+  if (filtro==='conferido') return v.status==='estoque' && v.statusConferencia==='contado';
+  if (filtro==='nao_conferido') return v.status==='estoque' && v.statusConferencia!=='contado';
+  return v.status===filtro;
+}
 function renderEstoque(){
+  atualizarOpcoesArmazem();
   const q = (document.getElementById('estoque-search').value||'').trim().toLowerCase();
+  const armazemFiltro = state.estoqueArmazemFilter || 'todos';
   let vols = [...state.volumes.values()];
-  if (state.estoqueStatusFilter!=='todos') vols = vols.filter(v=>v.status===state.estoqueStatusFilter);
+  if (state.estoqueStatusFilter!=='todos') vols = vols.filter(v=>matchEstoqueFiltro(v, state.estoqueStatusFilter));
+  if (armazemFiltro!=='todos') vols = vols.filter(v=>String(v.armazem||'').trim()===armazemFiltro);
   if (q){
     vols = vols.filter(v=>
       (v.lote||'').toLowerCase().includes(q) ||
@@ -1653,7 +1684,7 @@ function renderInventario(){
           </div>
           <div class="li-side">
             <div class="li-weight" style="color:var(--ok);">${countOf(Object.values(s.resultado.porStatus||{}).flat())} ok</div>
-            <div class="li-desc" style="color:var(--danger);">${countOf(s.resultado.faltando)} faltando</div>
+            <div class="li-desc" style="color:var(--danger);">${countOf(s.resultado.faltando)} não localizado(s)</div>
           </div>
           <button class="link-btn del-sess" data-role="supervisor" data-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>
         </div>`).join('')}</div>` : ''}
@@ -1787,7 +1818,7 @@ function renderRelatorioPreview(sess){
   const rep = prepararRelatorio(sess);
   state.pendingReport = { sess, rep };
   const grupos = Object.assign({}, rep.porStatus, {
-    'Faltando (esperado, não achado)': rep.faltando,
+    'Não localizado': rep.faltando,
     'Não cadastrado (achado, sem registro)': rep.naoCadastrados.map(code=>({lote:code, quantidade:null}))
   });
   const totalConferido = Object.values(rep.porStatus).reduce((s,arr)=>s+arr.length,0);
@@ -1819,7 +1850,7 @@ async function registrarConferencia(){
   const totalConferido = Object.values(rep.porStatus).reduce((s,arr)=>s+arr.length,0);
   await db.collection('movimentos').doc('mov_'+uid()).set({
     tipo:'conferencia', timestamp: sess.finalizadoEm, exportado:false,
-    obs: `Conferência: ${totalConferido} conferidos, ${rep.faltando.length} faltando, ${rep.naoCadastrados.length} não cadastrados`,
+    obs: `Conferência: ${totalConferido} conferidos, ${rep.faltando.length} não localizado(s), ${rep.naoCadastrados.length} não cadastrados`,
     quantidade: sess.contados.length,
     usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
   });
@@ -1860,7 +1891,7 @@ function renderRelatorioRegistrado(sess){
         <p class="hint" style="margin-top:8px;">Essa conferência foi feita numa versão anterior do app, então só temos os números — não a lista detalhada de itens.</p>
       </div>
       <div class="card left-ok"><b>${countOf(Object.values(sess.resultado.porStatus||{}).flat())}</b> conferidos</div>
-      <div class="card left-danger"><b>${countOf(sess.resultado.faltando)}</b> faltando</div>
+      <div class="card left-danger"><b>${countOf(sess.resultado.faltando)}</b> não localizado(s)</div>
       <div class="card left-info"><b>${countOf(sess.resultado.naoCadastrados)}</b> não cadastrados</div>
       <button class="btn ghost" id="inv-new" style="border:1px solid var(--border);">Voltar</button>
     `;
@@ -1868,7 +1899,7 @@ function renderRelatorioRegistrado(sess){
     return;
   }
   const grupos = Object.assign({}, resolvido.porStatus, {
-    'Faltando (esperado, não achado)': resolvido.faltando,
+    'Não localizado': resolvido.faltando,
     'Não cadastrado (achado, sem registro)': resolvido.naoCadastrados.map(code=>({lote:code, quantidade:null}))
   });
   const rows = [];
