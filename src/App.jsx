@@ -115,6 +115,7 @@ const APP_HTML = `
     <section class="view" id="view-estoque">
       <h2 class="section-title">Estoque</h2>
       <input type="text" id="estoque-search" placeholder="Buscar por código, lote, produto ou armazém…">
+      <label class="field-label">Status (toque pra marcar mais de um)</label>
       <div class="filter-row" id="estoque-filters">
         <button class="filter-chip active" data-status="todos">Todos</button>
         <button class="filter-chip" data-status="estoque">Em estoque</button>
@@ -124,9 +125,10 @@ const APP_HTML = `
         <button class="filter-chip" data-status="transferido">Transferidos</button>
         <button class="filter-chip" data-status="baixado">Baixados</button>
       </div>
-      <select id="estoque-armazem-filter" style="margin-bottom:12px;">
-        <option value="todos">Todos os armazéns</option>
-      </select>
+      <label class="field-label">Armazém (toque pra marcar mais de um)</label>
+      <div class="filter-row" id="estoque-filters-armazem" style="margin-bottom:12px;">
+        <button class="filter-chip active" data-armazem="todos">Todos</button>
+      </div>
       <button class="btn ghost" id="btn-toggle-select" data-role="supervisor" style="border:1px solid var(--border);margin-bottom:12px;">Selecionar itens</button>
       <div id="estoque-list"></div>
     </section>
@@ -241,7 +243,8 @@ const state = {
   scanLoopId: null,
   lastDetectAt: 0,
   session: null,        // {id, iniciadoEm, ativo, contados:[lote,...], filtroProduto (auto-detectado no 1º bipe), esperadosSnapshot}
-  estoqueStatusFilter: 'todos',
+  estoqueStatusFiltro: new Set(),   // vazio = "todos"; pode ter vários status marcados ao mesmo tempo
+  estoqueArmazemFiltro: new Set(),  // vazio = "todos"; pode ter vários armazéns marcados ao mesmo tempo
   histTipoFilter: 'todos',
   ready: {db:false, downloads:false},
   user: null,
@@ -1251,44 +1254,60 @@ function openCadastroManual(code){
 
 /* ================= ESTOQUE ================= */
 document.getElementById('estoque-search').addEventListener('input', renderEstoque);
-document.querySelectorAll('#estoque-filters .filter-chip').forEach(chip=>{
-  chip.addEventListener('click', ()=>{
-    document.querySelectorAll('#estoque-filters .filter-chip').forEach(c=>c.classList.remove('active'));
-    chip.classList.add('active');
-    state.estoqueStatusFilter = chip.dataset.status;
+// os dois grupos de filtro (status e armazém) funcionam do mesmo jeito: são
+// multi-seleção — pode marcar vários chips ao mesmo tempo (ex: Bloqueados + Transferidos),
+// e "Todos" limpa a seleção e volta a mostrar tudo daquele grupo.
+function bindFiltroMultiplo(rowId, setName, attr){
+  document.getElementById(rowId).addEventListener('click', (e)=>{
+    const chip = e.target.closest('.filter-chip');
+    if (!chip) return;
+    const valor = chip.dataset[attr];
+    const set = state[setName];
+    if (valor==='todos'){
+      set.clear();
+    } else {
+      if (set.has(valor)) set.delete(valor); else set.add(valor);
+    }
     renderEstoque();
   });
-});
-document.getElementById('estoque-armazem-filter').addEventListener('change', (e)=>{
-  state.estoqueArmazemFilter = e.target.value;
-  renderEstoque();
-});
+}
+bindFiltroMultiplo('estoque-filters', 'estoqueStatusFiltro', 'status');
+bindFiltroMultiplo('estoque-filters-armazem', 'estoqueArmazemFiltro', 'armazem');
+function atualizarChipsFiltro(rowId, attr, set){
+  document.querySelectorAll('#'+rowId+' .filter-chip').forEach(chip=>{
+    const valor = chip.dataset[attr];
+    const ativo = valor==='todos' ? set.size===0 : set.has(valor);
+    chip.classList.toggle('active', ativo);
+  });
+}
 // preenche o filtro de armazém com os códigos que realmente existem no estoque
 // (evita listar armazéns que não têm nenhum item, e mantém a lista sempre atual).
 function atualizarOpcoesArmazem(){
-  const sel = document.getElementById('estoque-armazem-filter');
-  const atual = sel.value || 'todos';
+  const row = document.getElementById('estoque-filters-armazem');
   const codigos = [...new Set([...state.volumes.values()].map(v=>String(v.armazem||'').trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
-  sel.innerHTML = '<option value="todos">Todos os armazéns</option>' +
-    codigos.map(cod=>`<option value="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</option>`).join('');
-  if (codigos.includes(atual) || atual==='todos') sel.value = atual;
+  row.innerHTML = '<button class="filter-chip" data-armazem="todos">Todos</button>' +
+    codigos.map(cod=>`<button class="filter-chip" data-armazem="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</button>`).join('');
+  // remove da seleção qualquer armazém que não existe mais (item excluído/mudou de armazém)
+  [...state.estoqueArmazemFiltro].forEach(cod=>{ if (!codigos.includes(cod)) state.estoqueArmazemFiltro.delete(cod); });
 }
 // "Conferido"/"Não conferido" são sub-estados de quem está com status=estoque —
 // os demais status (bloqueado/transferido/baixado) continuam filtrando pelo campo direto.
 function matchEstoqueFiltro(v, filtro){
-  if (filtro==='todos') return true;
   if (filtro==='conferido') return v.status==='estoque' && v.statusConferencia==='contado';
   if (filtro==='nao_conferido') return v.status==='estoque' && v.statusConferencia!=='contado';
   return v.status===filtro;
 }
 function renderEstoque(){
   atualizarOpcoesArmazem();
+  atualizarChipsFiltro('estoque-filters', 'status', state.estoqueStatusFiltro);
+  atualizarChipsFiltro('estoque-filters-armazem', 'armazem', state.estoqueArmazemFiltro);
   const q = (document.getElementById('estoque-search').value||'').trim().toLowerCase();
-  const armazemFiltro = state.estoqueArmazemFilter || 'todos';
   let vols = [...state.volumes.values()];
-  if (state.estoqueStatusFilter!=='todos') vols = vols.filter(v=>matchEstoqueFiltro(v, state.estoqueStatusFilter));
-  if (armazemFiltro!=='todos') vols = vols.filter(v=>String(v.armazem||'').trim()===armazemFiltro);
+  // dentro do mesmo grupo os filtros marcados se somam (OU) — ex: Bloqueados + Transferidos
+  // mostra os dois. Entre grupos diferentes (status e armazém) e a busca, é E (precisa bater em todos).
+  if (state.estoqueStatusFiltro.size) vols = vols.filter(v=>[...state.estoqueStatusFiltro].some(f=>matchEstoqueFiltro(v, f)));
+  if (state.estoqueArmazemFiltro.size) vols = vols.filter(v=>state.estoqueArmazemFiltro.has(String(v.armazem||'').trim()));
   if (q){
     vols = vols.filter(v=>
       (v.lote||'').toLowerCase().includes(q) ||
