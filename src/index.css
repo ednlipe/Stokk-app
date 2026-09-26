@@ -148,6 +148,18 @@ nav.bottom button.active svg{stroke:var(--accent);}
   z-index:60;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center;}
 .toast.show{opacity:1;}
 
+.scan-flash{max-height:0;opacity:0;overflow:hidden;transform:translateY(-6px) scale(.97);
+  transition:max-height .25s ease,opacity .2s ease,transform .2s ease;margin-bottom:0;}
+.scan-flash.show{max-height:100px;opacity:1;transform:translateY(0) scale(1);margin-bottom:14px;}
+.scan-flash-inner{display:flex;align-items:center;gap:10px;padding:16px 16px;border-radius:8px;
+  font-family:var(--font-head);font-size:17px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;
+  box-shadow:0 4px 16px rgba(0,0,0,.2);}
+.scan-flash-inner svg{width:24px;height:24px;flex-shrink:0;}
+.scan-flash.ok .scan-flash-inner{background:var(--ok-dim);color:var(--ok);border:1.5px solid var(--ok);}
+.scan-flash.danger .scan-flash-inner{background:var(--danger-dim);color:var(--danger);border:1.5px solid var(--danger);}
+.scan-flash.info .scan-flash-inner{background:var(--info-dim);color:var(--info);border:1.5px solid var(--info);}
+.scan-flash.accent .scan-flash-inner{background:var(--accent-dim);color:var(--accent);border:1.5px solid var(--accent);}
+
 .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:currentColor;
   border-radius:50%;display:inline-block;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
