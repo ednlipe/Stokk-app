@@ -204,6 +204,15 @@ nav.bottom button.active svg{stroke:var(--accent);}
 .link-btn{background:none;border:none;color:var(--text-muted);font-size:11px;text-decoration:underline;cursor:pointer;padding:0;font-family:var(--font-body);}
 
 .filter-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px;}
+.filter-row.wrap{flex-wrap:wrap;overflow-x:visible;}
+.filtro-secao{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px;}
+.filtro-secao-toggle{display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:none;border:none;
+  padding:6px 0;font-family:var(--font-head);font-size:13.5px;text-transform:uppercase;letter-spacing:0.4px;
+  color:var(--text);cursor:pointer;}
+.filtro-secao-toggle .seta{transition:transform .15s;display:inline-block;}
+.filtro-secao-toggle.fechado .seta{transform:rotate(-90deg);}
+#filtro-badge:empty{display:none;}
+#filtro-badge{margin-left:6px;background:var(--accent);color:var(--accent-ink);border-radius:20px;font-size:11px;padding:1px 7px;}
 .filter-chip{flex-shrink:0;padding:7px 13px;border-radius:20px;border:1px solid var(--border);background:transparent;
   color:var(--text-muted);font-size:12.5px;cursor:pointer;font-family:var(--font-body);}
 .filter-chip.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;}
@@ -413,20 +422,7 @@ main .view.active{
     <section class="view" id="view-estoque">
       <h2 class="section-title">Estoque</h2>
       <input type="text" id="estoque-search" placeholder="Buscar por código, lote, produto ou armazém…">
-      <label class="field-label">Status (toque pra marcar mais de um)</label>
-      <div class="filter-row" id="estoque-filters">
-        <button class="filter-chip active" data-status="todos">Todos</button>
-        <button class="filter-chip" data-status="estoque">Em estoque</button>
-        <button class="filter-chip" data-status="conferido">Conferidos</button>
-        <button class="filter-chip" data-status="nao_conferido">Não conferidos</button>
-        <button class="filter-chip" data-status="bloqueado">Bloqueados</button>
-        <button class="filter-chip" data-status="transferido">Transferidos</button>
-        <button class="filter-chip" data-status="baixado">Baixados</button>
-      </div>
-      <label class="field-label">Armazém (toque pra marcar mais de um)</label>
-      <div class="filter-row" id="estoque-filters-armazem" style="margin-bottom:12px;">
-        <button class="filter-chip active" data-armazem="todos">Todos</button>
-      </div>
+      <button class="btn ghost" id="btn-abrir-filtro" style="border:1px solid var(--border);margin-bottom:12px;">Filtro<span id="filtro-badge"></span></button>
       <button class="btn ghost" id="btn-toggle-select" data-role="supervisor" style="border:1px solid var(--border);margin-bottom:12px;">Selecionar itens</button>
       <div id="estoque-list"></div>
     </section>
@@ -1545,11 +1541,27 @@ function openCadastroManual(code){
 
 /* ================= ESTOQUE ================= */
 document.getElementById('estoque-search').addEventListener('input', renderEstoque);
+// "Em estoque"/"Aguardando conferência"/"Não conferido" são sub-estados de quem
+// está com status=estoque (mesmo critério usado nos badges de statusDisplayInfo) —
+// os demais status (bloqueado/transferido/baixado) filtram pelo campo direto.
+function matchEstoqueFiltro(v, filtro){
+  if (filtro==='estoque') return v.status==='estoque' && v.statusConferencia==='contado';
+  if (filtro==='aguardando') return v.status==='estoque' && v.statusConferencia!=='contado' && v.statusConferencia!=='nao_conferido';
+  if (filtro==='nao_conferido') return v.status==='estoque' && v.statusConferencia==='nao_conferido';
+  return v.status===filtro;
+}
+function atualizarBadgeFiltro(){
+  const n = state.estoqueStatusFiltro.size + state.estoqueArmazemFiltro.size;
+  document.getElementById('filtro-badge').textContent = n ? String(n) : '';
+}
 // os dois grupos de filtro (status e armazém) funcionam do mesmo jeito: são
 // multi-seleção — pode marcar vários chips ao mesmo tempo (ex: Bloqueados + Transferidos),
-// e "Todos" limpa a seleção e volta a mostrar tudo daquele grupo.
+// e "Todos" limpa a seleção e volta a mostrar tudo daquele grupo. O clique já filtra a
+// lista na hora (o botão "Aplicar filtro" só fecha o painel, pra confirmar a escolha).
 function bindFiltroMultiplo(rowId, setName, attr){
-  document.getElementById(rowId).addEventListener('click', (e)=>{
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.addEventListener('click', (e)=>{
     const chip = e.target.closest('.filter-chip');
     if (!chip) return;
     const valor = chip.dataset[attr];
@@ -1559,11 +1571,11 @@ function bindFiltroMultiplo(rowId, setName, attr){
     } else {
       if (set.has(valor)) set.delete(valor); else set.add(valor);
     }
+    atualizarChipsFiltro(rowId, attr, set);
+    atualizarBadgeFiltro();
     renderEstoque();
   });
 }
-bindFiltroMultiplo('estoque-filters', 'estoqueStatusFiltro', 'status');
-bindFiltroMultiplo('estoque-filters-armazem', 'estoqueArmazemFiltro', 'armazem');
 function atualizarChipsFiltro(rowId, attr, set){
   document.querySelectorAll('#'+rowId+' .filter-chip').forEach(chip=>{
     const valor = chip.dataset[attr];
@@ -1571,28 +1583,59 @@ function atualizarChipsFiltro(rowId, attr, set){
     chip.classList.toggle('active', ativo);
   });
 }
-// preenche o filtro de armazém com os códigos que realmente existem no estoque
-// (evita listar armazéns que não têm nenhum item, e mantém a lista sempre atual).
-function atualizarOpcoesArmazem(){
-  const row = document.getElementById('estoque-filters-armazem');
+// painel "Filtro": um sheet com as seções Status e Armazém, cada uma podendo
+// encolher/expandir — igual um filtro de loja online — e um botão Aplicar no final.
+function abrirFiltroEstoque(){
   const codigos = [...new Set([...state.volumes.values()].map(v=>String(v.armazem||'').trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
-  row.innerHTML = '<button class="filter-chip" data-armazem="todos">Todos</button>' +
-    codigos.map(cod=>`<button class="filter-chip" data-armazem="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</button>`).join('');
-  // remove da seleção qualquer armazém que não existe mais (item excluído/mudou de armazém)
   [...state.estoqueArmazemFiltro].forEach(cod=>{ if (!codigos.includes(cod)) state.estoqueArmazemFiltro.delete(cod); });
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">Filtro</h2>
+    <div class="filtro-secao">
+      <button class="filtro-secao-toggle" data-secao="status"><span class="seta">▾</span> Status</button>
+      <div class="filter-row wrap" id="filtro-status-body">
+        <button class="filter-chip" data-status="todos">Todos</button>
+        <button class="filter-chip" data-status="estoque">Em estoque</button>
+        <button class="filter-chip" data-status="aguardando">Aguardando conferência</button>
+        <button class="filter-chip" data-status="nao_conferido">Não conferido</button>
+        <button class="filter-chip" data-status="bloqueado">Bloqueados</button>
+        <button class="filter-chip" data-status="transferido">Transferidos</button>
+        <button class="filter-chip" data-status="baixado">Baixados</button>
+      </div>
+    </div>
+    <div class="filtro-secao">
+      <button class="filtro-secao-toggle" data-secao="armazem"><span class="seta">▾</span> Armazém</button>
+      <div class="filter-row wrap" id="filtro-armazem-body">
+        <button class="filter-chip" data-armazem="todos">Todos</button>
+        ${codigos.map(cod=>`<button class="filter-chip" data-armazem="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</button>`).join('')}
+      </div>
+    </div>
+    <button class="btn ghost" id="btn-limpar-filtro" style="border:1px solid var(--border);">Limpar filtros</button>
+    <button class="btn primary" id="btn-aplicar-filtro" style="margin-top:8px;">Aplicar filtro</button>
+  `);
+  atualizarChipsFiltro('filtro-status-body', 'status', state.estoqueStatusFiltro);
+  atualizarChipsFiltro('filtro-armazem-body', 'armazem', state.estoqueArmazemFiltro);
+  bindFiltroMultiplo('filtro-status-body', 'estoqueStatusFiltro', 'status');
+  bindFiltroMultiplo('filtro-armazem-body', 'estoqueArmazemFiltro', 'armazem');
+  document.querySelectorAll('.filtro-secao-toggle').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      btn.classList.toggle('fechado');
+      btn.nextElementSibling.style.display = btn.classList.contains('fechado') ? 'none' : 'flex';
+    });
+  });
+  document.getElementById('btn-limpar-filtro').onclick = ()=>{
+    state.estoqueStatusFiltro.clear();
+    state.estoqueArmazemFiltro.clear();
+    atualizarChipsFiltro('filtro-status-body', 'status', state.estoqueStatusFiltro);
+    atualizarChipsFiltro('filtro-armazem-body', 'armazem', state.estoqueArmazemFiltro);
+    atualizarBadgeFiltro();
+    renderEstoque();
+  };
+  document.getElementById('btn-aplicar-filtro').onclick = closeSheet;
 }
-// "Conferido"/"Não conferido" são sub-estados de quem está com status=estoque —
-// os demais status (bloqueado/transferido/baixado) continuam filtrando pelo campo direto.
-function matchEstoqueFiltro(v, filtro){
-  if (filtro==='conferido') return v.status==='estoque' && v.statusConferencia==='contado';
-  if (filtro==='nao_conferido') return v.status==='estoque' && v.statusConferencia!=='contado';
-  return v.status===filtro;
-}
+document.getElementById('btn-abrir-filtro').addEventListener('click', abrirFiltroEstoque);
 function renderEstoque(){
-  atualizarOpcoesArmazem();
-  atualizarChipsFiltro('estoque-filters', 'status', state.estoqueStatusFiltro);
-  atualizarChipsFiltro('estoque-filters-armazem', 'armazem', state.estoqueArmazemFiltro);
+  atualizarBadgeFiltro();
   const q = (document.getElementById('estoque-search').value||'').trim().toLowerCase();
   let vols = [...state.volumes.values()];
   // dentro do mesmo grupo os filtros marcados se somam (OU) — ex: Bloqueados + Transferidos
