@@ -368,6 +368,23 @@ nav.bottom button.active{box-shadow:inset 3px 0 0 var(--accent);}
 
 main .stat .n{font-family:var(--font-head);}
 
+/* estoque em formato de tabela — só faz sentido com tela larga */
+table.tabela-estoque{width:100%;border-collapse:collapse;font-size:13.5px;}
+table.tabela-estoque thead th{
+  text-align:left;font-family:var(--font-head);font-size:11px;letter-spacing:0.4px;
+  text-transform:uppercase;color:var(--text-muted);font-weight:600;
+  padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);
+}
+table.tabela-estoque thead th:first-child{border-top-left-radius:8px;}
+table.tabela-estoque thead th:last-child{border-top-right-radius:8px;}
+table.tabela-estoque tbody td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+table.tabela-estoque tbody tr{cursor:pointer;transition:background .12s ease;}
+table.tabela-estoque tbody tr:hover{background:var(--surface-2);}
+table.tabela-estoque tbody tr:last-child td{border-bottom:none;}
+table.tabela-estoque .col-lote{font-family:var(--font-mono);font-size:13px;}
+table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
+
+@media (max-width:860px){
   #app{grid-template-columns:1fr;grid-template-rows:60px auto 1fr;grid-template-areas:"topbar" "nav" "main";height:auto;min-height:100vh;}
   nav.bottom{flex-direction:row;border-right:none;border-bottom:1px solid var(--border);overflow-x:auto;padding:8px;}
   nav.bottom button{flex-direction:column;text-align:center;}
@@ -2040,22 +2057,32 @@ function renderEstoque(){
           <div class="li-desc">${itens.length} vol.</div>
         </div>
       </div>
-      ${aberto ? itens.map(v=>{
-        const info = statusDisplayInfo(v);
-        const checked = state.selecionados.has(v.lote);
-        return `
-        <div class="list-item" data-lote="${esc(v.lote)}" style="border-top:1px solid var(--border);padding-left:14px;">
-          ${sel ? `<input type="checkbox" class="sel-check" data-lote="${esc(v.lote)}" ${checked?'checked':''} style="width:20px;height:20px;margin-right:10px;flex-shrink:0;">` : ''}
-          <div class="li-main">
-            <div class="li-code">${esc(v.lote)}</div>
-            <div class="li-desc">${armazemChipHTML(v.armazem)}</div>
-          </div>
-          <div class="li-side">
-            <div class="li-weight">${fmtTon(v.quantidade)} t</div>
-            <span class="badge ${info.badge}">${esc(info.label)}</span>
-          </div>
-        </div>`;
-      }).join('') : ''}
+      ${aberto ? `
+      <table class="tabela-estoque">
+        <thead>
+          <tr>
+            ${sel ? '<th style="width:36px;"></th>' : ''}
+            <th>Lote / Volume</th>
+            <th>Armazém</th>
+            <th style="text-align:right;">Peso</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itens.map(v=>{
+            const info = statusDisplayInfo(v);
+            const checked = state.selecionados.has(v.lote);
+            return `
+            <tr data-lote="${esc(v.lote)}">
+              ${sel ? `<td><input type="checkbox" class="sel-check" data-lote="${esc(v.lote)}" ${checked?'checked':''}></td>` : ''}
+              <td class="col-lote">${esc(v.lote)}</td>
+              <td>${armazemChipHTML(v.armazem)}</td>
+              <td style="text-align:right;font-family:var(--font-mono);">${fmtTon(v.quantidade)} t</td>
+              <td><span class="badge ${info.badge}">${esc(info.label)}</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>` : ''}
     </div>`;
   }).join('');
 
@@ -2069,20 +2096,20 @@ function renderEstoque(){
   });
 
   if (sel){
-    list.querySelectorAll('.list-item[data-lote]').forEach(li=>{
-      li.addEventListener('click', (e)=>{
+    list.querySelectorAll('tr[data-lote]').forEach(tr=>{
+      tr.addEventListener('click', (e)=>{
         e.stopPropagation();
-        const lote = li.dataset.lote;
+        const lote = tr.dataset.lote;
         if (state.selecionados.has(lote)) state.selecionados.delete(lote);
         else state.selecionados.add(lote);
         renderEstoque();
       });
     });
   } else {
-    list.querySelectorAll('.list-item[data-lote]').forEach(li=>{
-      li.addEventListener('click', (e)=>{
+    list.querySelectorAll('tr[data-lote]').forEach(tr=>{
+      tr.addEventListener('click', (e)=>{
         e.stopPropagation();
-        openVolumeDetail(li.dataset.lote);
+        openVolumeDetail(tr.dataset.lote);
       });
     });
   }
