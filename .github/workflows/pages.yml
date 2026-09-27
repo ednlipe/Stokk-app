@@ -4,7 +4,7 @@ name: Deploy site (GitHub Pages)
 # nada do Netlify. Roda automaticamente a cada push na branch main.
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
