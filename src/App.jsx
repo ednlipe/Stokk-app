@@ -42,7 +42,7 @@ const APP_HTML = `
       <h2 class="section-title">Consumo interno (armazém 92)</h2>
       <div id="dash-consumo-interno"></div>
 
-      <h2 class="section-title">OK p/ carregar vs. Concessão vs. Retrabalho</h2>
+      <h2 class="section-title">Visão geral</h2>
       <div id="dash-comparativo"></div>
 
       <h2 class="section-title">Status do estoque</h2>
@@ -243,7 +243,8 @@ const state = {
   estoqueExpandido: new Set(),
   sessoes: [],
   confExpandido: new Set(),
-  pendingReport: null
+  pendingReport: null,
+  armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || ''
 };
 
 let db = null, downloads = null;
@@ -495,6 +496,12 @@ function armazemInfo(codigo){
   const c = String(codigo||'').trim();
   return ARMAZEM_INFO[c] || { label: null, cor: null };
 }
+function armazemFiltroLabel(codigo){
+  const c = String(codigo||'').trim();
+  const info = armazemInfo(c);
+  if (!info.label) return c;
+  return /^\d+$/.test(c) ? (c+' — '+info.label) : info.label;
+}
 function armazemChipHTML(codigo){
   if (!codigo) return '';
   const info = armazemInfo(codigo);
@@ -560,6 +567,33 @@ function extractLoteCode(raw){
   const matches = text.match(/[A-Z]{2,6}\d{4,7}/g) || [];
   for (const m of matches){ if (state.volumes.has(m)) return m; }
   return matches[0] || text;
+}
+
+/* ---------------- ETIQUETA DE PÁTIO (código de barras lateral) ----------------
+   Formato observado nas etiquetas (Volume+Corrida+Peso(kg)+Código do produto,
+   sem separadores): "PCI00047PCI0032173TPAIQ092B4"
+   -> Volume=PCI00047 (8) | Corrida=PCI003 (6) | Peso=2173kg (4) | Código=TPAIQ092B4 (resto)
+   É "melhor esforço": só serve pra pré-preencher o cadastro manual, o operador
+   sempre confere os campos antes de salvar (nunca cadastra sozinho sem revisão). */
+function parseEtiquetaCodigo(raw){
+  const s = String(raw||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (s.length <= 18) return null;
+  const volume = s.slice(0,8);
+  const corrida = s.slice(8,14);
+  const pesoStr = s.slice(14,18);
+  const codigoProduto = s.slice(18);
+  if (!/^[A-Z]{2,3}\d{4,6}$/.test(volume)) return null;
+  if (!/^\d{4}$/.test(pesoStr)) return null;
+  if (!codigoProduto) return null;
+  return { volume, corrida, pesoKg: parseInt(pesoStr,10), codigoProduto };
+}
+function encontrarProdutoPorCodigoEtiqueta(codigoEtiqueta){
+  if (!codigoEtiqueta) return null;
+  if (state.produtos.has(codigoEtiqueta)) return codigoEtiqueta;
+  // a etiqueta às vezes traz só o começo do código (sem sufixo de bitola/variante,
+  // ex: "TPAIQ092B4" na etiqueta vira "TPAIQ092B4.20" no cadastro do Protheus)
+  const prefixMatches = [...state.produtos.keys()].filter(k=>k.startsWith(codigoEtiqueta));
+  return prefixMatches.length===1 ? prefixMatches[0] : null;
 }
 
 /* ---------------- CLAUDE CAPABILITIES ---------------- */
@@ -629,9 +663,9 @@ document.getElementById('btn-dash-refresh').addEventListener('click', async (e)=
 });
 function renderDashboard(){
   const vols = [...state.volumes.values()];
-  // só entra como "em estoque" no dashboard quem já passou por uma conferência —
-  // ter sido importado da planilha não é suficiente.
-  const emEstoque = vols.filter(v=>v.status==='estoque' && v.statusConferencia==='contado');
+  // distribuição física por armazém: considera todo item com status "estoque",
+  // independente de já ter passado por conferência de pátio ou não.
+  const emEstoque = vols.filter(v=>v.status==='estoque');
   // a lista "Em estoque" da home mostra só o que está liberado (armazém 93 — OK para carregar).
   const okParaCarregar = emEstoque.filter(v=>String(v.armazem||'').trim()==='93');
 
@@ -854,14 +888,31 @@ document.querySelectorAll('#scan-mode-row .filter-chip').forEach(chip=>{
 setScanMode(state.scanMode);
 
 const coletorInput = document.getElementById('coletor-code');
+let coletorAutoTimer = null;
 coletorInput.addEventListener('keydown', e=>{
   if (e.key==='Enter'){
     e.preventDefault();
+    clearTimeout(coletorAutoTimer);
     const v = coletorInput.value;
     if (v.trim()){ handleScanned(v); }
     coletorInput.value='';
     coletorInput.focus();
   }
+});
+// Alguns coletores (ex.: leitor integrado do Zebra via DataWedge) não mandam um
+// "Enter" de verdade depois do código — só digitam o texto e ficam parados.
+// Por isso, se o campo parar de mudar por um instante (leitura terminou) e já
+// tiver um código de tamanho razoável, processa sozinho, sem depender do Enter.
+coletorInput.addEventListener('input', ()=>{
+  clearTimeout(coletorAutoTimer);
+  coletorAutoTimer = setTimeout(()=>{
+    const v = coletorInput.value;
+    if (v.trim().length >= 3){
+      handleScanned(v);
+      coletorInput.value='';
+      coletorInput.focus();
+    }
+  }, 350);
 });
 // Se o dedo do operador tocar em qualquer lugar da tela de bipar (por engano),
 // devolve o foco pro campo do coletor logo em seguida, pra não perder nenhuma leitura.
@@ -1070,7 +1121,7 @@ async function handleScanned(rawText){
         await confirmMovimento(code, state.batchAction);
         state.batchCount = (state.batchCount||0) + 1;
       }
-      renderScanResult(code, vol);
+      renderScanResult(code, vol, rawText);
       await conferirVolume(code);
       renderConfProgress();
     };
@@ -1084,7 +1135,7 @@ async function handleScanned(rawText){
       await confirmMovimento(code, state.batchAction);
       state.batchCount = (state.batchCount||0) + 1;
     }
-    renderScanResult(code, vol);
+    renderScanResult(code, vol, rawText);
 
     // if a conference session is active, mark counted automatically
     if (vol && state.session && state.session.ativo){
@@ -1095,17 +1146,22 @@ async function handleScanned(rawText){
 
 }
 
-function renderScanResult(code, vol){
+function renderScanResult(code, vol, rawText){
   const box = document.getElementById('scan-result');
   if (!vol){
+    const etiqueta = parseEtiquetaCodigo(rawText);
+    const produtoSugerido = etiqueta ? encontrarProdutoPorCodigoEtiqueta(etiqueta.codigoProduto) : null;
+    const produtoInfo = produtoSugerido ? state.produtos.get(produtoSugerido) : null;
     box.innerHTML = `
       <div class="card left-danger">
         <div class="li-code" style="font-size:17px;">${esc(code)}</div>
         <div class="badge danger" style="margin-top:6px;">Não encontrado no sistema</div>
-        <p class="hint" style="margin:10px 0 12px;">Esse código não está em nenhuma planilha importada. Pode ser um item novo — cadastre manualmente se necessário.</p>
+        ${etiqueta
+          ? `<p class="hint" style="margin:10px 0 12px;">Li a etiqueta: peso <b>${fmtTon(etiqueta.pesoKg/1000)} t</b>${produtoInfo?', produto <b>'+esc(produtoInfo.descricao||produtoSugerido)+'</b>':' — produto não encontrado no cadastro, selecione manualmente'}. Confira antes de salvar.</p>`
+          : `<p class="hint" style="margin:10px 0 12px;">Esse código não está em nenhuma planilha importada. Pode ser um item novo — cadastre manualmente se necessário.</p>`}
         <button class="btn primary" id="btn-cad-manual">Cadastrar manualmente</button>
       </div>`;
-    document.getElementById('btn-cad-manual').onclick = ()=>openCadastroManual(code);
+    document.getElementById('btn-cad-manual').onclick = ()=>openCadastroManual(code, etiqueta);
     return;
   }
   const produto = state.produtos.get(vol.produtoCodigo) || {};
@@ -1186,29 +1242,37 @@ async function confirmMovimento(code, novoStatus){
   flashScan(statusInfo(novoStatus).label+' registrado!', statusInfo(novoStatus).badge);
 }
 
-function openCadastroManual(code){
+function openCadastroManual(code, etiqueta){
   const produtoOptions = [...state.produtos.values()].map(p=>`<option value="${esc(p.codigo)}">${esc(p.codigo)} — ${esc((p.descricao||'').slice(0,40))}</option>`).join('');
   // se por algum motivo o código já existe no sistema (ex: o texto lido pela câmera
   // veio com algum caractere a mais e por isso "não bateu"), pré-preenchemos com os
   // dados já cadastrados em vez de deixar em branco — evita apagar/zerar um volume
   // que já existia só porque o cadastro manual foi aberto por engano.
   const existente = state.volumes.get(code);
+  const produtoEtiqueta = (!existente && etiqueta) ? encontrarProdutoPorCodigoEtiqueta(etiqueta.codigoProduto) : null;
+  const pesoEtiqueta = (!existente && etiqueta) ? (etiqueta.pesoKg/1000) : null;
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Cadastrar volume</h2>
     ${existente ? `<p class="hint" style="margin-top:0;color:var(--danger);">Atenção: esse código já existe no sistema (${esc(existente.produtoDescricao||existente.produtoCodigo||'')}). Os campos abaixo foram preenchidos com os dados atuais — confira antes de salvar.</p>` : ''}
+    ${etiqueta && !existente ? `<p class="hint" style="margin-top:0;">Dados lidos da etiqueta (código ${esc(etiqueta.codigoProduto)}${etiqueta.corrida?', corrida '+esc(etiqueta.corrida):''}) — confira tudo antes de salvar.</p>` : ''}
     <label class="field-label">Código / Lote</label>
     <input type="text" id="cm-lote" value="${esc(code)}">
     <label class="field-label">Produto</label>
     <select id="cm-produto"><option value="">Selecione…</option>${produtoOptions}</select>
+    ${etiqueta && !existente && !produtoEtiqueta ? `<p class="hint" style="margin:2px 0 0;color:var(--danger);">Não achei o produto "${esc(etiqueta.codigoProduto)}" cadastrado — selecione manualmente.</p>` : ''}
     <label class="field-label">Armazém</label>
-    <input type="text" id="cm-armazem" placeholder="Ex: 02" value="${esc(existente&&existente.armazem||'')}">
+    <input type="text" id="cm-armazem" placeholder="Ex: 02" value="${esc((existente&&existente.armazem)||state.armazemPadrao||'')}">
+    <p class="hint" style="margin:2px 0 0;">Fica salvo como padrão pros próximos itens, até você trocar aqui.</p>
     <label class="field-label">Peso (toneladas)</label>
-    <input type="number" step="0.001" id="cm-peso" placeholder="Ex: 1.05" value="${existente&&existente.quantidade!=null?existente.quantidade:''}">
+    <input type="number" step="0.001" id="cm-peso" placeholder="Ex: 1.05" value="${existente&&existente.quantidade!=null?existente.quantidade:(pesoEtiqueta!=null?pesoEtiqueta.toFixed(3):'')}">
     <button class="btn primary" id="cm-save">Salvar</button>
   `);
   if (existente && existente.produtoCodigo){
     const sel = document.getElementById('cm-produto');
     if (sel) sel.value = existente.produtoCodigo;
+  } else if (produtoEtiqueta){
+    const sel = document.getElementById('cm-produto');
+    if (sel) sel.value = produtoEtiqueta;
   }
   document.getElementById('cm-save').onclick = async ()=>{
     const lote = document.getElementById('cm-lote').value.trim().toUpperCase();
@@ -1216,6 +1280,10 @@ function openCadastroManual(code){
     const armazem = document.getElementById('cm-armazem').value.trim();
     const peso = parseFloat(document.getElementById('cm-peso').value)||0;
     if (!lote){ toast('Informe o código.'); return; }
+    if (armazem){
+      state.armazemPadrao = armazem;
+      localStorage.setItem('stokk_armazem_padrao', armazem);
+    }
     const produto = state.produtos.get(produtoCodigo);
     const dadosVolume = {
       lote, produtoCodigo: produtoCodigo||null, produtoDescricao: produto?produto.descricao:'',
@@ -1314,7 +1382,7 @@ function abrirFiltroEstoque(){
       <button class="filtro-secao-toggle" data-secao="armazem"><span class="seta">▾</span> Armazém</button>
       <div class="filter-row wrap" id="filtro-armazem-body">
         <button class="filter-chip" data-armazem="todos">Todos</button>
-        ${codigos.map(cod=>`<button class="filter-chip" data-armazem="${esc(cod)}">${esc(armazemInfo(cod).label ? cod+' — '+armazemInfo(cod).label : cod)}</button>`).join('')}
+        ${codigos.map(cod=>`<button class="filter-chip" data-armazem="${esc(cod)}">${esc(armazemFiltroLabel(cod))}</button>`).join('')}
       </div>
     </div>
     <button class="btn ghost" id="btn-limpar-filtro" style="border:1px solid var(--border);">Limpar filtros</button>
@@ -2035,7 +2103,7 @@ function renderHistorico(){
         <div class="li-desc">${esc(m.obs || m.produtoDescricao || '')}${m.usuarioNome?' · '+esc(m.usuarioNome):''}</div>
       </div>
       <div class="li-side">
-        <span class="badge ${tipoBadge[m.tipo]||'info'}">${tipoLabel[m.tipo]||m.tipo}</span>
+        <span class="badge ${tipoBadge[m.tipo]||'info'}">${esc(tipoLabel[m.tipo]||m.tipo)}</span>
         <div class="li-desc" style="margin-top:4px;">${fmtDate(m.timestamp)}</div>
       </div>
     </div>`).join('') + '</div>';
