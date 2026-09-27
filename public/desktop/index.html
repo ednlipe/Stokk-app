@@ -305,7 +305,69 @@ main .view.active{
 .overlay{align-items:center;}
 .sheet{max-width:480px;border-radius:12px;border-top:none;box-shadow:0 20px 60px rgba(0,0,0,.35);}
 
-@media (max-width:860px){
+/* ================================================================
+   ACABAMENTO "CLEAN / CORPORATIVO" — só nesta versão desktop.
+   Mais respiro, tipografia um pouco maior, sombras suaves em vez de
+   bordas secas, cantos menos retos — sem mudar nenhuma cor da marca.
+   ================================================================ */
+.topbar{box-shadow:0 1px 4px rgba(0,0,0,.08);}
+
+main .card{
+  border-radius:10px;
+  padding:18px;
+  box-shadow:0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+}
+main .card.left-ok{border-left:4px solid var(--ok);}
+main .card.left-danger{border-left:4px solid var(--danger);}
+main .card.left-info{border-left:4px solid var(--info);}
+main .card.left-accent{border-left:4px solid var(--accent);}
+
+main .stat{
+  border-radius:10px;
+  padding:18px 18px 16px;
+  box-shadow:0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+}
+main .stat .n{font-size:32px;}
+main .stat .l{font-size:12.5px;letter-spacing:0.2px;}
+main .stat.accent{background:linear-gradient(180deg, var(--accent-dim) 0%, var(--surface) 22%);}
+
+main .quick-btn{
+  border-radius:10px;
+  transition:box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+main .quick-btn:hover{
+  box-shadow:0 4px 14px rgba(0,0,0,.07);
+  transform:translateY(-1px);
+  border-color:var(--accent);
+}
+
+main .list-item{
+  padding:13px 10px;
+  border-radius:7px;
+  transition:background .12s ease;
+}
+main .list-item:hover{background:var(--surface-2);}
+main .card .list-item{padding-left:4px;padding-right:4px;}
+
+h2.section-title{font-size:16.5px;letter-spacing:0.5px;margin:30px 0 12px;}
+h2.section-title:first-child{margin-top:2px;}
+
+nav.bottom button{transition:background .12s ease, color .12s ease;}
+nav.bottom button.active{box-shadow:inset 3px 0 0 var(--accent);}
+
+/* ================================================================
+   DASHBOARD "FLOWBOARD" — cabeçalho, stat cards, gráfico de rosca
+   e histórico recente, só na versão desktop. Mesmas cores da marca.
+   ================================================================ */
+.dash-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:8px;}
+@media (max-width:1180px){ .dash-stats-grid{grid-template-columns:repeat(2,1fr);} }
+
+.dash-row-2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:start;margin-top:8px;}
+@media (max-width:1180px){ .dash-row-2{grid-template-columns:1fr;} }
+.dash-row-2 h2.section-title{margin-top:0;}
+
+main .stat .n{font-family:var(--font-head);}
+
   #app{grid-template-columns:1fr;grid-template-rows:60px auto 1fr;grid-template-areas:"topbar" "nav" "main";height:auto;min-height:100vh;}
   nav.bottom{flex-direction:row;border-right:none;border-bottom:1px solid var(--border);overflow-x:auto;padding:8px;}
   nav.bottom button{flex-direction:column;text-align:center;}
@@ -342,20 +404,40 @@ main .view.active{
   <main>
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
-      <button class="btn ghost" id="btn-dash-refresh" style="border:1px solid var(--border);margin-bottom:12px;width:auto;padding:8px 14px;font-size:12.5px;">↻ Atualizar</button>
-      <div id="dash-categorias"></div>
+      <div id="dash-header"></div>
+      <div id="dash-stats"></div>
+
+      <div class="dash-row-2">
+        <div>
+          <h2 class="section-title">Produtos em estoque</h2>
+          <div id="dash-produtos-donut"></div>
+        </div>
+        <div>
+          <h2 class="section-title">Visão geral</h2>
+          <div id="dash-comparativo"></div>
+        </div>
+      </div>
+
+      <div class="dash-row-2">
+        <div>
+          <h2 class="section-title">Histórico recente</h2>
+          <div id="dash-recentes"></div>
+        </div>
+        <div>
+          <h2 class="section-title">Status do estoque</h2>
+          <div id="dash-status"></div>
+        </div>
+      </div>
+
+      <div id="dash-categorias" style="display:none;"></div>
       <div id="dash-armazens"></div>
 
       <h2 class="section-title">Consumo interno (armazém 92)</h2>
       <div id="dash-consumo-interno"></div>
 
-      <h2 class="section-title">Visão geral</h2>
-      <div id="dash-comparativo"></div>
+      <div id="dash-produtos-estoque-wrap" style="display:none;"></div>
 
-      <h2 class="section-title">Status do estoque</h2>
-      <div id="dash-status"></div>
-
-      <div id="dash-produtos-estoque-wrap"></div>
+      <div id="dash-insight"></div>
 
       <div id="dash-empty"></div>
     </section>
@@ -480,10 +562,6 @@ main .view.active{
     <button data-nav="dashboard" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
       Início
-    </button>
-    <button data-nav="scan">
-      <svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
-      Bipar
     </button>
     <button data-nav="estoque">
       <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -957,12 +1035,211 @@ function renderView(name){
 }
 
 /* ================= DASHBOARD ================= */
-document.getElementById('btn-dash-refresh').addEventListener('click', async (e)=>{
-  const btn = e.currentTarget;
-  btn.disabled = true; btn.textContent = 'Atualizando…';
-  try{ if (db.refetchAll) await db.refetchAll(); toast('Dashboard atualizado.'); }
-  finally{ btn.disabled = false; btn.textContent = '↻ Atualizar'; }
-});
+function renderDashHeader(){
+  const box = document.getElementById('dash-header');
+  if (!box) return;
+  const hora = new Date().getHours();
+  const saudacao = hora<12 ? 'Bom dia' : (hora<18 ? 'Boa tarde' : 'Boa noite');
+  const nome = state.user && state.user.nome ? String(state.user.nome).split(' ')[0] : '';
+  const hoje = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+      <div>
+        <div style="font-family:var(--font-head);font-size:20px;font-weight:600;">${saudacao}${nome?', '+esc(nome):''} 👋</div>
+        <div style="font-size:13px;color:var(--text-muted);text-transform:capitalize;">${esc(hoje)}</div>
+      </div>
+      <button class="btn ghost" id="btn-dash-refresh" style="border:1px solid var(--border);width:auto;padding:9px 16px;font-size:12.5px;">↻ Atualizar</button>
+    </div>`;
+  document.getElementById('btn-dash-refresh').addEventListener('click', async (e)=>{
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Atualizando…';
+    try{ if (db.refetchAll) await db.refetchAll(); toast('Dashboard atualizado.'); }
+    finally{ btn.disabled = false; btn.textContent = '↻ Atualizar'; }
+  });
+}
+
+/* ---- cor: deriva tons a partir do --accent atual, sem mudar a marca ---- */
+function hexToRgb(hex){
+  const h = String(hex||'').replace('#','').trim();
+  return [parseInt(h.substr(0,2),16)||0, parseInt(h.substr(2,2),16)||0, parseInt(h.substr(4,2),16)||0];
+}
+function rgbToHex(r,g,b){
+  return '#'+[r,g,b].map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join('');
+}
+function shadeHex(hex, amt){
+  // amt de -1 (mais escuro) a 1 (mais claro)
+  const [r,g,b] = hexToRgb(hex);
+  const alvo = amt<0 ? 0 : 255;
+  const p = Math.min(1, Math.abs(amt));
+  return rgbToHex(r+(alvo-r)*p, g+(alvo-g)*p, b+(alvo-b)*p);
+}
+function corAccentAtual(){
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+  return (v&&v.trim()) || '#F2861D';
+}
+
+function renderDashStats(vols){
+  const box = document.getElementById('dash-stats');
+  if (!box) return;
+  const porStatus = {};
+  vols.forEach(v=>{
+    const s = v.status || 'estoque';
+    if (!porStatus[s]) porStatus[s] = { peso:0, vol:0 };
+    porStatus[s].peso += (v.quantidade||0);
+    porStatus[s].vol += 1;
+  });
+  const okCarregar = vols.filter(v=>v.status==='estoque' && String(v.armazem||'').trim()==='93');
+  const pesoOk = okCarregar.reduce((s,v)=>s+(v.quantidade||0), 0);
+  const cards = [
+    { label:'Em estoque', valor: fmtTon((porStatus.estoque&&porStatus.estoque.peso)||0)+' t',
+      sub: ((porStatus.estoque&&porStatus.estoque.vol)||0)+' volumes', cor:'ok',
+      icon:'M20 6L9 17l-5-5' },
+    { label:'OK p/ carregar', valor: fmtTon(pesoOk)+' t', sub: okCarregar.length+' volumes', cor:'accent',
+      icon:'M5 13l4 4L19 7' },
+    { label:'Bloqueado', valor: fmtTon((porStatus.bloqueado&&porStatus.bloqueado.peso)||0)+' t',
+      sub: ((porStatus.bloqueado&&porStatus.bloqueado.vol)||0)+' volumes', cor:'danger',
+      icon:'M12 9v4m0 4h.01M10.3 3.86l-8.2 14.2A2 2 0 004.06 21h15.88a2 2 0 001.96-2.94l-8.2-14.2a2 2 0 00-3.4 0z' },
+    { label:'Baixado', valor: fmtTon((porStatus.baixado&&porStatus.baixado.peso)||0)+' t',
+      sub: ((porStatus.baixado&&porStatus.baixado.vol)||0)+' volumes', cor:'muted',
+      icon:'M19 13H5v-2h14v2z' }
+  ];
+  const corMap = {
+    ok:{bg:'var(--ok-dim)', fg:'var(--ok)'}, accent:{bg:'var(--accent-dim)', fg:'var(--accent)'},
+    danger:{bg:'var(--danger-dim)', fg:'var(--danger)'}, muted:{bg:'var(--surface-3)', fg:'var(--text-muted)'}
+  };
+  box.innerHTML = '<div class="dash-stats-grid">' + cards.map(c=>{
+    const cm = corMap[c.cor];
+    return `
+    <div class="stat">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="l" style="margin-top:0;">${esc(c.label)}</div>
+        <div style="width:34px;height:34px;border-radius:50%;background:${cm.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="${cm.fg}" stroke-width="2.2"><path d="${c.icon}"/></svg>
+        </div>
+      </div>
+      <div class="n" style="margin-top:10px;">${c.valor}</div>
+      <div class="l" style="margin-top:2px;">${esc(c.sub)}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderProdutosDonut(emEstoque){
+  const box = document.getElementById('dash-produtos-donut');
+  if (!box) return;
+  if (!emEstoque.length){ box.innerHTML = '<div class="card"><p class="hint" style="margin:0;">Nenhum item em estoque ainda.</p></div>'; return; }
+  const grupos = {};
+  emEstoque.forEach(v=>{
+    const label = grupoLabel(v.produtoDescricao);
+    grupos[label] = (grupos[label]||0) + (v.quantidade||0);
+  });
+  const nomes = Object.keys(grupos).sort((a,b)=>grupos[b]-grupos[a]);
+  const fatias = nomes.slice(0,5).map(n=>({ label:n, peso:grupos[n] }));
+  const resto = nomes.slice(5);
+  if (resto.length){
+    fatias.push({ label:'Outros', peso: resto.reduce((s,n)=>s+grupos[n],0) });
+  }
+  const total = fatias.reduce((s,f)=>s+f.peso,0) || 1;
+  const accent = corAccentAtual();
+  const n = fatias.length;
+  const cores = fatias.map((f,i)=>{
+    if (f.label==='Outros') return 'var(--border)';
+    const passo = n>1 ? i/(n-1) : 0;
+    const amt = -0.18 + passo*0.75; // do mais escuro (maior fatia) pro mais claro
+    return shadeHex(accent, amt);
+  });
+  const R = 60, C = 2*Math.PI*R;
+  let acumulado = 0;
+  const arcos = fatias.map((f,i)=>{
+    const frac = f.peso/total;
+    const dash = frac*C;
+    const svg = `<circle cx="80" cy="80" r="${R}" fill="none" stroke="${cores[i]}" stroke-width="22" stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${-acumulado}" />`;
+    acumulado += dash;
+    return svg;
+  }).join('');
+  box.innerHTML = `
+    <div class="card" style="display:flex;align-items:center;gap:22px;flex-wrap:wrap;">
+      <svg viewBox="0 0 160 160" width="160" height="160" style="flex-shrink:0;">
+        <g transform="rotate(-90 80 80)">${arcos}</g>
+        <circle cx="80" cy="80" r="${R-13}" fill="var(--surface)" />
+        <text x="80" y="77" text-anchor="middle" font-size="16" fill="var(--text)" font-weight="600">${fmtTon(total)}</text>
+        <text x="80" y="93" text-anchor="middle" font-size="9" fill="var(--text-muted)">toneladas</text>
+      </svg>
+      <div style="flex:1;min-width:180px;">
+        ${fatias.map((f,i)=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+              <span style="width:9px;height:9px;border-radius:50%;background:${cores[i]};flex-shrink:0;"></span>
+              <span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(f.label)}</span>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div style="font-family:var(--font-mono);font-size:12.5px;">${fmtTon(f.peso)} t</div>
+              <div class="li-desc" style="display:inline;">${(f.peso/total*100).toFixed(1)}%</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderDashRecentes(){
+  const box = document.getElementById('dash-recentes');
+  if (!box) return;
+  const tipoLabel = {conferencia:'Conferência', importacao:'Importação', estoque:'Estoque', bloqueado:'Bloqueio', transferido:'Transferência', baixado:'Baixa', exclusao:'Exclusão', troca_armazem:'Troca de armazém', entrada:'Entrada'};
+  const tipoBadge = {conferencia:'accent', importacao:'info', estoque:'ok', bloqueado:'danger', transferido:'info', baixado:'danger', exclusao:'danger', troca_armazem:'accent', entrada:'ok'};
+  const tipoIcone = {
+    conferencia:'M9 11l2 2 4-4M5 4h14v16l-7-4-7 4z',
+    importacao:'M12 4v11m0 0l-4-4m4 4l4-4M5 19h14',
+    estoque:'M20 6L9 17l-5-5',
+    entrada:'M20 6L9 17l-5-5',
+    bloqueado:'M12 9v4m0 4h.01M10.3 3.86l-8.2 14.2A2 2 0 004.06 21h15.88a2 2 0 001.96-2.94l-8.2-14.2a2 2 0 00-3.4 0z',
+    transferido:'M7 7h10M7 7l4-4M7 7l4 4M17 17H7M17 17l-4 4M17 17l-4-4',
+    baixado:'M19 13H5v-2h14v2z',
+    exclusao:'M6 6l12 12M6 18L18 6',
+    troca_armazem:'M3 7h13M3 7l3-3M3 7l3 3M21 17H8M21 17l-3-3M21 17l-3 3'
+  };
+  const itens = (state.movimentos||[]).slice(0,5);
+  if (!itens.length){ box.innerHTML = '<div class="card"><p class="hint" style="margin:0;">Nenhuma movimentação ainda.</p></div>'; return; }
+  box.innerHTML = '<div class="card" style="padding:0;">' + itens.map(m=>{
+    const cor = tipoBadge[m.tipo]||'info';
+    const corMap = { ok:{bg:'var(--ok-dim)', fg:'var(--ok)'}, accent:{bg:'var(--accent-dim)', fg:'var(--accent)'}, danger:{bg:'var(--danger-dim)', fg:'var(--danger)'}, info:{bg:'var(--info-dim)', fg:'var(--info)'} };
+    const cm = corMap[cor] || corMap.info;
+    const path = tipoIcone[m.tipo] || 'M12 8v4l3 3';
+    return `
+    <div class="list-item" style="cursor:default;">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${cm.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="${cm.fg}" stroke-width="2"><path d="${path}"/></svg>
+        </div>
+        <div style="min-width:0;">
+          <div class="li-code" style="font-size:13.5px;">${esc(m.lote || m.produtoDescricao || tipoLabel[m.tipo] || m.tipo)}</div>
+          <div class="li-desc">${fmtDate(m.timestamp)}</div>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div class="li-weight" style="font-size:13px;">${m.quantidade!=null?fmtTon(m.quantidade)+' t':''}</div>
+        <span class="badge ${cor}" style="margin-top:2px;">${esc(tipoLabel[m.tipo]||m.tipo)}</span>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderDashInsight(emEstoque, okParaCarregar){
+  const box = document.getElementById('dash-insight');
+  if (!box) return;
+  if (!emEstoque.length){ box.innerHTML = ''; return; }
+  const pesoTotal = emEstoque.reduce((s,v)=>s+(v.quantidade||0), 0);
+  const pesoOk = okParaCarregar.reduce((s,v)=>s+(v.quantidade||0), 0);
+  const pct = pesoTotal ? Math.round(pesoOk/pesoTotal*100) : 0;
+  box.innerHTML = `
+    <div class="card" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;background:linear-gradient(135deg, var(--accent-dim) 0%, var(--surface) 65%);">
+      <div>
+        <div style="font-family:var(--font-head);font-size:14.5px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Resumo do pátio</div>
+        <div style="font-size:13.5px;color:var(--text-muted);max-width:560px;">
+          ${fmtTon(pesoTotal)} t em estoque no total — ${pct}% (${fmtTon(pesoOk)} t) já liberadas pra carregar (armazém 93), o restante aguardando conferência ou análise.
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderDashboard(){
   const vols = [...state.volumes.values()];
   // distribuição física por armazém: considera todo item com status "estoque",
@@ -971,34 +1248,16 @@ function renderDashboard(){
   // a lista "Em estoque" da home mostra só o que está liberado (armazém 93 — OK para carregar).
   const okParaCarregar = emEstoque.filter(v=>String(v.armazem||'').trim()==='93');
 
-  const catBox = document.getElementById('dash-categorias');
-  if (!okParaCarregar.length){
-    catBox.innerHTML = '';
-  } else {
-    const grupos = {};
-    okParaCarregar.forEach(v=>{
-      const label = grupoLabel(v.produtoDescricao);
-      if (!grupos[label]) grupos[label] = {vol:0, peso:0};
-      grupos[label].vol += 1;
-      grupos[label].peso += (v.quantidade||0);
-    });
-    const nomes = Object.keys(grupos).sort((a,b)=>grupos[b].vol-grupos[a].vol);
-    catBox.innerHTML = '<h2 class="section-title" style="margin-top:2px;">Em estoque (OK para carregar)</h2>' +
-      '<div class="card" style="padding:0;">' + nomes.map(label=>`
-        <div class="list-item" style="cursor:default;">
-          <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
-          <div class="li-side">
-            <div class="li-weight">${fmtTon(grupos[label].peso)} t</div>
-            <div class="li-desc">${grupos[label].vol} vol.</div>
-          </div>
-        </div>`).join('') + '</div>';
-  }
-
+  renderDashHeader();
+  renderDashStats(vols);
+  renderProdutosDonut(emEstoque);
+  renderDashRecentes();
   renderArmazemBreakdown(emEstoque);
   renderConsumoInterno(emEstoque);
   renderComparativoArmazens(emEstoque);
   renderStatusBreakdown(vols);
   renderProdutosEmEstoque(emEstoque);
+  renderDashInsight(emEstoque, okParaCarregar);
 
   const empty = document.getElementById('dash-empty');
   if (state.produtos.size===0){
@@ -2170,7 +2429,7 @@ function renderInventario(){
       await db.collection('sessoes').doc(state.session.id).set(state.session);
       state.batchAction = statusInicial;
       state.batchCount = 0;
-      toast('Conferência iniciada. Vá até "Bipar" para escanear.');
+      toast('Conferência iniciada. Use o celular pra escanear os itens.');
       renderInventario();
     };
     body.querySelectorAll('.list-item[data-sess]').forEach(li=>{
@@ -2199,10 +2458,9 @@ function renderInventario(){
       ${state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:''}
       <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">Status ao bipar: <b style="color:var(--text)">${esc(state.batchAction||'—')}</b></div>
     </div>
-    <button class="btn primary" data-nav="scan">Ir para o leitor</button>
+    <p class="hint" style="margin:0 0 10px;">A leitura (bipagem) é feita pelo celular — aqui no desktop você acompanha e finaliza a conferência.</p>
     <button class="btn danger" id="inv-finish">Ver relatório e finalizar</button>
   `;
-  body.querySelector('[data-nav="scan"]').addEventListener('click', ()=>setView('scan'));
   document.getElementById('inv-finish').onclick = ()=>renderRelatorioPreview(state.session);
 }
 
