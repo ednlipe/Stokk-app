@@ -355,6 +355,8 @@ main .view.active{
       <h2 class="section-title">Status do estoque</h2>
       <div id="dash-status"></div>
 
+      <div id="dash-produtos-estoque-wrap"></div>
+
       <div id="dash-empty"></div>
     </section>
 
@@ -996,6 +998,7 @@ function renderDashboard(){
   renderConsumoInterno(emEstoque);
   renderComparativoArmazens(emEstoque);
   renderStatusBreakdown(vols);
+  renderProdutosEmEstoque(emEstoque);
 
   const empty = document.getElementById('dash-empty');
   if (state.produtos.size===0){
@@ -1124,6 +1127,29 @@ function renderStatusBreakdown(vols){
       </div>
     </div>`;
   }).join('') + '</div>';
+}
+
+/* ---------------- PRODUTOS EM ESTOQUE (todo mundo com status=estoque) ---------------- */
+function renderProdutosEmEstoque(emEstoque){
+  const box = document.getElementById('dash-produtos-estoque-wrap');
+  if (!emEstoque.length){ box.innerHTML = ''; return; }
+  const grupos = {};
+  emEstoque.forEach(v=>{
+    const label = grupoLabel(v.produtoDescricao);
+    if (!grupos[label]) grupos[label] = {vol:0, peso:0};
+    grupos[label].vol += 1;
+    grupos[label].peso += (v.quantidade||0);
+  });
+  const nomes = Object.keys(grupos).sort((a,b)=>grupos[b].peso-grupos[a].peso);
+  box.innerHTML = '<h2 class="section-title">Produtos em estoque</h2>' +
+    '<div class="card" style="padding:0;">' + nomes.map(label=>`
+      <div class="list-item" style="cursor:default;">
+        <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
+        <div class="li-side">
+          <div class="li-weight">${fmtTon(grupos[label].peso)} t</div>
+          <div class="li-desc">${grupos[label].vol} vol.</div>
+        </div>
+      </div>`).join('') + '</div>';
 }
 
 /* ================= BIPAR ================= */
@@ -2288,17 +2314,14 @@ async function registrarConferencia(){
     }
   }
   for (const v of rep.faltando){
-    // Não encontrado fisicamente na conferência: além de marcar como "não conferido",
-    // move automaticamente para o armazém "Não localizado" (pedido explícito da empresa),
-    // pra ficar visível na lista de estoque e nos totais por armazém.
-    const armazemAntigo = v.armazem || '—';
-    await db.collection('volumes').doc(v.lote).update({ statusConferencia:'nao_conferido', armazem:'NAO_LOCALIZADO', ultimaConferenciaEm: sess.finalizadoEm, ultimaConferenciaSessao: sess.id });
-    await db.collection('movimentos').doc('mov_'+uid()).set({
-      lote: v.lote, produtoCodigo: v.produtoCodigo||null, produtoDescricao: v.produtoDescricao||'',
-      tipo:'troca_armazem', quantidade: v.quantidade||null, timestamp: sess.finalizadoEm, exportado:false,
-      obs: `Não encontrado na conferência — armazém alterado de ${armazemAntigo} para Não localizado`,
-      usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
-    });
+    // Não encontrado fisicamente na conferência: só marca como "não conferido"
+    // (statusConferencia), SEM mexer no armazém real do item. Antes o app movia
+    // o item pro armazém fictício "NAO_LOCALIZADO", mas isso fazia o item sumir
+    // dos totais do armazém de verdade (ex: não aparecia mais em "Consumo interno")
+    // e inflava os gráficos por armazém com material que pode nem existir mais.
+    // O status "não conferido" já deixa isso visível na tela de Estoque, sem
+    // corromper o armazém de origem.
+    await db.collection('volumes').doc(v.lote).update({ statusConferencia:'nao_conferido', ultimaConferenciaEm: sess.finalizadoEm, ultimaConferenciaSessao: sess.id });
   }
   state.pendingReport = null;
   state.session = null;
