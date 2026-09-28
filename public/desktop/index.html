@@ -911,12 +911,34 @@ function armazemChipHTML(codigo){
    Extrai a categoria simplificada, o modelo (CA-50, CA-60, Q92...)
    e a bitola (mm) direto da descrição do produto do Protheus,
    sem precisar cadastrar nada a mais. */
-function parseCategoria(descricao){
+function parseCategoria(descricao, codigo){
+  const c = (codigo||'').toUpperCase();
   const d = (descricao||'').toUpperCase();
+
+  // bitola encodada no final do código do produto (ex: "...KB4.2", "...B8.0",
+  // "...B4.20") — usado pelas famílias abaixo, que às vezes chegam do Protheus
+  // sem uma descrição de texto útil (a descrição vem igual ao código cru).
+  const mBitolaCodigo = c.match(/(\d{1,2}[.,]\d{1,2})$/);
+  const bitolaCodigo = mBitolaCodigo ? mBitolaCodigo[1].replace('.', ',') + ' mm' : null;
+
+  // --- famílias identificadas pelo PREFIXO do código (mais confiável que a
+  //     descrição em texto, que nem sempre vem preenchida) ---
+  if (/^BOCA/.test(c)) return { categoria:'Bobina', modelo:null, bitola:bitolaCodigo };
+  if (/^FM1000/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };
+  if (/^VRCA50/.test(c)) return { categoria:'Rolo', modelo:null, bitola:bitolaCodigo };
+  const mTcol = c.match(/^TCOL(.+)B(\d{1,2}[.,]\d{1,2})$/);
+  if (mTcol) return { categoria:'Tela para Coluna', modelo: mTcol[1].toLowerCase(), bitola: mTcol[2].replace('.',',')+' mm' };
+  const mTpai = c.match(/^TPAI(E?Q\d{2,3})B(\d{1,2}[.,]\d{1,2})$/);
+  if (mTpai){
+    const tam = mTpai[1].startsWith('E') ? ' (3x2m)' : ' (6m)';
+    return { categoria:'Tela Painel', modelo: mTpai[1]+tam, bitola: mTpai[2].replace('.',',')+' mm' };
+  }
+
+  // --- resto (Barra, Rolo genérico, Tela genérica) continua pela descrição ---
   let categoria;
   if (d.includes('ROLO')) categoria = 'Rolo';
-  else if (d.includes('TELA') && d.includes('SOLDADA')) categoria = 'Tela Soldada';
-  else if (d.includes('TELA') && d.includes('COLUNA')) categoria = 'Tela Coluna';
+  else if (d.includes('TELA') && d.includes('SOLDADA')) categoria = 'Tela Painel';
+  else if (d.includes('TELA') && d.includes('COLUNA')) categoria = 'Tela para Coluna';
   else if (d.includes('TELA')) categoria = 'Tela';
   else if (d.includes('VERGALH') || /\bBARRA\b/.test(d)) categoria = 'Barra';
   else categoria = 'Outros';
@@ -929,8 +951,13 @@ function parseCategoria(descricao){
 
   return { categoria, modelo, bitola };
 }
-function grupoLabel(descricao){
-  const {categoria, modelo, bitola} = parseCategoria(descricao);
+function grupoLabel(descricao, codigo){
+  const {categoria, modelo, bitola} = parseCategoria(descricao, codigo);
+  // pras telas, o modelo (7x14, Q138 x EQ138...) é o que diferencia a peça de
+  // verdade, então mostra junto com a bitola em vez de esconder um dos dois.
+  if ((categoria==='Tela para Coluna' || categoria==='Tela Painel') && modelo && bitola){
+    return categoria + ' ' + modelo + ' · ' + bitola;
+  }
   if (bitola) return categoria + ' ' + bitola;
   if (modelo) return categoria + ' ' + modelo;
   return categoria;
@@ -1146,7 +1173,7 @@ function renderProdutosDonut(emEstoque){
   if (!emEstoque.length){ box.innerHTML = '<div class="card"><p class="hint" style="margin:0;">Nenhum item em estoque ainda.</p></div>'; return; }
   const grupos = {};
   emEstoque.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     grupos[label] = (grupos[label]||0) + (v.quantidade||0);
   });
   const nomes = Object.keys(grupos).sort((a,b)=>grupos[b]-grupos[a]);
@@ -1338,7 +1365,7 @@ function renderConsumoInterno(emEstoque){
   if (!itens.length){ box.innerHTML = '<p class="hint">Nenhum item em consumo interno no momento.</p>'; return; }
   const grupos = {};
   itens.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     if (!grupos[label]) grupos[label] = {vol:0, peso:0};
     grupos[label].vol += 1;
     grupos[label].peso += (v.quantidade||0);
@@ -1411,7 +1438,7 @@ function renderProdutosEmEstoque(emEstoque){
   if (!emEstoque.length){ box.innerHTML = ''; return; }
   const grupos = {};
   emEstoque.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     if (!grupos[label]) grupos[label] = {vol:0, peso:0};
     grupos[label].vol += 1;
     grupos[label].peso += (v.quantidade||0);
@@ -2033,7 +2060,7 @@ function renderEstoque(){
 
   const grupos = {};
   vols.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     (grupos[label] = grupos[label]||[]).push(v);
   });
   const nomesOrdenados = Object.keys(grupos).sort((a,b)=>grupos[b].length-grupos[a].length);

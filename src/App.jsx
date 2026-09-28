@@ -84,6 +84,7 @@ const APP_HTML = `
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:32px;height:32px;color:var(--accent);"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
           <div class="hint" style="margin:0;text-align:center;">Aponte o leitor Bluetooth pro código e aperte o gatilho</div>
           <input type="text" id="coletor-code" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
+          <div class="scan-aviso" id="scan-aviso-coletor"></div>
         </div>
       </div>
 
@@ -97,6 +98,7 @@ const APP_HTML = `
           </div>
           <video id="scan-video" playsinline muted style="display:none;"></video>
           <div class="scan-reticle" id="scan-reticle" style="display:none;"></div>
+          <div class="scan-aviso" id="scan-aviso-camera"></div>
         </div>
         <button class="btn primary" id="btn-capture" style="display:none;margin-bottom:4px;">📷 Capturar leitura</button>
         <p class="hint" id="capture-hint" style="display:none;">Aponte pro código de barras e toque em "Capturar leitura".</p>
@@ -516,12 +518,34 @@ function armazemChipHTML(codigo){
    Extrai a categoria simplificada, o modelo (CA-50, CA-60, Q92...)
    e a bitola (mm) direto da descrição do produto do Protheus,
    sem precisar cadastrar nada a mais. */
-function parseCategoria(descricao){
+function parseCategoria(descricao, codigo){
+  const c = (codigo||'').toUpperCase();
   const d = (descricao||'').toUpperCase();
+
+  // bitola encodada no final do código do produto (ex: "...KB4.2", "...B8.0",
+  // "...B4.20") — usado pelas famílias abaixo, que às vezes chegam do Protheus
+  // sem uma descrição de texto útil (a descrição vem igual ao código cru).
+  const mBitolaCodigo = c.match(/(\d{1,2}[.,]\d{1,2})$/);
+  const bitolaCodigo = mBitolaCodigo ? mBitolaCodigo[1].replace('.', ',') + ' mm' : null;
+
+  // --- famílias identificadas pelo PREFIXO do código (mais confiável que a
+  //     descrição em texto, que nem sempre vem preenchida) ---
+  if (/^BOCA/.test(c)) return { categoria:'Bobina', modelo:null, bitola:bitolaCodigo };
+  if (/^FM1000/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };
+  if (/^VRCA50/.test(c)) return { categoria:'Rolo', modelo:null, bitola:bitolaCodigo };
+  const mTcol = c.match(/^TCOL(.+)B(\d{1,2}[.,]\d{1,2})$/);
+  if (mTcol) return { categoria:'Tela para Coluna', modelo: mTcol[1].toLowerCase(), bitola: mTcol[2].replace('.',',')+' mm' };
+  const mTpai = c.match(/^TPAI(E?Q\d{2,3})B(\d{1,2}[.,]\d{1,2})$/);
+  if (mTpai){
+    const tam = mTpai[1].startsWith('E') ? ' (3x2m)' : ' (6m)';
+    return { categoria:'Tela Painel', modelo: mTpai[1]+tam, bitola: mTpai[2].replace('.',',')+' mm' };
+  }
+
+  // --- resto (Barra, Rolo genérico, Tela genérica) continua pela descrição ---
   let categoria;
   if (d.includes('ROLO')) categoria = 'Rolo';
-  else if (d.includes('TELA') && d.includes('SOLDADA')) categoria = 'Tela Soldada';
-  else if (d.includes('TELA') && d.includes('COLUNA')) categoria = 'Tela Coluna';
+  else if (d.includes('TELA') && d.includes('SOLDADA')) categoria = 'Tela Painel';
+  else if (d.includes('TELA') && d.includes('COLUNA')) categoria = 'Tela para Coluna';
   else if (d.includes('TELA')) categoria = 'Tela';
   else if (d.includes('VERGALH') || /\bBARRA\b/.test(d)) categoria = 'Barra';
   else categoria = 'Outros';
@@ -534,8 +558,13 @@ function parseCategoria(descricao){
 
   return { categoria, modelo, bitola };
 }
-function grupoLabel(descricao){
-  const {categoria, modelo, bitola} = parseCategoria(descricao);
+function grupoLabel(descricao, codigo){
+  const {categoria, modelo, bitola} = parseCategoria(descricao, codigo);
+  // pras telas, o modelo (7x14, Q138 x EQ138...) é o que diferencia a peça de
+  // verdade, então mostra junto com a bitola em vez de esconder um dos dois.
+  if ((categoria==='Tela para Coluna' || categoria==='Tela Painel') && modelo && bitola){
+    return categoria + ' ' + modelo + ' · ' + bitola;
+  }
   if (bitola) return categoria + ' ' + bitola;
   if (modelo) return categoria + ' ' + modelo;
   return categoria;
@@ -677,7 +706,7 @@ function renderDashboard(){
   } else {
     const grupos = {};
     okParaCarregar.forEach(v=>{
-      const label = grupoLabel(v.produtoDescricao);
+      const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
       if (!grupos[label]) grupos[label] = {vol:0, peso:0};
       grupos[label].vol += 1;
       grupos[label].peso += (v.quantidade||0);
@@ -762,7 +791,7 @@ function renderConsumoInterno(emEstoque){
   if (!itens.length){ box.innerHTML = '<p class="hint">Nenhum item em consumo interno no momento.</p>'; return; }
   const grupos = {};
   itens.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     if (!grupos[label]) grupos[label] = {vol:0, peso:0};
     grupos[label].vol += 1;
     grupos[label].peso += (v.quantidade||0);
@@ -835,7 +864,7 @@ function renderProdutosEmEstoque(emEstoque){
   if (!emEstoque.length){ box.innerHTML = ''; return; }
   const grupos = {};
   emEstoque.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     if (!grupos[label]) grupos[label] = {vol:0, peso:0};
     grupos[label].vol += 1;
     grupos[label].peso += (v.quantidade||0);
@@ -1106,11 +1135,24 @@ function pauseLoopResume(){
   });
 }
 
+// aviso grande (por cima da câmera ou do campo do coletor) confirmando na
+// hora se o item foi encontrado ou não — some sozinho depois de um tempo.
+let scanAvisoTimer = null;
+function mostrarAvisoBipagem(sucesso, texto, sub){
+  const alvo = document.getElementById(state.scanMode==='camera' ? 'scan-aviso-camera' : 'scan-aviso-coletor');
+  if (!alvo) return;
+  clearTimeout(scanAvisoTimer);
+  alvo.innerHTML = `<div class="scan-aviso-badge ${sucesso?'ok':'erro'}">${sucesso?'✓':'✕'} ${esc(texto)}${sub?`<span class="sub">${esc(sub)}</span>`:''}</div>`;
+  alvo.classList.add('show');
+  scanAvisoTimer = setTimeout(()=>{ alvo.classList.remove('show'); }, 1800);
+}
+
 async function handleScanned(rawText){
   const code = extractLoteCode(rawText);
   const vol = state.volumes.get(code);
   vibrate(vol ? 60 : [80,60,80]);
   if (vol) beepOk(); else beepErro();
+  mostrarAvisoBipagem(!!vol, vol ? 'Produto registrado' : 'Produto não encontrado', vol ? (vol.produtoDescricao||'') : code);
 
   // se a conferência já tem um escopo (produto) definido, item de outro produto é sinalizado e ignorado
   const foraDoEscopo = vol && state.session && state.session.ativo && state.session.filtroProduto && vol.produtoCodigo !== state.session.filtroProduto;
@@ -1457,7 +1499,7 @@ function renderEstoque(){
 
   const grupos = {};
   vols.forEach(v=>{
-    const label = grupoLabel(v.produtoDescricao);
+    const label = grupoLabel(v.produtoDescricao, v.produtoCodigo);
     (grupos[label] = grupos[label]||[]).push(v);
   });
   const nomesOrdenados = Object.keys(grupos).sort((a,b)=>grupos[b].length-grupos[a].length);
