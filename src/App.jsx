@@ -640,6 +640,32 @@ function encontrarProdutoPorCodigoEtiqueta(codigoEtiqueta){
    no próprio aparelho — e depois remonta a mesma string que o código de barras
    normalmente contém (Volume+Corrida+Peso+Codigo, sem separadores), pra entrar
    exatamente no mesmo fluxo de handleScanned() que já existe pra bipagem normal. */
+// reduz a foto (câmeras de celular tiram fotos enormes, 10-50 megapixels) pra um
+// tamanho bem mais leve antes de mandar pro leitor de texto — evita estourar a
+// memória do navegador (principal causa do erro "insuficiência de memória" em
+// aparelhos com menos RAM) e deixa a leitura bem mais rápida.
+function redimensionarImagemParaOCR(file){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const LADO_MAX = 1800; // suficiente pra OCR ler os campos da etiqueta
+      let { width, height } = img;
+      if (width > LADO_MAX || height > LADO_MAX){
+        const escala = LADO_MAX / Math.max(width, height);
+        width = Math.round(width * escala);
+        height = Math.round(height * escala);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Falha ao processar a imagem.')), 'image/jpeg', 0.85);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Falha ao carregar a imagem.')); };
+    img.src = url;
+  });
+}
 let tesseractLoadPromise = null;
 function carregarLeitorDeTexto(){
   if (window.Tesseract) return Promise.resolve();
@@ -976,6 +1002,10 @@ document.getElementById('manual-code').addEventListener('keydown', e=>{
 
 /* ---- Foto da etiqueta (quando não dá pra bipar o código de barras) ---- */
 document.getElementById('btn-foto-etiqueta').addEventListener('click', ()=>{
+  // se a câmera ao vivo (modo "Câmera do celular") estiver ligada, desliga antes de
+  // abrir a câmera nativa da foto — em vários aparelhos (principalmente iPhone) as
+  // duas juntas estouram a memória e dão erro de "insuficiência de memória".
+  if (state.scanning) stopScanner();
   document.getElementById('foto-etiqueta-input').click();
 });
 document.getElementById('foto-etiqueta-input').addEventListener('change', async (e)=>{
@@ -991,8 +1021,13 @@ document.getElementById('foto-etiqueta-input').addEventListener('change', async 
     return;
   }
   statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo a etiqueta da foto…</div>';
+  // as fotos da câmera do celular costumam vir enormes (10-50 megapixels) — reduzir
+  // antes de processar evita estourar a memória do navegador, além de deixar a
+  // leitura mais rápida. Se der algum problema ao reduzir, segue com a foto original.
+  let imagemParaOCR = file;
+  try{ imagemParaOCR = await redimensionarImagemParaOCR(file); }catch(e){ console.warn('Não redimensionou a foto, usando original:', e); }
   try{
-    const { data: { text } } = await window.Tesseract.recognize(file, 'eng');
+    const { data: { text } } = await window.Tesseract.recognize(imagemParaOCR, 'eng');
     statusBox.innerHTML = '';
     const campos = parseEtiquetaOCR(text);
     if (!campos){
