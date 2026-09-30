@@ -110,8 +110,7 @@ const APP_HTML = `
         <button class="btn small primary" id="btn-manual-lookup" style="flex-shrink:0;">Buscar</button>
       </div>
 
-      <button class="btn ghost" id="btn-foto-etiqueta" style="border:1px solid var(--border);margin-bottom:14px;">📷 Sem código de barras — tirar foto da etiqueta</button>
-      <input type="file" id="foto-etiqueta-input" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      <button class="btn ghost" id="btn-foto-etiqueta" style="border:1px solid var(--border);margin-bottom:14px;">📷 Sem código de barras — ler etiqueta pela câmera</button>
       <div id="foto-etiqueta-status"></div>
 
       <div id="scan-result"></div>
@@ -235,6 +234,7 @@ const state = {
   view: 'dashboard',
   scanning: false,
   scanStream: null,
+  modoCapturaEtiqueta: false, // true enquanto o operador está usando a câmera ao vivo pra ler o texto de uma etiqueta sem código de barras
   scanLoopId: null,
   lastDetectAt: 0,
   session: null,        // {id, iniciadoEm, ativo, contados:[lote,...], filtroProduto (auto-detectado no 1º bipe), esperadosSnapshot}
@@ -1000,18 +1000,35 @@ document.getElementById('manual-code').addEventListener('keydown', e=>{
   if (e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
 });
 
-/* ---- Foto da etiqueta (quando não dá pra bipar o código de barras) ---- */
+/* ---- Ler etiqueta pela câmera (quando não dá pra bipar o código de barras) ----
+   Em vez de acionar a câmera NATIVA do aparelho (que em vários celulares, principalmente
+   iPhone, estoura a memória se a câmera ao vivo do app já estiver aberta ao mesmo tempo),
+   reaproveitamos a MESMA câmera ao vivo já usada pra ler código de barras: liga ela (se
+   ainda não estiver ligada), o operador aponta pra etiqueta e aperta "Capturar etiqueta" —
+   o app pega o quadro atual do vídeo (já em memória, sem chamar o app de câmera do sistema)
+   e lê o texto dali. */
 document.getElementById('btn-foto-etiqueta').addEventListener('click', ()=>{
-  // se a câmera ao vivo (modo "Câmera do celular") estiver ligada, desliga antes de
-  // abrir a câmera nativa da foto — em vários aparelhos (principalmente iPhone) as
-  // duas juntas estouram a memória e dão erro de "insuficiência de memória".
-  if (state.scanning) stopScanner();
-  document.getElementById('foto-etiqueta-input').click();
+  ativarModoCapturaEtiqueta();
 });
-document.getElementById('foto-etiqueta-input').addEventListener('change', async (e)=>{
-  const file = e.target.files && e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
+function ativarModoCapturaEtiqueta(){
+  state.modoCapturaEtiqueta = true;
+  document.getElementById('foto-etiqueta-status').innerHTML = '';
+  document.getElementById('btn-capture').textContent = '📷 Capturar etiqueta';
+  document.getElementById('capture-hint').textContent = 'Enquadre bem os campos "Codigo", "Volume", "Corrida" e "Peso" da etiqueta e toque em "Capturar etiqueta".';
+  if (state.scanMode !== 'camera') setScanMode('camera');
+  if (!state.scanning) startScanner();
+}
+function desativarModoCapturaEtiqueta(){
+  state.modoCapturaEtiqueta = false;
+  document.getElementById('btn-capture').textContent = '📷 Capturar leitura';
+  document.getElementById('capture-hint').textContent = 'Aponte pro código de barras e toque em "Capturar leitura".';
+}
+async function capturarEtiquetaDoVideo(){
+  const video = document.getElementById('scan-video');
+  if (!video.videoWidth || !video.videoHeight){
+    toast('Câmera ainda carregando, aguarde um instante e tente de novo.');
+    return;
+  }
   const statusBox = document.getElementById('foto-etiqueta-status');
   statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Carregando leitor de texto…</div>';
   try{
@@ -1020,33 +1037,36 @@ document.getElementById('foto-etiqueta-input').addEventListener('change', async 
     statusBox.innerHTML = '<div class="card left-danger">Não consegui carregar o leitor de texto (confira a internet) e tente de novo, ou cadastre manualmente.</div>';
     return;
   }
-  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo a etiqueta da foto…</div>';
-  // as fotos da câmera do celular costumam vir enormes (10-50 megapixels) — reduzir
-  // antes de processar evita estourar a memória do navegador, além de deixar a
-  // leitura mais rápida. Se der algum problema ao reduzir, segue com a foto original.
-  let imagemParaOCR = file;
-  try{ imagemParaOCR = await redimensionarImagemParaOCR(file); }catch(e){ console.warn('Não redimensionou a foto, usando original:', e); }
+  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo a etiqueta…</div>';
   try{
+    // pega o quadro INTEIRO da câmera (a etiqueta toda, não só a faixa central
+    // usada pra procurar código de barras) e reduz antes de ler — mais leve e rápido.
+    const quadro = recortarQuadro(video, 0, 0, video.videoWidth, video.videoHeight);
+    const blob = await new Promise(resolve => quadro.toBlob(resolve, 'image/jpeg', 0.92));
+    let imagemParaOCR = blob;
+    try{ imagemParaOCR = await redimensionarImagemParaOCR(blob); }catch(e){ console.warn('Não redimensionou o quadro, usando original:', e); }
     const { data: { text } } = await window.Tesseract.recognize(imagemParaOCR, 'eng');
     statusBox.innerHTML = '';
     const campos = parseEtiquetaOCR(text);
+    desativarModoCapturaEtiqueta();
     if (!campos){
       openSheet(`
         <h2 class="section-title" style="margin-top:0;color:var(--danger);">Não consegui ler a etiqueta</h2>
-        <p class="hint" style="margin:0 0 14px;">Tire a foto de novo com mais luz e bem de frente pros campos "Codigo", "Volume", "Corrida" e "Peso" — ou cadastre manualmente.</p>
+        <p class="hint" style="margin:0 0 14px;">Aproxime mais a câmera, garanta boa luz e enquadre bem os campos "Codigo", "Volume", "Corrida" e "Peso" — ou cadastre manualmente.</p>
         <button class="btn primary" id="foto-etiqueta-tentar-de-novo">Tentar de novo</button>
         <button class="btn ghost" id="foto-etiqueta-cad-manual" style="border:1px solid var(--border);">Cadastrar manualmente</button>
       `);
-      document.getElementById('foto-etiqueta-tentar-de-novo').onclick = ()=>{ closeSheet(); document.getElementById('foto-etiqueta-input').click(); };
+      document.getElementById('foto-etiqueta-tentar-de-novo').onclick = ()=>{ closeSheet(); ativarModoCapturaEtiqueta(); };
       document.getElementById('foto-etiqueta-cad-manual').onclick = ()=>{ closeSheet(); openCadastroManual(''); };
       return;
     }
     handleScanned(reconstruirCodigoEtiquetaOCR(campos));
   }catch(err){
     console.error(err);
-    statusBox.innerHTML = '<div class="card left-danger">Erro ao ler a foto. Tente de novo.</div>';
+    desativarModoCapturaEtiqueta();
+    statusBox.innerHTML = '<div class="card left-danger">Erro ao ler a etiqueta. Tente de novo.</div>';
   }
-});
+}
 
 /* ---- Modo de leitura: Coletor Bluetooth x Câmera ----
    O leitor Bluetooth funciona no modo "teclado" (HID): ele só digita o
@@ -1062,7 +1082,10 @@ function setScanMode(mode){
   });
   document.getElementById('scan-coletor-box').style.display = (mode==='coletor') ? 'block' : 'none';
   document.getElementById('scan-camera-box').style.display = (mode==='camera') ? 'block' : 'none';
-  if (mode!=='camera' && state.scanning) stopScanner();
+  if (mode!=='camera'){
+    if (state.scanning) stopScanner();
+    if (state.modoCapturaEtiqueta) desativarModoCapturaEtiqueta();
+  }
   focusScanInput();
 }
 function focusScanInput(){
@@ -1172,6 +1195,7 @@ function resetScanOff(){
 }
 function stopScanner(){
   state.scanning = false;
+  if (state.modoCapturaEtiqueta) desativarModoCapturaEtiqueta();
   if (state.scanLoopId) cancelAnimationFrame(state.scanLoopId);
   if (state.scanStream) state.scanStream.getTracks().forEach(t=>t.stop());
   state.scanStream = null;
@@ -1214,7 +1238,9 @@ function recortarQuadro(video, x, y, w, h){
   return canvas;
 }
 document.getElementById('btn-capture').addEventListener('click', async ()=>{
-  if (!state.detector || !state.scanStream){ toast('Câmera não está ativa.'); return; }
+  if (!state.scanStream){ toast('Câmera não está ativa.'); return; }
+  if (state.modoCapturaEtiqueta){ await capturarEtiquetaDoVideo(); return; }
+  if (!state.detector){ toast('Câmera não está ativa.'); return; }
   const video = document.getElementById('scan-video');
   if (!video.videoWidth || !video.videoHeight){
     toast('Câmera ainda carregando, aguarde um instante e tente de novo.');
