@@ -110,6 +110,10 @@ const APP_HTML = `
         <button class="btn small primary" id="btn-manual-lookup" style="flex-shrink:0;">Buscar</button>
       </div>
 
+      <button class="btn ghost" id="btn-foto-etiqueta" style="border:1px solid var(--border);margin-bottom:14px;">📷 Sem código de barras — tirar foto da etiqueta</button>
+      <input type="file" id="foto-etiqueta-input" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      <div id="foto-etiqueta-status"></div>
+
       <div id="scan-result"></div>
 
       <div id="conf-progress"></div>
@@ -234,6 +238,8 @@ const state = {
   scanLoopId: null,
   lastDetectAt: 0,
   session: null,        // {id, iniciadoEm, ativo, contados:[lote,...], filtroProduto (auto-detectado no 1º bipe), esperadosSnapshot}
+  relatorioAberto: null, // sessão cujo relatório está aberto na tela agora — evita que um refetch em segundo
+                         // plano (ex: depois de uma baixa em massa) jogue a tela de volta pra lista de conferências
   estoqueStatusFiltro: new Set(),   // vazio = "todos"; pode ter vários status marcados ao mesmo tempo
   estoqueArmazemFiltro: new Set(),  // vazio = "todos"; pode ter vários armazéns marcados ao mesmo tempo
   histTipoFilter: 'todos',
@@ -627,6 +633,60 @@ function encontrarProdutoPorCodigoEtiqueta(codigoEtiqueta){
   return prefixMatches.length===1 ? prefixMatches[0] : null;
 }
 
+/* ---------------- LEITURA DA ETIQUETA POR FOTO (quando não tem código de
+   barras legível, ex: só tem o código lateral e ele não bipa direito) ----------------
+   Em vez de decodificar um código de barras, lê o TEXTO impresso na etiqueta
+   (Codigo / Volume / Corrida / Peso) usando reconhecimento de texto (OCR) rodando
+   no próprio aparelho — e depois remonta a mesma string que o código de barras
+   normalmente contém (Volume+Corrida+Peso+Codigo, sem separadores), pra entrar
+   exatamente no mesmo fluxo de handleScanned() que já existe pra bipagem normal. */
+let tesseractLoadPromise = null;
+function carregarLeitorDeTexto(){
+  if (window.Tesseract) return Promise.resolve();
+  if (tesseractLoadPromise) return tesseractLoadPromise;
+  tesseractLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>{ tesseractLoadPromise = null; reject(new Error('Falha ao carregar o leitor de texto.')); };
+    document.head.appendChild(s);
+  });
+  return tesseractLoadPromise;
+}
+// pega o token alfanumérico logo depois de um rótulo impresso na etiqueta
+// (ex: "Volume   PCI00125" -> "PCI00125"), tolerando os separadores/erros
+// comuns de OCR entre o rótulo e o valor.
+function campoAposLabelEtiqueta(texto, label, maxLen){
+  const re = new RegExp(label + '[\\s:.\\-]{0,6}([A-Z0-9.\\-]{2,' + maxLen + '})', 'i');
+  const m = texto.match(re);
+  return m ? m[1] : null;
+}
+function parseEtiquetaOCR(textoOCR){
+  const t = String(textoOCR||'').toUpperCase().replace(/[|]/g,'');
+  const codigoBruto = campoAposLabelEtiqueta(t, 'C[OÓ0]DIGO', 20);
+  const volumeBruto = campoAposLabelEtiqueta(t, 'VOLUME', 15);
+  const corridaBruta = campoAposLabelEtiqueta(t, 'CORRIDA', 12);
+  const pesoBruto = campoAposLabelEtiqueta(t, 'PESO', 10);
+  if (!codigoBruto || !volumeBruto || !corridaBruta || !pesoBruto) return null;
+  const limpar = s => s.replace(/[^A-Z0-9]/g,'');
+  const codigoProduto = codigoBruto.replace(/[^A-Z0-9.]/g,'');
+  const volume = limpar(volumeBruto);
+  const corrida = limpar(corridaBruta);
+  const pesoKg = parseFloat(pesoBruto.replace(/[^0-9.,]/g,'').replace(',','.'));
+  if (!codigoProduto || !volume || !corrida || !pesoKg) return null;
+  return { codigoProduto, volume, corrida, pesoKg };
+}
+// remonta a mesma string "crua" que o código de barras da etiqueta contém
+// (Volume 8 + Corrida 6 + Peso 4 dígitos + Código do produto), pra reaproveitar
+// 100% do fluxo de bipagem/cadastro que já existe pra leitura por código de barras.
+function reconstruirCodigoEtiquetaOCR(campos){
+  const volume = campos.volume.padEnd(8,'0').slice(0,8);
+  const corrida = campos.corrida.padEnd(6,'0').slice(0,6);
+  const pesoStr = String(Math.round(campos.pesoKg)).padStart(4,'0').slice(-4);
+  const codigoSemSufixo = campos.codigoProduto.includes('.') ? campos.codigoProduto.split('.')[0] : campos.codigoProduto;
+  return volume + corrida + pesoStr + codigoSemSufixo;
+}
+
 /* ---------------- CLAUDE CAPABILITIES ---------------- */
 
 
@@ -681,7 +741,7 @@ function renderView(name){
   if (name==='dashboard') renderDashboard();
   else if (name==='scan') renderConfProgress();
   else if (name==='estoque') renderEstoque();
-  else if (name==='inventario') renderInventario();
+  else if (name==='inventario') { state.relatorioAberto ? renderRelatorioRegistrado(state.relatorioAberto) : renderInventario(); }
   else if (name==='historico') renderHistorico();
 }
 
@@ -912,6 +972,45 @@ document.getElementById('btn-manual-lookup').addEventListener('click', ()=>{
 });
 document.getElementById('manual-code').addEventListener('keydown', e=>{
   if (e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
+});
+
+/* ---- Foto da etiqueta (quando não dá pra bipar o código de barras) ---- */
+document.getElementById('btn-foto-etiqueta').addEventListener('click', ()=>{
+  document.getElementById('foto-etiqueta-input').click();
+});
+document.getElementById('foto-etiqueta-input').addEventListener('change', async (e)=>{
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const statusBox = document.getElementById('foto-etiqueta-status');
+  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Carregando leitor de texto…</div>';
+  try{
+    await carregarLeitorDeTexto();
+  }catch(err){
+    statusBox.innerHTML = '<div class="card left-danger">Não consegui carregar o leitor de texto (confira a internet) e tente de novo, ou cadastre manualmente.</div>';
+    return;
+  }
+  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo a etiqueta da foto…</div>';
+  try{
+    const { data: { text } } = await window.Tesseract.recognize(file, 'eng');
+    statusBox.innerHTML = '';
+    const campos = parseEtiquetaOCR(text);
+    if (!campos){
+      openSheet(`
+        <h2 class="section-title" style="margin-top:0;color:var(--danger);">Não consegui ler a etiqueta</h2>
+        <p class="hint" style="margin:0 0 14px;">Tire a foto de novo com mais luz e bem de frente pros campos "Codigo", "Volume", "Corrida" e "Peso" — ou cadastre manualmente.</p>
+        <button class="btn primary" id="foto-etiqueta-tentar-de-novo">Tentar de novo</button>
+        <button class="btn ghost" id="foto-etiqueta-cad-manual" style="border:1px solid var(--border);">Cadastrar manualmente</button>
+      `);
+      document.getElementById('foto-etiqueta-tentar-de-novo').onclick = ()=>{ closeSheet(); document.getElementById('foto-etiqueta-input').click(); };
+      document.getElementById('foto-etiqueta-cad-manual').onclick = ()=>{ closeSheet(); openCadastroManual(''); };
+      return;
+    }
+    handleScanned(reconstruirCodigoEtiquetaOCR(campos));
+  }catch(err){
+    console.error(err);
+    statusBox.innerHTML = '<div class="card left-danger">Erro ao ler a foto. Tente de novo.</div>';
+  }
 });
 
 /* ---- Modo de leitura: Coletor Bluetooth x Câmera ----
@@ -1981,21 +2080,38 @@ function resolverResultadoParaGrupos(sess){
   return null; // formato bem antigo, só números
 }
 
+// quantos dias faz desde a última vez que esse item foi visto (bipado numa
+// conferência) — usado no grupo "Não localizado" pra ajudar a decidir se o
+// material provavelmente já foi consumido/carregado.
+function diasSemVer(v){
+  const ref = v.ultimaConferenciaEm || v.atualizadoEm || v.criadoEm;
+  if (!ref) return null;
+  const dias = Math.floor((Date.now() - new Date(ref).getTime()) / 86400000);
+  return dias>=0 ? dias : null;
+}
 function renderGruposHTML(grupos, keyPrefix){
   return Object.entries(grupos).filter(([,items])=>items.length).map(([label, items])=>{
     const key = keyPrefix+'::'+label;
     const aberto = state.confExpandido.has(key);
     const peso = items.reduce((s,v)=>s+(v.quantidade||0),0);
+    const ehNaoLocalizado = label==='Não localizado';
     return `<div class="card" style="padding:0;margin-top:10px;">
       <div class="list-item grupo-conf-toggle" data-key="${esc(key)}" style="cursor:pointer;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div></div>
         <div class="li-side"><div class="li-weight">${fmtTon(peso)} t</div><div class="li-desc">${items.length} vol.</div></div>
       </div>
-      ${aberto ? items.map(v=>`
+      ${aberto ? items.map(v=>{
+        const dias = ehNaoLocalizado ? diasSemVer(v) : null;
+        const jaResolvido = ehNaoLocalizado && v.status && v.status!=='estoque' ? statusInfo(v.status) : null;
+        return `
         <div class="list-item" style="border-top:1px solid var(--border);padding-left:14px;cursor:default;">
-          <div class="li-main"><div class="li-code">${esc(v.lote)}</div><div class="li-desc">${esc(v.produtoDescricao||v.produtoCodigo||(v.semCadastro?'Sem cadastro no sistema':''))}</div></div>
-          <div class="li-side"><div class="li-weight">${v.quantidade!=null?fmtTon(v.quantidade)+' t':'—'}</div></div>
-        </div>`).join('') : ''}
+          <div class="li-main"><div class="li-code">${esc(v.lote)}</div><div class="li-desc">${esc(v.produtoDescricao||v.produtoCodigo||(v.semCadastro?'Sem cadastro no sistema':''))}${dias!=null?` · não visto há ${dias} dia${dias===1?'':'s'}`:''}</div></div>
+          <div class="li-side">
+            <div class="li-weight">${v.quantidade!=null?fmtTon(v.quantidade)+' t':'—'}</div>
+            ${jaResolvido?`<span class="badge ${jaResolvido.badge}">${esc(jaResolvido.label)}</span>`:''}
+          </div>
+        </div>`;
+      }).join('') : ''}
     </div>`;
   }).join('');
 }
@@ -2066,7 +2182,7 @@ async function registrarConferencia(){
     await db.collection('volumes').doc(v.lote).update({ statusConferencia:'nao_conferido', ultimaConferenciaEm: sess.finalizadoEm, ultimaConferenciaSessao: sess.id });
   }
   state.pendingReport = null;
-  state.session = null;
+  state.session = null; state.relatorioAberto = null;
   toast('Conferência registrada.');
   renderRelatorioRegistrado(sess);
 }
@@ -2074,6 +2190,7 @@ async function registrarConferencia(){
 function countOf(v){ return typeof v==='number' ? v : (Array.isArray(v)?v.length:0); }
 
 function renderRelatorioRegistrado(sess){
+  state.relatorioAberto = sess;
   const resolvido = resolverResultadoParaGrupos(sess);
   if (!resolvido){
     // conferência bem antiga — só temos os números, não a lista de itens
@@ -2088,7 +2205,7 @@ function renderRelatorioRegistrado(sess){
       <div class="card left-info"><b>${countOf(sess.resultado.naoCadastrados)}</b> não cadastrados</div>
       <button class="btn ghost" id="inv-new" style="border:1px solid var(--border);">Voltar</button>
     `;
-    document.getElementById('inv-new').onclick = ()=>{ state.session = null; renderInventario(); };
+    document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; renderInventario(); };
     return;
   }
   const grupos = Object.assign({}, resolvido.porStatus, {
@@ -2104,12 +2221,17 @@ function renderRelatorioRegistrado(sess){
       rows.push({situacao:label, lote:v.lote, produto:v.produtoDescricao||'', armazem:v.armazem||'', peso:v.quantidade});
     });
   }
+  // itens "Não localizado" que ainda estão como "estoque" no sistema — ou
+  // seja, ninguém resolveu ainda (nem deu baixa, nem bloqueou, nem transferiu).
+  // É neles que a baixa em massa abaixo age.
+  const pendentesBaixa = resolvido.faltando.filter(v=>v.status==='estoque');
   document.getElementById('inventario-body').innerHTML = `
     <div class="card left-accent">
       <div>Conferência de ${fmtDate(sess.finalizadoEm||sess.iniciadoEm)}</div>
       ${sess.filtroProduto?`<div class="badge accent" style="margin-top:6px;">Escopo: ${esc(tipoProdutoLabel(sess.filtroProduto))}</div>`:''}
     </div>
     <div id="conf-grupos">${renderGruposHTML(grupos, 'reg_'+sess.id)}</div>
+    ${pendentesBaixa.length ? `<button class="btn danger" id="inv-baixar-naolocalizados" data-role="supervisor" style="margin-top:14px;">Dar baixa nos ${pendentesBaixa.length} não localizado(s)</button>` : ''}
     <button class="btn primary" id="inv-export" style="margin-top:14px;">Exportar relatório (Excel)</button>
     <button class="btn ghost" id="inv-new" style="border:1px solid var(--border);margin-top:6px;">Voltar</button>
     <button class="btn danger" id="inv-del" data-role="supervisor" style="margin-top:6px;">Excluir esta conferência</button>
@@ -2123,9 +2245,36 @@ function renderRelatorioRegistrado(sess){
     const nomeArquivo = 'relatorio_inventario_' + slugify(sess.filtroProduto ? nomeProduto : 'todos-os-produtos') + '.xlsx';
     exportXlsx(rows, nomeArquivo, ['situacao','lote','produto','armazem','peso'], titulo);
   };
-  document.getElementById('inv-new').onclick = ()=>{ state.session = null; renderInventario(); };
+  document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; renderInventario(); };
   const delBtn = document.getElementById('inv-del');
   if (delBtn) delBtn.onclick = ()=>confirmarExclusaoConferencia(sess);
+  const baixarBtn = document.getElementById('inv-baixar-naolocalizados');
+  if (baixarBtn) baixarBtn.onclick = ()=>{
+    const pesoTotal = pendentesBaixa.reduce((s,v)=>s+(v.quantidade||0),0);
+    openSheet(`
+      <h2 class="section-title" style="margin-top:0;color:var(--danger);">Dar baixa em ${pendentesBaixa.length} item(ns)?</h2>
+      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtTon(pesoTotal)} t no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
+      <button class="btn danger" id="conf-baixa-sim">Confirmar baixa</button>
+      <button class="btn ghost" id="conf-baixa-nao" style="border:1px solid var(--border);">Cancelar</button>
+    `);
+    document.getElementById('conf-baixa-nao').onclick = closeSheet;
+    document.getElementById('conf-baixa-sim').onclick = async ()=>{
+      closeSheet();
+      const agora = new Date().toISOString();
+      const dataConf = fmtDate(sess.finalizadoEm||sess.iniciadoEm);
+      for (const v of pendentesBaixa){
+        await db.collection('volumes').doc(v.lote).update({ status:'baixado', atualizadoEm: agora });
+        await db.collection('movimentos').doc('mov_'+uid()).set({
+          lote:v.lote, produtoCodigo:v.produtoCodigo||null, produtoDescricao:v.produtoDescricao||'',
+          tipo:'baixado', quantidade:v.quantidade||null, timestamp: agora, exportado:false,
+          obs:`Baixa automática — não localizado na conferência de ${dataConf}`,
+          usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
+        });
+      }
+      toast(`${pendentesBaixa.length} item(ns) marcado(s) como baixado.`);
+      renderRelatorioRegistrado(sess);
+    };
+  };
 }
 
 function confirmarExclusaoConferencia(sess){
@@ -2140,7 +2289,7 @@ function confirmarExclusaoConferencia(sess){
     closeSheet();
     await db.collection('sessoes').doc(sess.id).delete();
     toast('Conferência excluída.');
-    state.session = null;
+    state.session = null; state.relatorioAberto = null;
     renderInventario();
   };
 }
