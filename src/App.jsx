@@ -101,17 +101,15 @@ const APP_HTML = `
           <div class="scan-aviso" id="scan-aviso-camera"></div>
         </div>
         <button class="btn primary" id="btn-capture" style="display:none;margin-bottom:4px;">📷 Capturar leitura</button>
-        <p class="hint" id="capture-hint" style="display:none;">Aponte pro código de barras e toque em "Capturar leitura".</p>
+        <p class="hint" id="capture-hint" style="display:none;">Aponte pro código de barras (ou pra etiqueta impressa, se não tiver código) e toque em "Capturar leitura".</p>
       </div>
+      <div id="foto-etiqueta-status"></div>
 
       <label class="field-label">Ou digite o código manualmente</label>
       <div class="btn-row" style="margin-bottom:14px;">
         <input type="text" id="manual-code" placeholder="Ex: EJF00374" style="margin-bottom:0;">
         <button class="btn small primary" id="btn-manual-lookup" style="flex-shrink:0;">Buscar</button>
       </div>
-
-      <button class="btn ghost" id="btn-foto-etiqueta" style="border:1px solid var(--border);margin-bottom:14px;">📷 Sem código de barras — ler etiqueta pela câmera</button>
-      <div id="foto-etiqueta-status"></div>
 
       <div id="scan-result"></div>
 
@@ -234,7 +232,6 @@ const state = {
   view: 'dashboard',
   scanning: false,
   scanStream: null,
-  modoCapturaEtiqueta: false, // true enquanto o operador está usando a câmera ao vivo pra ler o texto de uma etiqueta sem código de barras
   scanLoopId: null,
   lastDetectAt: 0,
   session: null,        // {id, iniciadoEm, ativo, contados:[lote,...], filtroProduto (auto-detectado no 1º bipe), esperadosSnapshot}
@@ -1000,44 +997,27 @@ document.getElementById('manual-code').addEventListener('keydown', e=>{
   if (e.key==='Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
 });
 
-/* ---- Ler etiqueta pela câmera (quando não dá pra bipar o código de barras) ----
-   Em vez de acionar a câmera NATIVA do aparelho (que em vários celulares, principalmente
-   iPhone, estoura a memória se a câmera ao vivo do app já estiver aberta ao mesmo tempo),
-   reaproveitamos a MESMA câmera ao vivo já usada pra ler código de barras: liga ela (se
-   ainda não estiver ligada), o operador aponta pra etiqueta e aperta "Capturar etiqueta" —
-   o app pega o quadro atual do vídeo (já em memória, sem chamar o app de câmera do sistema)
-   e lê o texto dali. */
-document.getElementById('btn-foto-etiqueta').addEventListener('click', ()=>{
-  ativarModoCapturaEtiqueta();
-});
-function ativarModoCapturaEtiqueta(){
-  state.modoCapturaEtiqueta = true;
-  document.getElementById('foto-etiqueta-status').innerHTML = '';
-  document.getElementById('btn-capture').textContent = '📷 Capturar etiqueta';
-  document.getElementById('capture-hint').textContent = 'Enquadre bem os campos "Codigo", "Volume", "Corrida" e "Peso" da etiqueta e toque em "Capturar etiqueta".';
-  if (state.scanMode !== 'camera') setScanMode('camera');
-  if (!state.scanning) startScanner();
-}
-function desativarModoCapturaEtiqueta(){
-  state.modoCapturaEtiqueta = false;
-  document.getElementById('btn-capture').textContent = '📷 Capturar leitura';
-  document.getElementById('capture-hint').textContent = 'Aponte pro código de barras e toque em "Capturar leitura".';
-}
-async function capturarEtiquetaDoVideo(){
-  const video = document.getElementById('scan-video');
-  if (!video.videoWidth || !video.videoHeight){
-    toast('Câmera ainda carregando, aguarde um instante e tente de novo.');
-    return;
-  }
+/* ---- Leitura de texto da etiqueta (fallback automático quando não acha código de
+   barras) ---- Reaproveita a MESMA câmera ao vivo já usada pra ler código de barras —
+   nunca aciona a câmera nativa do aparelho (que, em vários celulares, principalmente
+   iPhone, estoura a memória se usada junto com a câmera ao vivo do app). Quando o
+   operador aperta "Capturar leitura" e nenhum código de barras é encontrado no quadro,
+   o app tenta ler o TEXTO impresso (Codigo/Volume/Corrida/Peso) — útil pra etiquetas
+   como a lateral, que não têm código de barras embaixo. Como a leitura de texto é mais
+   sujeita a erro que um código de barras (dígitos ambíguos em etiquetas térmicas
+   desgastadas, tipo "0" parecendo "C"), sempre mostra os campos lidos numa tela de
+   confirmação EDITÁVEL antes de seguir — o operador confere com a etiqueta física e
+   corrige se precisar, ao invés do app assumir a leitura automaticamente. */
+async function tentarLerTextoEtiqueta(video){
   const statusBox = document.getElementById('foto-etiqueta-status');
-  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Carregando leitor de texto…</div>';
+  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Nenhum código de barras — tentando ler o texto da etiqueta…</div>';
   try{
     await carregarLeitorDeTexto();
   }catch(err){
-    statusBox.innerHTML = '<div class="card left-danger">Não consegui carregar o leitor de texto (confira a internet) e tente de novo, ou cadastre manualmente.</div>';
+    statusBox.innerHTML = '<div class="card left-danger">Nenhum código de barras encontrado, e não consegui carregar o leitor de texto (confira a internet). Centralize a etiqueta e tente de novo, ou cadastre manualmente.</div>';
     return;
   }
-  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo a etiqueta…</div>';
+  statusBox.innerHTML = '<div class="card"><span class="spinner"></span> Lendo o texto da etiqueta…</div>';
   try{
     // pega o quadro INTEIRO da câmera (a etiqueta toda, não só a faixa central
     // usada pra procurar código de barras) e reduz antes de ler — mais leve e rápido.
@@ -1048,24 +1028,44 @@ async function capturarEtiquetaDoVideo(){
     const { data: { text } } = await window.Tesseract.recognize(imagemParaOCR, 'eng');
     statusBox.innerHTML = '';
     const campos = parseEtiquetaOCR(text);
-    desativarModoCapturaEtiqueta();
     if (!campos){
-      openSheet(`
-        <h2 class="section-title" style="margin-top:0;color:var(--danger);">Não consegui ler a etiqueta</h2>
-        <p class="hint" style="margin:0 0 14px;">Aproxime mais a câmera, garanta boa luz e enquadre bem os campos "Codigo", "Volume", "Corrida" e "Peso" — ou cadastre manualmente.</p>
-        <button class="btn primary" id="foto-etiqueta-tentar-de-novo">Tentar de novo</button>
-        <button class="btn ghost" id="foto-etiqueta-cad-manual" style="border:1px solid var(--border);">Cadastrar manualmente</button>
-      `);
-      document.getElementById('foto-etiqueta-tentar-de-novo').onclick = ()=>{ closeSheet(); ativarModoCapturaEtiqueta(); };
-      document.getElementById('foto-etiqueta-cad-manual').onclick = ()=>{ closeSheet(); openCadastroManual(''); };
+      toast('Nenhum código de barras nem texto de etiqueta reconhecido. Centralize melhor e tente de novo.');
       return;
     }
-    handleScanned(reconstruirCodigoEtiquetaOCR(campos));
+    abrirConfirmacaoEtiquetaLida(campos);
   }catch(err){
     console.error(err);
-    desativarModoCapturaEtiqueta();
     statusBox.innerHTML = '<div class="card left-danger">Erro ao ler a etiqueta. Tente de novo.</div>';
   }
+}
+function abrirConfirmacaoEtiquetaLida(campos){
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">Confira os dados lidos</h2>
+    <p class="hint" style="margin:0 0 14px;">Não achei código de barras — li o texto da etiqueta. Confira com a etiqueta física antes de continuar (esses campos às vezes saem ambíguos numa impressão desgastada).</p>
+    <label class="field-label">Volume</label>
+    <input type="text" id="etq-volume" value="${esc(campos.volume)}" style="margin-bottom:12px;text-transform:uppercase;">
+    <label class="field-label">Corrida</label>
+    <input type="text" id="etq-corrida" value="${esc(campos.corrida)}" style="margin-bottom:12px;text-transform:uppercase;">
+    <label class="field-label">Código do produto</label>
+    <input type="text" id="etq-codigo" value="${esc(campos.codigoProduto)}" style="margin-bottom:12px;text-transform:uppercase;">
+    <label class="field-label">Peso (kg)</label>
+    <input type="number" id="etq-peso" value="${campos.pesoKg}" style="margin-bottom:14px;">
+    <button class="btn primary" id="etq-confirmar">Confirmar e continuar</button>
+    <button class="btn ghost" id="etq-cancelar" style="border:1px solid var(--border);">Cancelar</button>
+  `);
+  setTimeout(()=>{ const v = document.getElementById('etq-volume'); if (v){ v.focus(); v.select(); } }, 50);
+  document.getElementById('etq-cancelar').onclick = closeSheet;
+  document.getElementById('etq-confirmar').onclick = ()=>{
+    const editado = {
+      volume: document.getElementById('etq-volume').value.trim().toUpperCase(),
+      corrida: document.getElementById('etq-corrida').value.trim().toUpperCase(),
+      codigoProduto: document.getElementById('etq-codigo').value.trim().toUpperCase(),
+      pesoKg: parseFloat(document.getElementById('etq-peso').value) || 0
+    };
+    if (!editado.volume){ toast('Preencha ao menos o Volume.'); return; }
+    closeSheet();
+    handleScanned(reconstruirCodigoEtiquetaOCR(editado));
+  };
 }
 
 /* ---- Modo de leitura: Coletor Bluetooth x Câmera ----
@@ -1082,10 +1082,7 @@ function setScanMode(mode){
   });
   document.getElementById('scan-coletor-box').style.display = (mode==='coletor') ? 'block' : 'none';
   document.getElementById('scan-camera-box').style.display = (mode==='camera') ? 'block' : 'none';
-  if (mode!=='camera'){
-    if (state.scanning) stopScanner();
-    if (state.modoCapturaEtiqueta) desativarModoCapturaEtiqueta();
-  }
+  if (mode!=='camera' && state.scanning) stopScanner();
   focusScanInput();
 }
 function focusScanInput(){
@@ -1195,7 +1192,6 @@ function resetScanOff(){
 }
 function stopScanner(){
   state.scanning = false;
-  if (state.modoCapturaEtiqueta) desativarModoCapturaEtiqueta();
   if (state.scanLoopId) cancelAnimationFrame(state.scanLoopId);
   if (state.scanStream) state.scanStream.getTracks().forEach(t=>t.stop());
   state.scanStream = null;
@@ -1238,14 +1234,13 @@ function recortarQuadro(video, x, y, w, h){
   return canvas;
 }
 document.getElementById('btn-capture').addEventListener('click', async ()=>{
-  if (!state.scanStream){ toast('Câmera não está ativa.'); return; }
-  if (state.modoCapturaEtiqueta){ await capturarEtiquetaDoVideo(); return; }
-  if (!state.detector){ toast('Câmera não está ativa.'); return; }
+  if (!state.scanStream || !state.detector){ toast('Câmera não está ativa.'); return; }
   const video = document.getElementById('scan-video');
   if (!video.videoWidth || !video.videoHeight){
     toast('Câmera ainda carregando, aguarde um instante e tente de novo.');
     return;
   }
+  document.getElementById('foto-etiqueta-status').innerHTML = '';
   try{
     // A marcação laranja na tela (reticle) é só visual — a leitura antes
     // analisava o quadro INTEIRO da câmera. Se duas etiquetas apareciam
@@ -1284,8 +1279,11 @@ document.getElementById('btn-capture').addEventListener('click', async ()=>{
     }
     if (codes && codes.length){
       handleScanned(escolherCodigoDetectado(codes, canvas.width, canvas.height));
+      return;
     }
-    else toast('Nenhum código encontrado. Centralize a etiqueta na marcação e tente de novo.');
+    // nenhum código de barras encontrado — pode ser uma etiqueta sem código embaixo
+    // (ex: só a lateral), então tenta ler o TEXTO impresso como alternativa.
+    await tentarLerTextoEtiqueta(video);
   }catch(e){ toast('Erro ao capturar. Tente de novo.'); }
 });
 function pauseLoopResume(){
