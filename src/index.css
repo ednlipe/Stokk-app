@@ -122,6 +122,21 @@ label.field-label{font-size:11.5px;text-transform:uppercase;letter-spacing:0.4px
 .scan-off{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);
   font-size:13px;text-align:center;padding:20px;flex-direction:column;gap:10px;}
 
+/* aviso grande que aparece por cima da câmera/leitor logo depois de bipar,
+   avisando na hora se o produto foi encontrado ou não — sem precisar olhar
+   pro card de resultado mais embaixo na tela. */
+.scan-aviso{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  padding:16px;text-align:center;z-index:5;pointer-events:none;background:rgba(0,0,0,.45);}
+.scan-aviso.show{display:flex;}
+.scan-aviso-badge{font-family:var(--font-head);font-size:16.5px;font-weight:700;letter-spacing:0.3px;
+  padding:14px 20px;border-radius:10px;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.4);
+  max-width:92%;animation:scanAvisoPop .16s ease-out;}
+.scan-aviso-badge .sub{display:block;font-family:var(--font-body);font-weight:400;font-size:12.5px;
+  margin-top:4px;opacity:.9;text-transform:none;letter-spacing:0;}
+.scan-aviso-badge.ok{background:var(--ok);}
+.scan-aviso-badge.erro{background:var(--danger);}
+@keyframes scanAvisoPop{from{transform:scale(.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+
 /* BOTTOM NAV */
 nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--surface);border-top:1px solid var(--border);
   display:flex;max-width:560px;margin:0 auto;}
@@ -140,7 +155,8 @@ nav.bottom button.active svg{stroke:var(--accent);}
 .overlay.hidden{display:none;}
 .sheet{background:var(--surface);width:100%;max-width:560px;border-radius:12px 12px 0 0;padding:18px 16px 24px;
   max-height:85vh;overflow-y:auto;border-top:2px solid var(--accent);}
-.sheet-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 14px;}
+.sheet-handle{width:100%;padding:12px 0 16px;margin:-12px 0 2px;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;}
+.sheet-handle::before{content:'';width:36px;height:4px;background:var(--border);border-radius:2px;display:block;}
 .sheet-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;}
 
 .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);background:var(--surface-3);

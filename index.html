@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>STOKK</title>
+<script>
+/* aplica o tema salvo antes do CSS pintar a tela, pra não piscar */
+try{
+  var temaSalvo = localStorage.getItem('stokk_tema_preferido');
+  if (temaSalvo==='light' || temaSalvo==='dark') document.documentElement.setAttribute('data-theme', temaSalvo);
+}catch(e){}
+</script>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#2E5578">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
