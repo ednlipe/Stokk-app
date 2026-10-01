@@ -53,6 +53,45 @@ const APP_HTML = `
       <div id="dash-empty"></div>
     </section>
 
+    <!-- ESTOQUE -->
+    <section class="view" id="view-estoque">
+      <h2 class="section-title">Estoque</h2>
+      <input type="text" id="estoque-search" placeholder="Buscar por código, lote, produto ou armazém…">
+      <button class="btn ghost" id="btn-abrir-filtro" style="border:1px solid var(--border);margin-bottom:12px;">Filtro<span id="filtro-badge"></span></button>
+      <button class="btn ghost" id="btn-toggle-select" data-role="supervisor" style="border:1px solid var(--border);margin-bottom:12px;">Selecionar itens</button>
+      <div id="estoque-list"></div>
+    </section>
+    <div class="overlay hidden" id="select-bar-wrap" style="position:fixed;inset:auto 0 0 0;background:none;pointer-events:none;align-items:flex-end;">
+      <div class="sheet" id="select-bar" style="max-width:560px;margin:0 auto;padding:14px 16px;border-radius:12px 12px 0 0;pointer-events:auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <button class="link-btn" id="sel-all-btn">selecionar todos (filtro atual)</button>
+          <span id="sel-count" style="font-family:var(--font-head);font-size:14px;">0 selecionados</span>
+        </div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn ghost" id="sel-cancel" style="border:1px solid var(--border);">Cancelar</button>
+          <button class="btn ghost" id="sel-report" style="border:1px solid var(--border);">Relatório</button>
+          <button class="btn ghost" id="sel-status" style="border:1px solid var(--border);">Status</button>
+          <button class="btn danger" id="sel-delete">Excluir</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- IMPORTAR -->
+    <section class="view" id="view-importar">
+      <h2 class="section-title">Importar planilha</h2>
+      <p class="hint">Selecione um ou mais arquivos exportados do Protheus (Relatório de Projeção de Estoque). Pode escolher vários de uma vez — cada arquivo é de um produto.</p>
+      <input type="file" id="file-input" accept=".xlsx,.xls" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      <label for="file-input" class="btn primary" id="btn-choose-file" style="cursor:pointer;">Escolher arquivo(s)</label>
+      <div id="import-progress"></div>
+      <div id="import-summary"></div>
+    </section>
+
+    <!-- INVENTARIO -->
+    <section class="view" id="view-inventario">
+      <h2 class="section-title">Conferência de pátio</h2>
+      <div id="inventario-body"></div>
+    </section>
+
     <!-- BIPAR -->
     <section class="view" id="view-scan">
       <h2 class="section-title">Bipar etiqueta</h2>
@@ -114,44 +153,6 @@ const APP_HTML = `
       <div id="scan-result"></div>
 
       <div id="conf-progress"></div>
-    </section>
-
-    <!-- ESTOQUE -->
-    <section class="view" id="view-estoque">
-      <h2 class="section-title">Estoque</h2>
-      <input type="text" id="estoque-search" placeholder="Buscar por código, lote, produto ou armazém…">
-      <button class="btn ghost" id="btn-abrir-filtro" style="border:1px solid var(--border);margin-bottom:12px;">Filtro<span id="filtro-badge"></span></button>
-      <button class="btn ghost" id="btn-toggle-select" data-role="supervisor" style="border:1px solid var(--border);margin-bottom:12px;">Selecionar itens</button>
-      <div id="estoque-list"></div>
-    </section>
-    <div class="overlay hidden" id="select-bar-wrap" style="position:fixed;inset:auto 0 0 0;background:none;pointer-events:none;align-items:flex-end;">
-      <div class="sheet" id="select-bar" style="max-width:560px;margin:0 auto;padding:14px 16px;border-radius:12px 12px 0 0;pointer-events:auto;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <button class="link-btn" id="sel-all-btn">selecionar todos (filtro atual)</button>
-          <span id="sel-count" style="font-family:var(--font-head);font-size:14px;">0 selecionados</span>
-        </div>
-        <div class="btn-row" style="margin-top:10px;">
-          <button class="btn ghost" id="sel-cancel" style="border:1px solid var(--border);">Cancelar</button>
-          <button class="btn ghost" id="sel-report" style="border:1px solid var(--border);">Relatório</button>
-          <button class="btn danger" id="sel-delete">Excluir</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- IMPORTAR -->
-    <section class="view" id="view-importar">
-      <h2 class="section-title">Importar planilha</h2>
-      <p class="hint">Selecione um ou mais arquivos exportados do Protheus (Relatório de Projeção de Estoque). Pode escolher vários de uma vez — cada arquivo é de um produto.</p>
-      <input type="file" id="file-input" accept=".xlsx,.xls" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
-      <label for="file-input" class="btn primary" id="btn-choose-file" style="cursor:pointer;">Escolher arquivo(s)</label>
-      <div id="import-progress"></div>
-      <div id="import-summary"></div>
-    </section>
-
-    <!-- INVENTARIO -->
-    <section class="view" id="view-inventario">
-      <h2 class="section-title">Conferência de pátio</h2>
-      <div id="inventario-body"></div>
     </section>
 
     <!-- HISTORICO -->
@@ -232,6 +233,7 @@ const state = {
   view: 'dashboard',
   scanning: false,
   scanStream: null,
+  modoBiparAvulso: true, // true = aba "Bipar" avulsa (só consulta, não conta pra nenhuma conferência); false = bipagem embutida numa conferência sendo acompanhada
   scanLoopId: null,
   lastDetectAt: 0,
   session: null,        // {id, iniciadoEm, ativo, contados:[lote,...], filtroProduto (auto-detectado no 1º bipe), esperadosSnapshot}
@@ -714,6 +716,20 @@ function reconstruirCodigoEtiquetaOCR(campos){
 
 
 /* ---------------- DATA SUBSCRIPTIONS ---------------- */
+// "Sessão seguida" = qual conferência este USUÁRIO LOGADO estava acompanhando —
+// guardado neste aparelho, por login. É o que permite cada pessoa abrir o app e
+// voltar direto pra conferência dela, mesmo com várias rolando ao mesmo tempo.
+function obterSessaoSeguidaId(){
+  if (!state.user) return null;
+  try{ return localStorage.getItem('stokk_sessao_seguida_'+state.user.id) || null; }catch(e){ return null; }
+}
+function salvarSessaoSeguida(id){
+  if (!state.user) return;
+  try{
+    if (id) localStorage.setItem('stokk_sessao_seguida_'+state.user.id, id);
+    else localStorage.removeItem('stokk_sessao_seguida_'+state.user.id);
+  }catch(e){}
+}
 function subscribeData(){
   db.collection('volumes').onSnapshot(snap=>{
     state.volumes.clear();
@@ -734,12 +750,24 @@ function subscribeData(){
 
   db.collection('sessoes').orderBy('iniciadoEm','desc').limit(100).onSnapshot(snap=>{
     state.sessoes = snap.docs.map(d=>d.data());
-    // Retoma automaticamente uma conferência que ficou em andamento (ativo:true) —
-    // por exemplo se a página foi atualizada/recarregada no meio da conferência.
-    // Sem isso, o progresso continuava salvo no banco, mas sumia da tela.
+    // Pode ter VÁRIAS conferências ativas ao mesmo tempo (uma por produto/pessoa) —
+    // por isso não pegamos mais "qualquer uma que estiver ativa". Cada usuário logado
+    // retoma especificamente a conferência que ELE estava acompanhando (lembrada neste
+    // aparelho) — por exemplo se a página foi atualizada/recarregada no meio dela.
     if (!state.session){
-      const emAndamento = state.sessoes.find(s=>s.ativo);
-      if (emAndamento) state.session = emAndamento;
+      const seguindoId = obterSessaoSeguidaId();
+      if (seguindoId){
+        const seguindo = state.sessoes.find(s=>s.id===seguindoId && s.ativo);
+        if (seguindo) state.session = seguindo;
+      }
+    } else {
+      // se a conferência que este usuário está acompanhando foi finalizada/excluída
+      // por outra pessoa nesse meio tempo, para de acompanhar — sem isso a tela local
+      // continuava achando que ainda estava em andamento.
+      const atualizada = state.sessoes.find(s=>s.id===state.session.id);
+      if (!atualizada || !atualizada.ativo){
+        state.session = null; state.relatorioAberto = null; salvarSessaoSeguida(null);
+      }
     }
     renderAll();
   }, err=>{ console.error(err); });
@@ -750,8 +778,21 @@ function setView(name){
   state.view = name;
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
+  // a tela de Bipar (#view-scan) tem duas formas de aparecer: sozinha (aba "Bipar",
+  // uso avulso, sem contar pra nenhuma conferência) ou junto da tela de Conferência,
+  // quando o usuário está acompanhando uma conferência ativa (bipagem já conta nela).
+  // Por isso, quando a aba é "inventario", só deixamos o Bipar visível/ligado à
+  // conferência se realmente tiver uma sessão sendo acompanhada — renderInventario()
+  // é quem decide isso e adiciona a classe "active" nele quando for o caso.
+  if (name==='scan'){
+    state.modoBiparAvulso = true;
+  } else if (name==='inventario'){
+    state.modoBiparAvulso = false;
+  } else {
+    document.getElementById('view-scan').classList.remove('active');
+  }
   document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.nav===name));
-  if (name!=='scan' && state.scanning) stopScanner();
+  if (name!=='scan' && name!=='inventario' && state.scanning) stopScanner();
   if (name==='scan'){ setTimeout(()=>{ focusScanInput(); }, 50); renderConfProgress(); }
   renderView(name);
 }
@@ -1086,7 +1127,7 @@ function setScanMode(mode){
   focusScanInput();
 }
 function focusScanInput(){
-  if (state.view!=='scan') return;
+  if (state.view!=='scan' && state.view!=='inventario') return;
   const id = state.scanMode==='coletor' ? 'coletor-code' : 'manual-code';
   const el = document.getElementById(id);
   if (el) el.focus();
@@ -1127,7 +1168,7 @@ coletorInput.addEventListener('input', ()=>{
 // devolve o foco pro campo do coletor logo em seguida, pra não perder nenhuma leitura.
 document.getElementById('view-scan').addEventListener('click', e=>{
   if (state.scanMode==='coletor' && e.target.id!=='coletor-code'){
-    setTimeout(()=>{ if (state.view==='scan' && state.scanMode==='coletor') coletorInput.focus(); }, 30);
+    setTimeout(()=>{ if ((state.view==='scan'||state.view==='inventario') && state.scanMode==='coletor') coletorInput.focus(); }, 30);
   }
 });
 document.addEventListener('visibilitychange', ()=>{
@@ -1313,12 +1354,12 @@ async function handleScanned(rawText){
   mostrarAvisoBipagem(!!vol, vol ? 'Produto registrado' : 'Produto não encontrado', vol ? (vol.produtoDescricao||'') : code);
 
   // se a conferência já tem um escopo (produto) definido, item de outro produto é sinalizado e ignorado
-  const foraDoEscopo = vol && state.session && state.session.ativo && state.session.filtroProduto && vol.produtoCodigo !== state.session.filtroProduto;
+  const foraDoEscopo = vol && !state.modoBiparAvulso && state.session && state.session.ativo && state.session.filtroProduto && vol.produtoCodigo !== state.session.filtroProduto;
 
   // este é o item que vai definir o escopo (produto) da conferência — antes de
   // travar nele, confirmamos com o operador, pra evitar que um bipe errado logo
   // no início defina a conferência inteira pro produto errado.
-  const primeiroDaConferencia = vol && state.session && state.session.ativo && !state.session.filtroProduto;
+  const primeiroDaConferencia = vol && !state.modoBiparAvulso && state.session && state.session.ativo && !state.session.filtroProduto;
 
   if (foraDoEscopo){
     beepErro();
@@ -1364,7 +1405,7 @@ async function handleScanned(rawText){
     renderScanResult(code, vol, rawText);
 
     // if a conference session is active, mark counted automatically
-    if (vol && state.session && state.session.ativo){
+    if (vol && !state.modoBiparAvulso && state.session && state.session.ativo){
       await conferirVolume(code);
     }
     renderConfProgress();
@@ -1414,7 +1455,7 @@ function renderScanResult(code, vol, rawText){
 
 function renderConfProgress(){
   const el = document.getElementById('conf-progress');
-  if (!state.session || !state.session.ativo){ el.innerHTML=''; return; }
+  if (state.modoBiparAvulso || !state.session || !state.session.ativo){ el.innerHTML=''; return; }
   const esperados = state.session.esperadosSnapshot || [];
   const contadosSet = new Set(state.session.contados||[]);
   const faltamCodes = esperados.filter(l=>!contadosSet.has(l));
@@ -1797,6 +1838,50 @@ document.getElementById('sel-report').addEventListener('click', ()=>{
     ['lote','produto','armazem','peso','situacao','data'],
     `Relatório de inventário — ${hoje} — ${vols.length} item(ns), ${fmtTon(pesoTotal)} t`);
 });
+document.getElementById('sel-status').addEventListener('click', ()=>{
+  const lotes = [...state.selecionados];
+  if (!lotes.length){ toast('Selecione ao menos um item (ou use "selecionar todos").'); return; }
+  const OPCOES = [
+    { valor:'contado', label:'Em estoque' },
+    { valor:'aguardando', label:'Aguardando conferência' },
+    { valor:'nao_conferido', label:'Não localizado' }
+  ];
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">Mudar status</h2>
+    <p class="hint">Definir o status de conferência de <b>${lotes.length}</b> item(ns) selecionado(s) para:</p>
+    ${OPCOES.map(o=>`<button class="btn ghost" data-status-alvo="${o.valor}" style="border:1px solid var(--border);margin-bottom:8px;">${o.label}</button>`).join('')}
+    <button class="btn ghost" id="cancel-status-btn" style="border:1px solid var(--border);">Cancelar</button>
+  `);
+  document.getElementById('cancel-status-btn').onclick = closeSheet;
+  document.querySelectorAll('[data-status-alvo]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const alvo = btn.dataset.statusAlvo;
+      const alvoLabel = OPCOES.find(o=>o.valor===alvo).label;
+      closeSheet();
+      toast(`Alterando status de ${lotes.length} item(ns)…`, 6000);
+      const agora = new Date().toISOString();
+      let ok=0;
+      for (const lote of lotes){
+        try{
+          const statusConferencia = alvo==='aguardando' ? null : alvo;
+          await db.collection('volumes').doc(lote).update({ statusConferencia, ultimaConferenciaEm: agora });
+          ok++;
+        }
+        catch(e){ console.error('erro ao mudar status', lote, e); }
+      }
+      await db.collection('movimentos').doc('mov_'+uid()).set({
+        tipo:'ajuste_status', quantidade: ok, timestamp: agora, exportado:false,
+        obs: `Mudança de status em lote: ${ok} volume(s) marcado(s) como "${alvoLabel}"`,
+        usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
+      });
+      toast(`${ok} item(ns) atualizado(s) para "${alvoLabel}".`);
+      state.selecting = false;
+      state.selecionados = new Set();
+      document.getElementById('btn-toggle-select').style.display='';
+      renderEstoque();
+    };
+  });
+});
 function updateSelectBar(){
   const wrap = document.getElementById('select-bar-wrap');
   if (!state.selecting){ wrap.classList.add('hidden'); return; }
@@ -2019,15 +2104,38 @@ async function conferirVolume(code, volHint){
   renderConfProgress();
 }
 
+function pararDeAcompanharConferencia(){
+  state.session = null;
+  state.confBodySessId = null;
+  salvarSessaoSeguida(null);
+  document.getElementById('view-scan').classList.remove('active');
+}
 function renderInventario(){
   const body = document.getElementById('inventario-body');
+
   if (!state.session || !state.session.ativo){
+    document.getElementById('view-scan').classList.remove('active');
+    state.confBodySessId = null;
+    const ativas = (state.sessoes||[]).filter(s=>s.ativo);
     const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
     body.innerHTML = `
-      <p class="hint">Inicie uma sessão de conferência e bipe os volumes que encontrar fisicamente no pátio. O produto conferido é detectado automaticamente pelo primeiro item bipado — não precisa escolher antes. No final, o app mostra o que bate, o que está faltando e o que sobrou.</p>
+      ${ativas.length ? `<h2 class="section-title" style="margin-top:0;">Conferências em andamento agora</h2>
+      <div class="card" style="padding:0;">${ativas.map(s=>`
+        <div class="list-item" data-continuar="${esc(s.id)}">
+          <div class="li-main">
+            <div class="li-code" style="font-size:14px;">${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Escopo ainda não definido'}</div>
+            <div class="li-desc">iniciada ${fmtDate(s.iniciadoEm)}</div>
+          </div>
+          <div class="li-side">
+            <div class="li-weight">${(s.contados||[]).length}</div>
+            <div class="li-desc">contados</div>
+          </div>
+        </div>`).join('')}</div>
+      <p class="hint" style="margin-top:6px;">Toque numa delas pra continuar de onde parou, ou inicie uma nova abaixo (de outro produto, por exemplo).</p>` : ''}
+
       <label class="field-label">Status inicial dos itens bipados nesta conferência *</label>
       <input type="text" id="inv-status-inicial" placeholder='Ex: Conferido'>
-      <button class="btn primary" id="inv-start">Iniciar conferência</button>
+      <button class="btn primary" id="inv-start">Iniciar nova conferência</button>
 
       ${anteriores.length ? `<h2 class="section-title">Conferências anteriores</h2>
       <div class="card" style="padding:0;">${anteriores.map(s=>`
@@ -2043,6 +2151,15 @@ function renderInventario(){
           <button class="link-btn del-sess" data-role="supervisor" data-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>
         </div>`).join('')}</div>` : ''}
     `;
+    body.querySelectorAll('.list-item[data-continuar]').forEach(li=>{
+      li.addEventListener('click', ()=>{
+        const sess = state.sessoes.find(s=>s.id===li.dataset.continuar);
+        if (!sess) return;
+        state.session = sess;
+        salvarSessaoSeguida(sess.id);
+        renderInventario();
+      });
+    });
     document.getElementById('inv-start').onclick = async ()=>{
       const statusInicial = document.getElementById('inv-status-inicial').value.trim();
       if (!statusInicial){
@@ -2064,13 +2181,15 @@ function renderInventario(){
       state.session = {
         id: 'sess_'+uid(), iniciadoEm: new Date().toISOString(), ativo:true,
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
+        usuarioNome: state.user?state.user.nome:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
       state.confExpandido.delete('bipar-faltando');
       await db.collection('sessoes').doc(state.session.id).set(state.session);
+      salvarSessaoSeguida(state.session.id);
       state.batchAction = statusInicial;
       state.batchCount = 0;
-      toast('Conferência iniciada. Vá até "Bipar" para escanear.');
+      toast('Conferência iniciada — já pode bipar aqui embaixo.');
       renderInventario();
     };
     body.querySelectorAll('.list-item[data-sess]').forEach(li=>{
@@ -2091,19 +2210,39 @@ function renderInventario(){
     return;
   }
 
-  const contadosSet = new Set(state.session.contados);
-  body.innerHTML = `
-    <div class="card left-accent">
-      <div>Sessão ativa desde ${fmtDate(state.session.iniciadoEm)}</div>
-      <div style="margin:8px 0 4px;font-family:var(--font-head);font-size:24px;">${state.session.contados.length} <span style="font-size:14px;color:var(--text-muted);font-family:var(--font-body);">itens contados</span></div>
-      ${state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:''}
-      <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">Status ao bipar: <b style="color:var(--text)">${esc(state.batchAction||'—')}</b></div>
-    </div>
-    <button class="btn primary" data-nav="scan">Ir para o leitor</button>
-    <button class="btn danger" id="inv-finish">Ver relatório e finalizar</button>
-  `;
-  body.querySelector('[data-nav="scan"]').addEventListener('click', ()=>setView('scan'));
-  document.getElementById('inv-finish').onclick = ()=>renderRelatorioPreview(state.session);
+  // Sessão ativa sendo acompanhada por este usuário: mostra o resumo e, logo abaixo,
+  // a própria tela de Bipar embutida (mesma seção #view-scan, só que exibida aqui em
+  // vez de na aba separada) — dá pra bipar sem sair da tela de Conferência.
+  state.modoBiparAvulso = false;
+  document.getElementById('view-scan').classList.add('active');
+  if (state.confBodySessId !== state.session.id){
+    // só reconstrói o card de resumo quando troca de conferência — atualizações de
+    // dados em tempo real (a cada bipe) só atualizam os números abaixo, sem recriar
+    // o HTML, pra não interromper quem está com a câmera ligada bipando.
+    state.confBodySessId = state.session.id;
+    body.innerHTML = `
+      <div class="card left-accent">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+          <div>
+            <div>Sessão ativa desde ${fmtDate(state.session.iniciadoEm)}</div>
+            <div style="margin:8px 0 4px;font-family:var(--font-head);font-size:24px;"><span id="conf-contagem-num">${state.session.contados.length}</span> <span style="font-size:14px;color:var(--text-muted);font-family:var(--font-body);">itens contados</span></div>
+            <div id="conf-escopo-badge">${state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:''}</div>
+          </div>
+          <button class="link-btn" id="inv-trocar">trocar de conferência</button>
+        </div>
+      </div>
+      <button class="btn danger" id="inv-finish" style="margin:12px 0 0;">Ver relatório e finalizar</button>
+    `;
+    document.getElementById('inv-trocar').onclick = ()=>{ pararDeAcompanharConferencia(); renderInventario(); };
+    document.getElementById('inv-finish').onclick = ()=>renderRelatorioPreview(state.session);
+  } else {
+    const contEl = document.getElementById('conf-contagem-num');
+    if (contEl) contEl.textContent = state.session.contados.length;
+    const escopoEl = document.getElementById('conf-escopo-badge');
+    if (escopoEl) escopoEl.innerHTML = state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:'';
+  }
+  focusScanInput();
+  renderConfProgress();
 }
 
 /* ---------------- RELATÓRIO DE CONFERÊNCIA (grupos por status, expansível) ---------------- */
@@ -2241,7 +2380,7 @@ async function registrarConferencia(){
     await db.collection('volumes').doc(v.lote).update({ statusConferencia:'nao_conferido', ultimaConferenciaEm: sess.finalizadoEm, ultimaConferenciaSessao: sess.id });
   }
   state.pendingReport = null;
-  state.session = null; state.relatorioAberto = null;
+  state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
   toast('Conferência registrada.');
   renderRelatorioRegistrado(sess);
 }
@@ -2264,7 +2403,7 @@ function renderRelatorioRegistrado(sess){
       <div class="card left-info"><b>${countOf(sess.resultado.naoCadastrados)}</b> não cadastrados</div>
       <button class="btn ghost" id="inv-new" style="border:1px solid var(--border);">Voltar</button>
     `;
-    document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; renderInventario(); };
+    document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active'); renderInventario(); };
     return;
   }
   const grupos = Object.assign({}, resolvido.porStatus, {
@@ -2304,7 +2443,7 @@ function renderRelatorioRegistrado(sess){
     const nomeArquivo = 'relatorio_inventario_' + slugify(sess.filtroProduto ? nomeProduto : 'todos-os-produtos') + '.xlsx';
     exportXlsx(rows, nomeArquivo, ['situacao','lote','produto','armazem','peso'], titulo);
   };
-  document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; renderInventario(); };
+  document.getElementById('inv-new').onclick = ()=>{ state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active'); renderInventario(); };
   const delBtn = document.getElementById('inv-del');
   if (delBtn) delBtn.onclick = ()=>confirmarExclusaoConferencia(sess);
   const baixarBtn = document.getElementById('inv-baixar-naolocalizados');
@@ -2348,7 +2487,7 @@ function confirmarExclusaoConferencia(sess){
     closeSheet();
     await db.collection('sessoes').doc(sess.id).delete();
     toast('Conferência excluída.');
-    state.session = null; state.relatorioAberto = null;
+    state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
     renderInventario();
   };
 }
