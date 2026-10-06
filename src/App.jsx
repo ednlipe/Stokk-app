@@ -2120,10 +2120,14 @@ async function importFiles(files){
             const base = {
               lote: it.lote, produtoCodigo: produto.codigo, produtoDescricao: produto.descricao,
               armazem: it.armazem, quantidade: it.quantidade, saldoAcumulado: it.saldoAcumulado,
-              categoria: it.categoria, tipoMov: it.tipoMov, atualizadoEm: nowIso
+              categoria: it.categoria, tipoMov: it.tipoMov, atualizadoEm: nowIso,
+              // toda importação (nova ou repetida) representa um snapshot do ERP ainda
+              // não conferido fisicamente — por isso o item sempre volta como
+              // "Não localizado" ao subir da planilha, até alguém bipar ele de novo.
+              statusConferencia: 'nao_conferido'
             };
             if (snap.exists){ await ref.update(base); totalAtualizados++; }
-            else{ await ref.set(Object.assign({status:'estoque', statusConferencia:'nao_conferido', origem:'importado', importadoEm: nowIso}, base)); totalNovos++; }
+            else{ await ref.set(Object.assign({status:'estoque', origem:'importado', importadoEm: nowIso}, base)); totalNovos++; }
           }));
           done += batch.length;
           progEl.innerHTML = `<div class="card"><span class="spinner"></span> Importando <b>${esc(produto.codigo)}</b> — ${done}/${itemRows.length} volumes…</div>`;
@@ -2251,7 +2255,6 @@ function renderInventario(){
       state.session = {
         id: 'sess_'+uid(), iniciadoEm: new Date().toISOString(), ativo:true,
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
-        usuarioNome: state.user?state.user.nome:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
       state.confExpandido.delete('bipar-faltando');
