@@ -875,7 +875,11 @@ function renderView(name){
   if (name==='dashboard') renderDashboard();
   else if (name==='scan') renderConfProgress();
   else if (name==='estoque') renderEstoque();
-  else if (name==='inventario') { state.relatorioAberto ? renderRelatorioRegistrado(state.relatorioAberto) : renderInventario(); }
+  else if (name==='inventario') {
+    if (state.relatorioAberto) renderRelatorioRegistrado(state.relatorioAberto);
+    else if (state.previewSessId && state.session && state.session.ativo && state.session.id===state.previewSessId) renderRelatorioPreview(state.session);
+    else renderInventario();
+  }
   else if (name==='historico') renderHistorico();
 }
 
@@ -1897,7 +1901,7 @@ document.getElementById('sel-report').addEventListener('click', ()=>{
   const rows = vols.map(v=>{
     const info = statusDisplayInfo(v);
     return {
-      lote: v.lote, produto: v.produtoDescricao||v.produtoCodigo||'', armazem: v.armazem||'',
+      lote: v.lote, produto: v.produtoCodigo||v.produtoDescricao||'', armazem: v.armazem||'',
       peso: v.quantidade!=null ? Number(v.quantidade).toFixed(3) : '', situacao: info.label,
       data: v.ultimaConferenciaEm ? fmtDate(v.ultimaConferenciaEm) : ''
     };
@@ -2120,10 +2124,14 @@ async function importFiles(files){
             const base = {
               lote: it.lote, produtoCodigo: produto.codigo, produtoDescricao: produto.descricao,
               armazem: it.armazem, quantidade: it.quantidade, saldoAcumulado: it.saldoAcumulado,
-              categoria: it.categoria, tipoMov: it.tipoMov, atualizadoEm: nowIso
+              categoria: it.categoria, tipoMov: it.tipoMov, atualizadoEm: nowIso,
+              // toda importação (nova ou repetida) representa um snapshot do ERP ainda
+              // não conferido fisicamente — por isso o item sempre volta como
+              // "Não localizado" ao subir da planilha, até alguém bipar ele de novo.
+              statusConferencia: 'nao_conferido'
             };
             if (snap.exists){ await ref.update(base); totalAtualizados++; }
-            else{ await ref.set(Object.assign({status:'estoque', statusConferencia:'nao_conferido', origem:'importado', importadoEm: nowIso}, base)); totalNovos++; }
+            else{ await ref.set(Object.assign({status:'estoque', origem:'importado', importadoEm: nowIso}, base)); totalNovos++; }
           }));
           done += batch.length;
           progEl.innerHTML = `<div class="card"><span class="spinner"></span> Importando <b>${esc(produto.codigo)}</b> — ${done}/${itemRows.length} volumes…</div>`;
@@ -2186,6 +2194,7 @@ function renderInventario(){
   if (!state.session || !state.session.ativo){
     document.getElementById('view-scan').classList.remove('active');
     state.confBodySessId = null;
+    state.previewSessId = null;
     const ativas = (state.sessoes||[]).filter(s=>s.ativo);
     const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
     body.innerHTML = `
@@ -2251,7 +2260,6 @@ function renderInventario(){
       state.session = {
         id: 'sess_'+uid(), iniciadoEm: new Date().toISOString(), ativo:true,
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
-        usuarioNome: state.user?state.user.nome:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
       state.confExpandido.delete('bipar-faltando');
@@ -2397,6 +2405,9 @@ function bindGruposToggle(rootSelector, onToggle){
 function renderRelatorioPreview(sess){
   const rep = prepararRelatorio(sess);
   state.pendingReport = { sess, rep };
+  state.previewSessId = sess.id;   // enquanto a revisão está aberta, atualizações em tempo real não a apagam
+  state.confBodySessId = null;     // ao voltar, o miolo da conferência precisa ser reconstruído
+  document.getElementById('view-scan').classList.remove('active');
   const grupos = Object.assign({}, rep.porStatus, {
     'Não localizado': rep.faltando,
     'Não cadastrado (achado, sem registro)': rep.naoCadastrados.map(code=>({lote:code, quantidade:null}))
@@ -2414,11 +2425,12 @@ function renderRelatorioPreview(sess){
   `;
   bindGruposToggle('#conf-grupos', ()=>renderRelatorioPreview(sess));
   document.getElementById('conf-registrar').onclick = registrarConferencia;
-  document.getElementById('conf-cancelar').onclick = ()=>renderInventario();
+  document.getElementById('conf-cancelar').onclick = ()=>{ state.previewSessId = null; renderInventario(); };
 }
 
 async function registrarConferencia(){
   const { sess, rep } = state.pendingReport;
+  const antes = { ativo: sess.ativo, finalizadoEm: sess.finalizadoEm, resultado: sess.resultado };
   sess.ativo = false;
   sess.finalizadoEm = new Date().toISOString();
   sess.resultado = {
@@ -2426,7 +2438,13 @@ async function registrarConferencia(){
     faltando: rep.faltando.map(v=>v.lote),
     naoCadastrados: rep.naoCadastrados
   };
-  await db.collection('sessoes').doc(sess.id).set(sess);
+  try{ await db.collection('sessoes').doc(sess.id).set(sess); }
+  catch(e){
+    console.error(e);
+    sess.ativo = antes.ativo; sess.finalizadoEm = antes.finalizadoEm; sess.resultado = antes.resultado;
+    toast('Não consegui registrar a conferência. Tente de novo.');
+    return;
+  }
   const totalConferido = Object.values(rep.porStatus).reduce((s,arr)=>s+arr.length,0);
   await db.collection('movimentos').doc('mov_'+uid()).set({
     tipo:'conferencia', timestamp: sess.finalizadoEm, exportado:false,
@@ -2482,11 +2500,13 @@ function renderRelatorioRegistrado(sess){
   });
   const rows = [];
   for (const [label, items] of Object.entries(grupos)){
+    // o Excel exportado não leva os "Não localizado" (eles continuam na tela do relatório)
+    if (label==='Não localizado') continue;
     items.forEach(v=>{
       // exporta só os itens do produto desta conferência — reforço extra, caso
       // algum item de outro produto tenha entrado na lista por algum motivo.
       if (sess.filtroProduto && v.produtoCodigo && v.produtoCodigo!==sess.filtroProduto) return;
-      rows.push({situacao:label, lote:v.lote, produto:v.produtoDescricao||'', armazem:v.armazem||'', peso:v.quantidade});
+      rows.push({situacao:label, lote:v.lote, produto:v.produtoCodigo||v.produtoDescricao||'', armazem:v.armazem||'', peso:v.quantidade});
     });
   }
   // itens "Não localizado" que ainda estão como "estoque" no sistema — ou
@@ -2593,7 +2613,7 @@ function renderHistorico(){
 document.getElementById('btn-export-hist').addEventListener('click', ()=>{
   let movs = state.movimentos;
   if (state.histTipoFilter!=='todos') movs = movs.filter(m=>m.tipo===state.histTipoFilter);
-  const rows = movs.map(m=>({data:fmtDate(m.timestamp), tipo:m.tipo, lote:m.lote||'', produto:m.produtoDescricao||m.produtoCodigo||'', quantidade:m.quantidade||'', obs:m.obs||''}));
+  const rows = movs.map(m=>({data:fmtDate(m.timestamp), tipo:m.tipo, lote:m.lote||'', produto:m.produtoCodigo||(state.volumes.get(m.lote)||{}).produtoCodigo||m.produtoDescricao||'', quantidade:m.quantidade||'', obs:m.obs||''}));
   exportXlsx(rows, 'historico_movimentos.xlsx', ['data','tipo','lote','produto','quantidade','obs']);
 });
 
