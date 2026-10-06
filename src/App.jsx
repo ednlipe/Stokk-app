@@ -123,7 +123,7 @@ const APP_HTML = `
         <div class="scan-box" style="aspect-ratio:auto;height:auto;padding:22px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:32px;height:32px;color:var(--accent);"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
           <div class="hint" style="margin:0;text-align:center;">Aponte o leitor Bluetooth pro código e aperte o gatilho</div>
-          <input type="text" id="coletor-code" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
+          <input type="text" id="coletor-code" inputmode="none" autocomplete="off" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
           <div class="scan-aviso" id="scan-aviso-coletor"></div>
         </div>
       </div>
@@ -789,6 +789,31 @@ function reconstruirCodigoEtiquetaOCR(campos){
 // "Sessão seguida" = qual conferência este USUÁRIO LOGADO estava acompanhando —
 // guardado neste aparelho, por login. É o que permite cada pessoa abrir o app e
 // voltar direto pra conferência dela, mesmo com várias rolando ao mesmo tempo.
+/* Status que os itens bipados recebem numa conferência ("Status inicial"). Fica guardado POR
+   conferência (neste aparelho) — antes era uma variável solta, então o status de uma conferência
+   vazava pra outra e até pra aba "Bipar" (que é só consulta). */
+function nomeConf(s){ return (s && s.nome) ? String(s.nome).trim() : ''; }
+function salvarStatusConf(sessId, status){
+  try{
+    if (status) localStorage.setItem('stokk_status_conf_'+sessId, status);
+    else localStorage.removeItem('stokk_status_conf_'+sessId);
+  }catch(e){}
+}
+function lerStatusConf(sessId){
+  try{ return localStorage.getItem('stokk_status_conf_'+sessId) || null; }catch(e){ return null; }
+}
+function sincronizarCampoStatusBipar(){
+  const inp = document.getElementById('batch-status-input');
+  if (inp) inp.value = state.batchAction || '';
+  document.querySelectorAll('#batch-action-row .filter-chip').forEach(c=>{
+    c.classList.toggle('active', !!state.batchAction && c.dataset.batch===state.batchAction);
+  });
+}
+function aplicarStatusDaConferencia(){
+  state.batchAction = (state.session && state.session.ativo) ? lerStatusConf(state.session.id) : null;
+  state.batchCount = 0;
+  sincronizarCampoStatusBipar();
+}
 function obterSessaoSeguidaId(){
   if (!state.user) return null;
   try{ return localStorage.getItem('stokk_sessao_seguida_'+state.user.id) || null; }catch(e){ return null; }
@@ -856,8 +881,11 @@ function setView(name){
   // é quem decide isso e adiciona a classe "active" nele quando for o caso.
   if (name==='scan'){
     state.modoBiparAvulso = true;
+    // aba Bipar = só consulta: o status da conferência não pode vazar pra cá
+    state.batchAction = null; state.batchCount = 0; sincronizarCampoStatusBipar();
   } else if (name==='inventario'){
     state.modoBiparAvulso = false;
+    if (state.session && state.session.ativo) aplicarStatusDaConferencia();
   } else {
     document.getElementById('view-scan').classList.remove('active');
   }
@@ -1086,6 +1114,7 @@ document.querySelectorAll('#batch-action-row .filter-chip').forEach(chip=>{
     chip.classList.add('active');
     state.batchAction = chip.dataset.batch || null;
     state.batchCount = 0;
+    if (!state.modoBiparAvulso && state.session && state.session.ativo) salvarStatusConf(state.session.id, state.batchAction);
     document.getElementById('batch-status-input').value = state.batchAction || '';
     renderConfProgress();
   });
@@ -1095,6 +1124,7 @@ document.getElementById('btn-batch-apply').addEventListener('click', ()=>{
   document.querySelectorAll('#batch-action-row .filter-chip').forEach(c=>c.classList.remove('active'));
   state.batchAction = v || null;
   state.batchCount = 0;
+  if (!state.modoBiparAvulso && state.session && state.session.ativo) salvarStatusConf(state.session.id, state.batchAction);
   renderConfProgress();
   toast(v ? `Status "${v}" ativo pros próximos bipes.` : 'Voltou pro modo só consultar.');
 });
@@ -1202,8 +1232,11 @@ function setScanMode(mode){
 }
 function focusScanInput(){
   if (state.view!=='scan' && state.view!=='inventario') return;
-  const id = state.scanMode==='coletor' ? 'coletor-code' : 'manual-code';
-  const el = document.getElementById(id);
+  // só o campo do coletor recebe foco automático (ele tem inputmode="none": o leitor
+  // continua digitando nele, mas o teclado do celular não abre). O campo de digitação
+  // manual nunca ganha foco sozinho — só quando a pessoa toca nele.
+  if (state.scanMode!=='coletor') return;
+  const el = document.getElementById('coletor-code');
   if (el) el.focus();
 }
 document.querySelectorAll('#scan-mode-row .filter-chip').forEach(chip=>{
@@ -2195,6 +2228,7 @@ function renderInventario(){
     document.getElementById('view-scan').classList.remove('active');
     state.confBodySessId = null;
     state.previewSessId = null;
+    state.batchAction = null; state.batchCount = 0;
     const ativas = (state.sessoes||[]).filter(s=>s.ativo);
     const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
     const html = `
@@ -2202,8 +2236,8 @@ function renderInventario(){
       <div class="card" style="padding:0;">${ativas.map(s=>`
         <div class="list-item" data-continuar="${esc(s.id)}">
           <div class="li-main">
-            <div class="li-code" style="font-size:14px;">${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Escopo ainda não definido'}</div>
-            <div class="li-desc">iniciada ${fmtDate(s.iniciadoEm)}</div>
+            <div class="li-code" style="font-size:14px;">${nomeConf(s)?esc(nomeConf(s)):(s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Escopo ainda não definido')}</div>
+            <div class="li-desc">${nomeConf(s)&&s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto))+' · ':''}iniciada ${fmtDate(s.iniciadoEm)}</div>
           </div>
           <div class="li-side">
             <div class="li-weight">${(s.contados||[]).length}</div>
@@ -2212,6 +2246,8 @@ function renderInventario(){
         </div>`).join('')}</div>
       <p class="hint" style="margin-top:6px;">Toque numa delas pra continuar de onde parou, ou inicie uma nova abaixo (de outro produto, por exemplo).</p>` : ''}
 
+      <label class="field-label">Nome da conferência (opcional)</label>
+      <input type="text" id="inv-nome" placeholder='Ex: Galpão 2 – Vergalhão 8mm' maxlength="60" autocomplete="off">
       <label class="field-label">Status inicial dos itens bipados nesta conferência *</label>
       <input type="text" id="inv-status-inicial" placeholder='Ex: Conferido'>
       <button class="btn primary" id="inv-start">Iniciar nova conferência</button>
@@ -2220,8 +2256,8 @@ function renderInventario(){
       <div class="card" style="padding:0;">${anteriores.map(s=>`
         <div class="list-item" data-sess="${esc(s.id)}">
           <div class="li-main">
-            <div class="li-code" style="font-size:14px;">${fmtDate(s.finalizadoEm||s.iniciadoEm)}</div>
-            <div class="li-desc">${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Todos os produtos'}</div>
+            <div class="li-code" style="font-size:14px;">${nomeConf(s)?esc(nomeConf(s)):fmtDate(s.finalizadoEm||s.iniciadoEm)}</div>
+            <div class="li-desc">${nomeConf(s)?fmtDate(s.finalizadoEm||s.iniciadoEm)+' · ':''}${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Todos os produtos'}</div>
           </div>
           <div class="li-side">
             <div class="li-weight" style="color:var(--ok);">${countOf(Object.values(s.resultado.porStatus||{}).flat())} ok</div>
@@ -2235,6 +2271,9 @@ function renderInventario(){
     // Se a tela já está mostrando exatamente isso, não refaz — senão o campo "Status inicial"
     // era recriado debaixo do dedo e não dava pra digitar.
     if (body.querySelector('#inv-start') && state.confListaHTML === html){ applyRoleUI(); return; }
+    const nomeAntigo = document.getElementById('inv-nome');
+    const nomeDigitado = nomeAntigo ? nomeAntigo.value : '';
+    const nomeTinhaFoco = !!nomeAntigo && document.activeElement === nomeAntigo;
     const campoAntigo = document.getElementById('inv-status-inicial');
     const valorDigitado = campoAntigo ? campoAntigo.value : '';
     const tinhaFoco = !!campoAntigo && document.activeElement === campoAntigo;
@@ -2242,6 +2281,9 @@ function renderInventario(){
     const selFim = tinhaFoco ? campoAntigo.selectionEnd : null;
     state.confListaHTML = html;
     body.innerHTML = html;
+    const nomeNovo = document.getElementById('inv-nome');
+    if (nomeNovo && nomeDigitado) nomeNovo.value = nomeDigitado;
+    if (nomeNovo && nomeTinhaFoco) nomeNovo.focus();
     const campoNovo = document.getElementById('inv-status-inicial');
     if (campoNovo && valorDigitado) campoNovo.value = valorDigitado;
     if (campoNovo && tinhaFoco){ campoNovo.focus(); try{ campoNovo.setSelectionRange(selIni, selFim); }catch(e){} }
@@ -2277,11 +2319,23 @@ function renderInventario(){
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
+      const nomeConfDigitado = (document.getElementById('inv-nome')||{value:''}).value.trim();
+      if (nomeConfDigitado) novaSessao.nome = nomeConfDigitado;
       state.confExpandido.delete('bipar-faltando');
       try{ await db.collection('sessoes').doc(novaSessao.id).set(novaSessao); }
-      catch(e){ console.error(e); toast('Não consegui iniciar a conferência. Tente de novo.'); return; }
+      catch(e){
+        console.error(e);
+        // banco ainda sem a coluna "nome" (SQL de atualização não rodado): inicia sem o nome
+        let ok = false;
+        if (novaSessao.nome){
+          delete novaSessao.nome;
+          try{ await db.collection('sessoes').doc(novaSessao.id).set(novaSessao); ok = true; toast('Conferência iniciada, mas o nome não foi salvo (falta rodar o SQL update_004 no Supabase).'); }catch(e2){ console.error(e2); }
+        }
+        if (!ok){ toast('Não consegui iniciar a conferência. Tente de novo.'); return; }
+      }
       state.session = novaSessao;
       salvarSessaoSeguida(state.session.id);
+      salvarStatusConf(state.session.id, statusInicial);
       state.batchAction = statusInicial;
       state.batchCount = 0;
       toast('Conferência iniciada — já pode bipar aqui embaixo.');
@@ -2311,6 +2365,7 @@ function renderInventario(){
   state.modoBiparAvulso = false;
   document.getElementById('view-scan').classList.add('active');
   if (state.confBodySessId !== state.session.id){
+    aplicarStatusDaConferencia();
     // só reconstrói o card de resumo quando troca de conferência — atualizações de
     // dados em tempo real (a cada bipe) só atualizam os números abaixo, sem recriar
     // o HTML, pra não interromper quem está com a câmera ligada bipando.
@@ -2319,6 +2374,7 @@ function renderInventario(){
       <div class="card left-accent">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div>
+            ${nomeConf(state.session)?`<div style="font-weight:600;">${esc(nomeConf(state.session))}</div>`:''}
             <div>Sessão ativa desde ${fmtDate(state.session.iniciadoEm)}</div>
             <div style="margin:8px 0 4px;font-family:var(--font-head);font-size:24px;"><span id="conf-contagem-num">${state.session.contados.length}</span> <span style="font-size:14px;color:var(--text-muted);font-family:var(--font-body);">itens contados</span></div>
             <div id="conf-escopo-badge">${state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:''}</div>
@@ -2432,7 +2488,7 @@ function renderRelatorioPreview(sess){
   const totalConferido = Object.values(rep.porStatus).reduce((s,arr)=>s+arr.length,0);
   document.getElementById('inventario-body').innerHTML = `
     <div class="card left-accent">
-      <div>Revisão da conferência — ainda não registrada</div>
+      <div>Revisão da conferência${nomeConf(sess)?' — <b>'+esc(nomeConf(sess))+'</b>':''} — ainda não registrada</div>
       ${sess.filtroProduto?`<div class="badge accent" style="margin-top:6px;">Escopo: ${esc(tipoProdutoLabel(sess.filtroProduto))}</div>`:''}
       <p class="hint" style="margin:8px 0 0;">Confira os grupos abaixo (toque pra abrir/fechar) e, se estiver tudo certo, registre a conferência.</p>
     </div>
@@ -2499,7 +2555,7 @@ function renderRelatorioRegistrado(sess){
     // conferência bem antiga — só temos os números, não a lista de itens
     document.getElementById('inventario-body').innerHTML = `
       <div class="card left-accent">
-        <div>Conferência de ${fmtDate(sess.iniciadoEm)}</div>
+        <div>${nomeConf(sess)?'<b>'+esc(nomeConf(sess))+'</b> — ':''}Conferência de ${fmtDate(sess.iniciadoEm)}</div>
         ${sess.filtroProduto?`<div class="badge accent" style="margin-top:6px;">Escopo: ${esc(tipoProdutoLabel(sess.filtroProduto))}</div>`:''}
         <p class="hint" style="margin-top:8px;">Essa conferência foi feita numa versão anterior do app, então só temos os números — não a lista detalhada de itens.</p>
       </div>
@@ -2582,19 +2638,52 @@ function renderRelatorioRegistrado(sess){
   };
 }
 
+// itens que essa conferência mexeu: os marcados com o id dela + os listados no resultado/contados
+function lotesAfetadosPorConferencia(sess){
+  const out = new Map(); // lote -> status (label) que a conferência aplicou, se souber
+  state.volumes.forEach(v=>{ if (v.ultimaConferenciaSessao===sess.id && v.statusConferencia==='contado') out.set(v.lote, null); });
+  (sess.contados||[]).forEach(l=>{ if (!out.has(l)) out.set(l, null); });
+  const r = sess.resultado;
+  if (r && r.porStatus){ for (const [label, lotes] of Object.entries(r.porStatus)) (lotes||[]).forEach(l=>out.set(l, label)); }
+  else if (r && Array.isArray(r.conferidos)){ r.conferidos.forEach(l=>out.set(l, 'Conferido')); }
+  return out;
+}
+async function reverterItensDaConferencia(sess){
+  const afetados = lotesAfetadosPorConferencia(sess);
+  const statusSalvo = lerStatusConf(sess.id);
+  let n = 0;
+  for (const [lote, label] of afetados){
+    const v = state.volumes.get(lote);
+    if (!v) continue;
+    const patch = { statusConferencia:'nao_conferido', ultimaConferenciaSessao: null };
+    const aplicado = label || statusSalvo;
+    // se o status físico foi o que a própria conferência colocou (ex: "Conferido", "LAM2"), volta pra estoque
+    if (aplicado && v.status===aplicado && aplicado!=='estoque') patch.status = 'estoque';
+    try{ await db.collection('volumes').doc(lote).update(patch); n++; }catch(e){ console.error(e); }
+  }
+  return n;
+}
+
 function confirmarExclusaoConferencia(sess){
+  const qtd = lotesAfetadosPorConferencia(sess).size;
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Excluir conferência</h2>
-    <p class="hint">Essa conferência de ${fmtDate(sess.finalizadoEm||sess.iniciadoEm)} será apagada permanentemente. Os itens do estoque não são afetados.</p>
+    <p class="hint">${nomeConf(sess)?'<b>'+esc(nomeConf(sess))+'</b> — ':''}Essa conferência de ${fmtDate(sess.finalizadoEm||sess.iniciadoEm)} será apagada permanentemente.</p>
+    <p class="hint">Os <b>${qtd}</b> item(ns) conferidos nela voltam para o status <b>Não localizado</b>.</p>
     <button class="btn danger" id="conf-del-yes">Excluir conferência</button>
     <button class="btn ghost" id="conf-del-no" style="border:1px solid var(--border);">Cancelar</button>
   `);
   document.getElementById('conf-del-no').onclick = closeSheet;
   document.getElementById('conf-del-yes').onclick = async ()=>{
     closeSheet();
-    await db.collection('sessoes').doc(sess.id).delete();
-    toast('Conferência excluída.');
-    state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
+    let n = 0;
+    try{
+      n = await reverterItensDaConferencia(sess);
+      await db.collection('sessoes').doc(sess.id).delete();
+    }catch(e){ console.error(e); toast('Não consegui excluir a conferência. Tente de novo.'); return; }
+    salvarStatusConf(sess.id, null);
+    toast(`Conferência excluída. ${n} item(ns) voltaram para Não localizado.`);
+    state.session = null; state.relatorioAberto = null; state.confBodySessId = null; state.previewSessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
     renderInventario();
   };
 }
