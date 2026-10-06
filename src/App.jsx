@@ -2197,7 +2197,7 @@ function renderInventario(){
     state.previewSessId = null;
     const ativas = (state.sessoes||[]).filter(s=>s.ativo);
     const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
-    body.innerHTML = `
+    const html = `
       ${ativas.length ? `<h2 class="section-title" style="margin-top:0;">Conferências em andamento agora</h2>
       <div class="card" style="padding:0;">${ativas.map(s=>`
         <div class="list-item" data-continuar="${esc(s.id)}">
@@ -2230,6 +2230,21 @@ function renderInventario(){
           <button class="link-btn del-sess" data-role="supervisor" data-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>
         </div>`).join('')}</div>` : ''}
     `;
+    // Atualizações em tempo real chamam essa função toda hora (principalmente logo depois de
+    // finalizar uma conferência, quando centenas de itens são atualizados de uma vez).
+    // Se a tela já está mostrando exatamente isso, não refaz — senão o campo "Status inicial"
+    // era recriado debaixo do dedo e não dava pra digitar.
+    if (body.querySelector('#inv-start') && state.confListaHTML === html){ applyRoleUI(); return; }
+    const campoAntigo = document.getElementById('inv-status-inicial');
+    const valorDigitado = campoAntigo ? campoAntigo.value : '';
+    const tinhaFoco = !!campoAntigo && document.activeElement === campoAntigo;
+    const selIni = tinhaFoco ? campoAntigo.selectionStart : null;
+    const selFim = tinhaFoco ? campoAntigo.selectionEnd : null;
+    state.confListaHTML = html;
+    body.innerHTML = html;
+    const campoNovo = document.getElementById('inv-status-inicial');
+    if (campoNovo && valorDigitado) campoNovo.value = valorDigitado;
+    if (campoNovo && tinhaFoco){ campoNovo.focus(); try{ campoNovo.setSelectionRange(selIni, selFim); }catch(e){} }
     body.querySelectorAll('.list-item[data-continuar]').forEach(li=>{
       li.addEventListener('click', ()=>{
         const sess = state.sessoes.find(s=>s.id===li.dataset.continuar);
@@ -2257,13 +2272,15 @@ function renderInventario(){
       // restrita ao produto encontrado.
       const esperados = [...state.volumes.values()].filter(v=>v.status==='estoque');
 
-      state.session = {
+      const novaSessao = {
         id: 'sess_'+uid(), iniciadoEm: new Date().toISOString(), ativo:true,
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
       state.confExpandido.delete('bipar-faltando');
-      await db.collection('sessoes').doc(state.session.id).set(state.session);
+      try{ await db.collection('sessoes').doc(novaSessao.id).set(novaSessao); }
+      catch(e){ console.error(e); toast('Não consegui iniciar a conferência. Tente de novo.'); return; }
+      state.session = novaSessao;
       salvarSessaoSeguida(state.session.id);
       state.batchAction = statusInicial;
       state.batchCount = 0;
