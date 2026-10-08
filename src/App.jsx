@@ -3157,13 +3157,23 @@ function producaoFinalizarProducao(){
   const cons = somaKg(p.consumidos), prod = somaKg(p.produzidos), pct = rendimentoDe(cons, prod);
   producaoPerguntar('Finalizar produção?', `Consumido: <b>${fmtKgNum(cons)} kg</b> (${p.consumidos.length} vol.)<br>Produzido: <b>${fmtKgNum(prod)} kg</b> (${p.produzidos.length} vol.)<br>Rendimento: <b>${fmtPct(pct)}</b>${pct>100?'<br><span style="color:var(--danger);">Acima de 100% — confira os pesos antes de finalizar.</span>':''}<br><br>Os volumes de matéria-prima serão baixados do estoque e os produtos gerados entram no estoque.`, 'Finalizar produção', ()=>producaoConcluir());
 }
+// trava contra toque duplo / repetição: se a finalização já está rodando, ignora o segundo pedido
 async function producaoConcluir(){
+  if (state.producaoConcluindo) return;
+  state.producaoConcluindo = true;
+  try{ await producaoConcluirInterno(); }
+  finally{ state.producaoConcluindo = false; }
+}
+async function producaoConcluirInterno(){
   let p = producaoAtual(); if (!p) return;
   toast('Finalizando…', 1500);
   try{ await state.producaoFila; }catch(e){}
   p = producaoAtual(); if (!p) return;
   const agora = new Date().toISOString();
   const quem = { usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null };
+  // o histórico de movimentos só aceita INSERIR (não alterar). Por isso cada registro tem id novo,
+  // e numa nova tentativa pula o que já foi gravado antes (mesmo lote + mesma observação nesta produção).
+  const jaTem = (lote, obs)=> state.movimentos.some(m=>m.lote===lote && m.obs===obs && m.timestamp && new Date(m.timestamp)>=new Date(p.iniciadoEm));
   let falhas = 0;
   const seguro = async (fn)=>{ try{ await fn(); }catch(e){ console.error(e); falhas++; } };
   // 1) matéria-prima consumida sai do estoque
@@ -3172,7 +3182,7 @@ async function producaoConcluir(){
     if (vol){
       await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'baixado', atualizadoEm: agora }));
     }
-    await seguro(()=>db.collection('movimentos').doc('mov_'+p.id+'_c_'+it.lote).set({
+    if (!jaTem(it.lote, 'Consumido na produção '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: it.produtoCodigo||(vol&&vol.produtoCodigo)||null, produtoDescricao: it.produtoDescricao||(vol&&vol.produtoDescricao)||'',
       tipo:'baixado', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
       obs:'Consumido na produção '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
@@ -3192,7 +3202,7 @@ async function producaoConcluir(){
         ultimaConferenciaEm: agora, criadoEm: agora, atualizadoEm: agora
       }));
     }
-    await seguro(()=>db.collection('movimentos').doc('mov_'+p.id+'_p_'+it.lote).set({
+    if (!jaTem(it.lote, 'Produzido em '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc,
       tipo:'entrada', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
       obs:'Produzido em '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
