@@ -888,7 +888,7 @@ function subscribeData(){
     renderAll();
   }, err=>{ console.error(err); });
 
-  db.collection('producoes').orderBy('iniciadoEm','desc').limit(100).onSnapshot(snap=>{
+  db.collection('producoes').orderBy('iniciadoEm','desc').limit(1000).onSnapshot(snap=>{
     state.producoes = snap.docs.map(d=>d.data());
     producaoAoReceberLista();
     renderAll();
@@ -2929,34 +2929,169 @@ function renderProducao(){
   producaoDesenharLista();
 }
 
+const PRODUCAO_TURNOS = {
+  1: { label:'1º turno', horas:'7h–15h20' },
+  2: { label:'2º turno', horas:'15h–23h20' },
+  3: { label:'3º turno', horas:'23h–7h20' }
+};
+const MESES_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const DIAS_SEM = ['dom','seg','ter','qua','qui','sex','sáb'];
+function ymdLocal(d){ const z=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
+// cortes usados só quando o registro não tem turno salvo (registros antigos): 07:10, 15:10 e 23:10
+function producaoTurnoPorHora(d){ const m=d.getHours()*60+d.getMinutes(); if (m>=430 && m<910) return 1; if (m>=910 && m<1390) return 2; return 3; }
+function producaoDataPadrao(turno){ const d=new Date(); if (turno===3 && d.getHours()*60+d.getMinutes()<430) d.setDate(d.getDate()-1); return ymdLocal(d); }
+function producaoTurnoDe(p){ const t=Number(p.turno); if (t>=1 && t<=3) return t; return producaoTurnoPorHora(new Date(p.finalizadoEm||p.iniciadoEm)); }
+function producaoDataDe(p){
+  if (p.dataProducao) return String(p.dataProducao).slice(0,10);
+  const d = new Date(p.finalizadoEm||p.iniciadoEm);
+  if (producaoTurnoDe(p)===3 && d.getHours()*60+d.getMinutes()<430) d.setDate(d.getDate()-1);
+  return ymdLocal(d);
+}
+function producaoTurnoTexto(p){ return PRODUCAO_TURNOS[producaoTurnoDe(p)].label; }
+function fmtDiaMes(ymd){ const [a,m,d]=ymd.split('-'); return d+'/'+m; }
+// a cor segue o número que aparece na tela (1 casa decimal): 98,96 aparece como 99,0% e fica verde
+function corRendimento(pct){ const r = Math.round(pct*10)/10; return r>=99 ? 'ok' : (r>=98 ? 'warn' : 'bad'); }
+
+state.producaoModo = 'registrar';
+state.producaoTurnoSel = null;
+state.producaoDataSel = null;
+state.producaoDataManual = false;
+state.dashMes = null;
+state.dashEquip = 'TODOS';
+
+function producaoModoChips(){
+  return `<div class="filter-row" style="margin-bottom:12px;">
+    <button class="filter-chip ${state.producaoModo==='registrar'?'active':''}" data-prod-act="modo" data-v="registrar">Registrar</button>
+    <button class="filter-chip ${state.producaoModo==='dashboard'?'active':''}" data-prod-act="modo" data-v="dashboard">Dashboard</button>
+  </div>`;
+}
+
 function producaoDesenharLista(){
   const body = document.getElementById('producao-body');
+  if (state.producaoModo==='dashboard'){ producaoDesenharDashboard(); return; }
+  if (!state.producaoDataSel) state.producaoDataSel = producaoDataPadrao(state.producaoTurnoSel);
   const andamento = state.producoes.filter(producaoEmAndamento);
   const feitas = state.producoes.filter(x=>x.etapa==='finalizada').slice(0,30);
   const html = `
+    ${producaoModoChips()}
     <h2 class="section-title" style="margin-top:0;">Registrar produção</h2>
     <label class="field-label">Equipamento</label>
     <div class="filter-row" style="margin-bottom:10px;">${EQUIPAMENTOS_PRODUCAO.map(e=>`<button class="filter-chip ${state.producaoEquipSel===e?'active':''}" data-prod-act="equip" data-v="${esc(e)}">${esc(e)}</button>`).join('')}</div>
+    <label class="field-label">Turno</label>
+    <div class="filter-row" style="margin-bottom:4px;">${[1,2,3].map(t=>`<button class="filter-chip ${state.producaoTurnoSel===t?'active':''}" data-prod-act="turno" data-v="${t}">${PRODUCAO_TURNOS[t].label}</button>`).join('')}</div>
+    <p class="hint" style="margin:0 0 10px;">${state.producaoTurnoSel ? PRODUCAO_TURNOS[state.producaoTurnoSel].horas : '1º 7h–15h20 · 2º 15h–23h20 · 3º 23h–7h20'}</p>
+    <label class="field-label">Data do turno</label>
+    <input type="date" id="prod-data" value="${esc(state.producaoDataSel)}" style="margin-bottom:12px;">
     <button class="btn primary" data-prod-act="iniciar">Iniciar registro</button>
     ${andamento.length ? `<h2 class="section-title">Em andamento</h2>
       <div class="card" style="padding:0;">${andamento.map(x=>`
         <div class="list-item" data-prod-act="continuar" data-v="${esc(x.id)}">
-          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)}</div>
-            <div class="li-desc">${esc(PRODUCAO_ETAPA_LABEL[x.etapa]||'')} · iniciada ${fmtDate(x.iniciadoEm)}${x.usuarioNome?' · '+esc(x.usuarioNome):''}</div></div>
+          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)} · ${esc(producaoTurnoTexto(x))}</div>
+            <div class="li-desc">${esc(PRODUCAO_ETAPA_LABEL[x.etapa]||'')} · ${fmtDiaMes(producaoDataDe(x))}${x.usuarioNome?' · '+esc(x.usuarioNome):''}</div></div>
           <div class="li-side"><div class="li-weight">${(x.consumidos||[]).length}</div><div class="li-desc">rolos</div></div>
         </div>`).join('')}</div>` : ''}
     ${feitas.length ? `<h2 class="section-title">Registradas</h2>
       <div class="card" style="padding:0;">${feitas.map(x=>{
         const r = x.resultado||{};
         return `<div class="list-item" data-prod-act="ver" data-v="${esc(x.id)}">
-          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)}</div>
-            <div class="li-desc">${fmtDate(x.finalizadoEm||x.iniciadoEm)} · ${fmtKgNum(r.consumidoKg)} kg → ${fmtKgNum(r.produzidoKg)} kg</div></div>
+          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)} · ${esc(producaoTurnoTexto(x))}</div>
+            <div class="li-desc">${fmtDiaMes(producaoDataDe(x))} · ${fmtKgNum(r.consumidoKg)} kg → ${fmtKgNum(r.produzidoKg)} kg</div></div>
           <div class="li-side"><div class="li-weight" style="${(r.rendimentoPct>100)?'color:var(--danger);':''}">${fmtPct(r.rendimentoPct)}</div><div class="li-desc">rendimento</div></div>
         </div>`;}).join('')}</div>` : ''}
   `;
   if (state.producaoChave==='lista' && state.producaoListaHTML===html) return;
   state.producaoChave = 'lista'; state.producaoListaHTML = html;
   body.innerHTML = html;
+}
+
+/* ---------- dashboard (rendimento por dia, turno e equipamento) ---------- */
+function producaoDashDados(){
+  if (!state.dashMes){ const h = new Date(); state.dashMes = h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0'); }
+  const [ano, mes] = state.dashMes.split('-').map(Number);
+  const equip = state.dashEquip;
+  const cel = {};
+  const add = (k,c,p)=>{ const o = cel[k] || (cel[k]={c:0,p:0,n:0}); o.c+=c; o.p+=p; o.n++; };
+  state.producoes.forEach(x=>{
+    if (x.etapa!=='finalizada' || !x.resultado) return;
+    if (equip!=='TODOS' && x.equipamento!==equip) return;
+    const d = producaoDataDe(x);
+    if (d.slice(0,7)!==state.dashMes) return;
+    const t = producaoTurnoDe(x);
+    const c = Number(x.resultado.consumidoKg)||0, p = Number(x.resultado.produzidoKg)||0;
+    add(d+'|'+t,c,p); add(d+'|D',c,p); add('M|'+t,c,p); add('M|D',c,p);
+  });
+  return { ano, mes, dias: new Date(ano, mes, 0).getDate(), cel, equip };
+}
+function producaoDashCelula(dado, chave, d, t){
+  const o = dado.cel[chave];
+  if (!o || !(o.c>0)) return '<td class="dash-vazio">–</td>';
+  const pct = rendimentoDe(o.c, o.p);
+  return `<td class="dash-c ${corRendimento(pct)}" data-prod-act="dash-cel" data-d="${d}" data-t="${t}">${fmtPct(pct)}${pct>100?' ⚠':''}</td>`;
+}
+function producaoDesenharDashboard(){
+  const body = document.getElementById('producao-body');
+  const dado = producaoDashDados();
+  const z = n=>String(n).padStart(2,'0');
+  let linhas = '';
+  for (let dia=1; dia<=dado.dias; dia++){
+    const d = dado.ano+'-'+z(dado.mes)+'-'+z(dia);
+    const sem = DIAS_SEM[new Date(dado.ano, dado.mes-1, dia).getDay()];
+    linhas += `<tr><td class="dash-dia">${z(dia)} <span>${sem}</span></td>${[1,2,3].map(t=>producaoDashCelula(dado, d+'|'+t, d, t)).join('')}${producaoDashCelula(dado, d+'|D', d, 'D').replace('dash-c ','dash-c dash-total ')}</tr>`;
+  }
+  const mes = `<tr class="dash-tot"><td class="dash-dia">Mês</td>${[1,2,3].map(t=>producaoDashCelula(dado, 'M|'+t, '', t).replace(' data-prod-act="dash-cel"','')).join('')}${producaoDashCelula(dado, 'M|D', '', 'D').replace(' data-prod-act="dash-cel"','')}</tr>`;
+  const html = `
+    ${producaoModoChips()}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <button class="btn small ghost" data-prod-act="dash-mes" data-v="-1" style="border:1px solid var(--border);width:auto;">‹</button>
+      <div style="font-family:var(--font-head);font-size:18px;text-transform:capitalize;">${MESES_PT[dado.mes-1]} / ${dado.ano}</div>
+      <button class="btn small ghost" data-prod-act="dash-mes" data-v="1" style="border:1px solid var(--border);width:auto;">›</button>
+    </div>
+    <div class="filter-row" style="margin-bottom:10px;">${['TODOS'].concat(EQUIPAMENTOS_PRODUCAO).map(e=>`<button class="filter-chip ${state.dashEquip===e?'active':''}" data-prod-act="dash-equip" data-v="${e}">${e==='TODOS'?'Todos':e}</button>`).join('')}</div>
+    <div class="card" style="padding:4px 6px;overflow-x:auto;">
+      <table class="dash-tab">
+        <thead><tr><th>Dia</th><th>1º turno</th><th>2º turno</th><th>3º turno</th><th>Dia todo</th></tr></thead>
+        <tbody>${linhas}${mes}</tbody>
+      </table>
+    </div>
+    <p class="hint" style="margin:8px 0 0;"><span class="dash-leg ok"></span> 99% ou mais &nbsp; <span class="dash-leg warn"></span> 98% a 98,9% &nbsp; <span class="dash-leg bad"></span> abaixo de 98% &nbsp; ⚠ acima de 100%. Toque num valor para ver as produções.</p>
+    <button class="btn primary" data-prod-act="dash-export" style="margin-top:12px;">Exportar (Excel)</button>
+  `;
+  if (state.producaoChave==='dash' && state.producaoListaHTML===html) return;
+  state.producaoChave = 'dash'; state.producaoListaHTML = html;
+  body.innerHTML = html;
+}
+function producaoDashDetalhe(d, t){
+  const equip = state.dashEquip;
+  const lista = state.producoes.filter(x=>x.etapa==='finalizada' && x.resultado && producaoDataDe(x)===d
+    && (equip==='TODOS' || x.equipamento===equip) && (t==='D' || String(producaoTurnoDe(x))===t));
+  const titulo = fmtDiaMes(d)+' · '+(t==='D' ? 'dia todo' : PRODUCAO_TURNOS[t].label)+' · '+(equip==='TODOS'?'todos os equipamentos':equip);
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">${esc(titulo)}</h2>
+    ${lista.length ? '<div class="card" style="padding:0;">'+lista.map(x=>`
+      <div class="list-item" data-prod-open="${esc(x.id)}">
+        <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)} · ${esc(producaoTurnoTexto(x))}</div>
+          <div class="li-desc">${fmtKgNum(x.resultado.consumidoKg)} kg → ${fmtKgNum(x.resultado.produzidoKg)} kg${x.usuarioNome?' · '+esc(x.usuarioNome):''}</div></div>
+        <div class="li-side"><div class="li-weight">${fmtPct(x.resultado.rendimentoPct)}</div></div>
+      </div>`).join('')+'</div>' : '<p class="hint">Nenhuma produção.</p>'}
+    <button class="btn ghost" id="prod-det-fechar" style="border:1px solid var(--border);margin-top:10px;">Fechar</button>
+  `);
+  document.getElementById('prod-det-fechar').onclick = closeSheet;
+  document.querySelectorAll('#sheet-content [data-prod-open]').forEach(el=>{
+    el.onclick = ()=>{ closeSheet(); state.producaoRelatorioId = el.dataset.prodOpen; state.producaoChave = null; renderProducao(); };
+  });
+}
+function producaoDashExportar(){
+  const dado = producaoDashDados();
+  const z = n=>String(n).padStart(2,'0');
+  const val = (k)=>{ const o = dado.cel[k]; return (o && o.c>0) ? fmtPct(rendimentoDe(o.c,o.p)) : ''; };
+  const rows = [];
+  for (let dia=1; dia<=dado.dias; dia++){
+    const d = dado.ano+'-'+z(dado.mes)+'-'+z(dia);
+    rows.push({ dia: z(dia)+'/'+z(dado.mes), t1: val(d+'|1'), t2: val(d+'|2'), t3: val(d+'|3'), total: val(d+'|D') });
+  }
+  rows.push({ dia:'MÊS', t1: val('M|1'), t2: val('M|2'), t3: val('M|3'), total: val('M|D') });
+  const nomeEq = dado.equip==='TODOS' ? 'todos os equipamentos' : dado.equip;
+  exportXlsx(rows, 'rendimento_'+slugify(nomeEq)+'_'+dado.ano+'-'+z(dado.mes)+'.xlsx', ['dia','t1','t2','t3','total'], 'Rendimento metálico — '+nomeEq+' — '+MESES_PT[dado.mes-1]+'/'+dado.ano);
 }
 
 function producaoDesenharCodigo(p){
@@ -2966,7 +3101,7 @@ function producaoDesenharCodigo(p){
   state.producaoChave = chave; state.producaoListaHTML = null;
   body.innerHTML = `
     <div class="card left-accent">
-      <div style="font-weight:600;">${esc(p.equipamento)}</div>
+      <div style="font-weight:600;">${esc(p.equipamento)} · ${esc(producaoTurnoTexto(p))} · ${fmtDiaMes(producaoDataDe(p))}</div>
       <div class="hint" style="margin:2px 0 0;">Matéria-prima finalizada: <b>${(p.consumidos||[]).length}</b> volume(s) · <b>${fmtKgNum(somaKg(p.consumidos))} kg</b></div>
     </div>
     <h2 class="section-title">Qual produto foi gerado?</h2>
@@ -2993,7 +3128,7 @@ function producaoDesenharColeta(p){
       <div class="card left-accent">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div>
-            <div style="font-weight:600;">${esc(p.equipamento)}</div>
+            <div style="font-weight:600;">${esc(p.equipamento)} · ${esc(producaoTurnoTexto(p))} · ${fmtDiaMes(producaoDataDe(p))}</div>
             <div class="hint" style="margin:2px 0 0;">${esc(PRODUCAO_ETAPA_LABEL[p.etapa])}</div>
             ${prod ? `<div class="badge accent" style="margin-top:6px;">Produto: ${esc(p.codigoProduto)}${producaoDescProduto(p.codigoProduto)?' — '+esc(producaoDescProduto(p.codigoProduto)):''}</div> <button class="link-btn" data-prod-act="trocar-codigo">trocar</button>` : ''}
           </div>
@@ -3074,7 +3209,7 @@ function producaoDesenharRelatorio(p){
     </div>`).join('') || '<div class="empty">—</div>';
   body.innerHTML = `
     <div class="card left-accent">
-      <div style="font-weight:600;">${esc(p.equipamento)} · ${fmtDate(p.finalizadoEm||p.iniciadoEm)}</div>
+      <div style="font-weight:600;">${esc(p.equipamento)} · ${esc(producaoTurnoTexto(p))} · ${fmtDiaMes(producaoDataDe(p))} <span style="font-weight:400;color:var(--text-muted);">(finalizada ${fmtDate(p.finalizadoEm||p.iniciadoEm)})</span></div>
       <div class="hint" style="margin:2px 0 0;">${p.codigoProduto?'Produto '+esc(p.codigoProduto)+(producaoDescProduto(p.codigoProduto)?' — '+esc(producaoDescProduto(p.codigoProduto)):'')+' · ':''}${p.usuarioNome?esc(p.usuarioNome):''}</div>
     </div>
     <div class="card" style="text-align:center;">
@@ -3101,18 +3236,32 @@ function producaoCancelarOuSair(){ state.producaoId = null; state.producaoTrab =
 
 async function producaoIniciar(){
   if (!state.producaoEquipSel){ toast('Escolha o equipamento.'); return; }
+  if (!state.producaoTurnoSel){ toast('Escolha o turno.'); return; }
+  const dataEl = document.getElementById('prod-data');
+  const dataTurno = (dataEl && dataEl.value) || state.producaoDataSel;
+  if (!dataTurno){ toast('Informe a data do turno.'); return; }
   const nova = {
     id: 'prod_'+uid(), equipamento: state.producaoEquipSel, etapa:'materia_prima', codigoProduto:null,
+    turno: state.producaoTurnoSel, dataProducao: dataTurno,
     consumidos:[], produzidos:[], iniciadoEm: new Date().toISOString(), finalizadoEm:null, resultado:null,
     usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
   };
   state.producaoUltimaEscrita = Date.now();
   try{ await db.collection('producoes').doc(nova.id).set(nova); }
-  catch(e){ console.error(e); toast('Não consegui iniciar o registro. Tente de novo.'); return; }
+  catch(e){
+    console.error(e);
+    // banco ainda sem as colunas de turno/data (SQL update_006 não rodado): registra sem elas
+    let ok = false;
+    const completa = Object.assign({}, nova);
+    delete completa.turno; delete completa.dataProducao;
+    try{ await db.collection('producoes').doc(nova.id).set(completa); ok = true; toast('Registro iniciado, mas o turno e a data não foram salvos (falta rodar o SQL update_006 no Supabase).', 6000); }catch(e2){ console.error(e2); }
+    if (!ok){ toast('Não consegui iniciar o registro. Tente de novo.'); return; }
+  }
   state.producaoUltimaEscrita = Date.now();
   state.producoes.unshift(nova);
   state.producaoId = nova.id; state.producaoTrab = producaoClonar(nova);
   salvarProducaoSeguida(nova.id);
+  state.producaoTurnoSel = null; state.producaoDataSel = null; state.producaoDataManual = false;
   state.producaoChave = null;
   renderProducao();
 }
@@ -3168,7 +3317,7 @@ async function producaoGravarVolumeNovo(lote, dados){
     await db.collection('volumes').doc(lote).set(semProduto);
   }
 }
-const APP_VERSAO = '08.10-c';
+const APP_VERSAO = '08.10-d';
 async function producaoConcluir(){
   if (state.producaoConcluindo) return;
   state.producaoConcluindo = true;
@@ -3270,6 +3419,22 @@ function producaoAdicionarManual(){
 function producaoAcao(el){
   const act = el.dataset.prodAct, v = el.dataset.v;
   if (act==='equip'){ state.producaoEquipSel = v; state.producaoListaHTML = null; renderProducao(); }
+  else if (act==='turno'){
+    state.producaoTurnoSel = Number(v);
+    if (!state.producaoDataManual) state.producaoDataSel = producaoDataPadrao(state.producaoTurnoSel);
+    state.producaoListaHTML = null; renderProducao();
+  }
+  else if (act==='modo'){ state.producaoModo = v; state.producaoChave = null; state.producaoListaHTML = null; renderProducao(); }
+  else if (act==='dash-equip'){ state.dashEquip = v; renderProducao(); }
+  else if (act==='dash-mes'){
+    producaoDashDados();
+    const [a,m] = state.dashMes.split('-').map(Number);
+    const novo = new Date(a, m-1+Number(v), 1);
+    state.dashMes = novo.getFullYear()+'-'+String(novo.getMonth()+1).padStart(2,'0');
+    renderProducao();
+  }
+  else if (act==='dash-cel' && el.dataset.d) producaoDashDetalhe(el.dataset.d, el.dataset.t);
+  else if (act==='dash-export') producaoDashExportar();
   else if (act==='iniciar') producaoIniciar();
   else if (act==='continuar') producaoContinuar(v);
   else if (act==='ver'){ state.producaoRelatorioId = v; state.producaoChave = null; renderProducao(); }
@@ -3302,6 +3467,9 @@ function producaoAcao(el){
     if (alvo.id==='prod-codigo'){ e.preventDefault(); producaoConfirmarCodigo(); }
     else if (alvo.id && alvo.id.indexOf('prod-m-')===0){ e.preventDefault(); producaoAdicionarManual(); }
   });
+});
+document.getElementById('producao-body').addEventListener('change', e=>{
+  if (e.target.id==='prod-data'){ state.producaoDataSel = e.target.value; state.producaoDataManual = true; state.producaoListaHTML = null; }
 });
 document.getElementById('producao-body').addEventListener('input', e=>{
   if (e.target.id==='prod-codigo'){
@@ -3350,7 +3518,8 @@ document.getElementById('btn-export-hist').addEventListener('click', ()=>{
 const COL_LABELS = {
   situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (t)',
   data:'Data', tipo:'Status', quantidade:'Quantidade', obs:'Observação',
-  lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)'
+  lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)',
+  dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo'
 };
 // vira um nome de arquivo seguro: sem acento, sem espaço, sem caractere especial
 function slugify(texto){
