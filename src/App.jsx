@@ -3148,7 +3148,7 @@ function producaoConfirmarCodigo(){
   const cod = producaoResolverProduto(txt) || txt;
   const seguir = ()=>{ state.producaoChave = null; producaoSalvar({ codigoProduto: cod }); };
   if (!state.produtos.has(cod)){
-    producaoPerguntar('Código não encontrado', `O código <b>${esc(cod)}</b> não está no cadastro de produtos. Usar assim mesmo?`, 'Usar assim mesmo', seguir);
+    producaoPerguntar('Código não encontrado', `O código <b>${esc(cod)}</b> não está no cadastro de produtos. Se continuar, os produtos entram no estoque <b>sem produto vinculado</b> (o código fica só como texto). Usar assim mesmo?`, 'Usar assim mesmo', seguir);
   } else seguir();
 }
 function producaoFinalizarProducao(){
@@ -3191,8 +3191,11 @@ async function producaoConcluirInterno(){
   // 2) produtos gerados entram no estoque (já como conferidos: acabaram de ser vistos)
   for (const it of (p.produzidos||[])){
     const vol = state.volumes.get(it.lote);
-    const codigo = it.produtoCodigo || p.codigoProduto || null;
-    const desc = it.produtoDescricao || producaoDescProduto(codigo) || '';
+    // o banco só aceita no volume um código que exista no cadastro de produtos; se não existir,
+    // o volume entra sem produto vinculado (o código digitado fica na descrição e no histórico)
+    const codigoDigitado = it.produtoCodigo || p.codigoProduto || null;
+    const codigo = (codigoDigitado && state.produtos.has(codigoDigitado)) ? codigoDigitado : null;
+    const desc = it.produtoDescricao || producaoDescProduto(codigo) || codigoDigitado || '';
     if (vol){
       await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'estoque', statusConferencia:'contado', ultimaConferenciaEm: agora, atualizadoEm: agora }), 'entrada de '+it.lote);
     } else {
@@ -3203,7 +3206,7 @@ async function producaoConcluirInterno(){
       }), 'cadastro de '+it.lote);
     }
     if (!jaTem(it.lote, 'Produzido em '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
-      lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc,
+      lote: it.lote, produtoCodigo: codigoDigitado, produtoDescricao: desc,
       tipo:'entrada', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
       obs:'Produzido em '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
     }), 'histórico de '+it.lote);
