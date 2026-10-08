@@ -397,7 +397,7 @@ async function onAuthed(user){
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
   state.ready.db = true; state.ready.downloads = true;
-  document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador');
+  document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO;
   subscribeData();
   setView('dashboard');
 }
@@ -3158,6 +3158,17 @@ function producaoFinalizarProducao(){
   producaoPerguntar('Finalizar produção?', `Consumido: <b>${fmtKgNum(cons)} kg</b> (${p.consumidos.length} vol.)<br>Produzido: <b>${fmtKgNum(prod)} kg</b> (${p.produzidos.length} vol.)<br>Rendimento: <b>${fmtPct(pct)}</b>${pct>100?'<br><span style="color:var(--danger);">Acima de 100% — confira os pesos antes de finalizar.</span>':''}<br><br>Os volumes de matéria-prima serão baixados do estoque e os produtos gerados entram no estoque.`, 'Finalizar produção', ()=>producaoConcluir());
 }
 // trava contra toque duplo / repetição: se a finalização já está rodando, ignora o segundo pedido
+// grava um volume novo vindo da produção; se o banco recusar o código do produto (não está no
+// cadastro), grava de novo sem vincular produto, pra nunca travar o registro
+async function producaoGravarVolumeNovo(lote, dados){
+  try{ await db.collection('volumes').doc(lote).set(dados); }
+  catch(e1){
+    if (!dados.produtoCodigo) throw e1;
+    const semProduto = Object.assign({}, dados, { produtoCodigo: null });
+    await db.collection('volumes').doc(lote).set(semProduto);
+  }
+}
+const APP_VERSAO = '08.10-c';
 async function producaoConcluir(){
   if (state.producaoConcluindo) return;
   state.producaoConcluindo = true;
@@ -3199,7 +3210,7 @@ async function producaoConcluirInterno(){
     if (vol){
       await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'estoque', statusConferencia:'contado', ultimaConferenciaEm: agora, atualizadoEm: agora }), 'entrada de '+it.lote);
     } else {
-      await seguro(()=>db.collection('volumes').doc(it.lote).set({
+      await seguro(()=>producaoGravarVolumeNovo(it.lote, {
         lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc, armazem: state.armazemPadrao||'',
         quantidade: (Number(it.pesoKg)||0)/1000, status:'estoque', statusConferencia:'contado', origem:'producao',
         ultimaConferenciaEm: agora, criadoEm: agora, atualizadoEm: agora
