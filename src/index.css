@@ -157,6 +157,7 @@ nav.bottom button.active svg{stroke:var(--accent);}
   max-height:85vh;overflow-y:auto;border-top:2px solid var(--accent);}
 .sheet-handle{width:100%;padding:12px 0 16px;margin:-12px 0 2px;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;}
 .sheet-handle::before{content:'';width:36px;height:4px;background:var(--border);border-radius:2px;display:block;}
+#view-scan.modo-producao .scan-only-conf{display:none !important;}
 .sheet-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;}
 
 .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);background:var(--surface-3);

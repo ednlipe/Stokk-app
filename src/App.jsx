@@ -87,6 +87,12 @@ const APP_HTML = `
       <div id="import-summary"></div>
     </section>
 
+    <!-- PRODUCAO (rendimento metálico): parte de cima; o Bipar entra logo abaixo e a lista/manual em seguida -->
+    <section class="view" id="view-producao">
+      <h2 class="section-title">Produção</h2>
+      <div id="producao-body"></div>
+    </section>
+
     <!-- INVENTARIO -->
     <section class="view" id="view-inventario">
       <h2 class="section-title">Conferência de pátio</h2>
@@ -95,16 +101,16 @@ const APP_HTML = `
 
     <!-- BIPAR -->
     <section class="view" id="view-scan">
-      <h2 class="section-title">Bipar etiqueta</h2>
+      <h2 class="section-title scan-only-conf">Bipar etiqueta</h2>
 
       <div class="scan-flash" id="scan-flash"><div class="scan-flash-inner" id="scan-flash-inner"></div></div>
 
-      <label class="field-label">Status ao bipar (fica valendo até você trocar)</label>
-      <div class="btn-row" style="margin-bottom:8px;">
+      <label class="field-label scan-only-conf">Status ao bipar (fica valendo até você trocar)</label>
+      <div class="btn-row scan-only-conf" style="margin-bottom:8px;">
         <input type="text" id="batch-status-input" placeholder='Ex: Conferido, Avariado…' style="margin-bottom:0;">
         <button class="btn small primary" id="btn-batch-apply" style="flex-shrink:0;">Aplicar</button>
       </div>
-      <div class="filter-row" id="batch-action-row">
+      <div class="filter-row scan-only-conf" id="batch-action-row">
         <button class="filter-chip" data-batch="">Só consultar</button>
         <button class="filter-chip" data-batch="bloqueado">Bloquear</button>
         <button class="filter-chip" data-batch="transferido">Transferir</button>
@@ -123,7 +129,7 @@ const APP_HTML = `
         <div class="scan-box" style="aspect-ratio:auto;height:auto;padding:22px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:32px;height:32px;color:var(--accent);"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3M3 12h18"/></svg>
           <div class="hint" style="margin:0;text-align:center;">Aponte o leitor Bluetooth pro código e aperte o gatilho</div>
-          <input type="text" id="coletor-code" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
+          <input type="text" id="coletor-code" inputmode="none" autocomplete="off" placeholder="Aguardando leitura…" style="margin-bottom:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:0.5px;">
           <div class="scan-aviso" id="scan-aviso-coletor"></div>
         </div>
       </div>
@@ -145,15 +151,20 @@ const APP_HTML = `
       </div>
       <div id="foto-etiqueta-status"></div>
 
-      <label class="field-label">Ou digite o código manualmente</label>
-      <div class="btn-row" style="margin-bottom:14px;">
+      <label class="field-label scan-only-conf">Ou digite o código manualmente</label>
+      <div class="btn-row scan-only-conf" style="margin-bottom:14px;">
         <input type="text" id="manual-code" placeholder="Ex: EJF00374" style="margin-bottom:0;">
         <button class="btn small primary" id="btn-manual-lookup" style="flex-shrink:0;">Buscar</button>
       </div>
 
-      <div id="scan-result"></div>
+      <div id="scan-result" class="scan-only-conf"></div>
 
-      <div id="conf-progress"></div>
+      <div id="conf-progress" class="scan-only-conf"></div>
+    </section>
+
+    <!-- PRODUCAO: parte de baixo (preenchimento manual, itens registrados e botões) -->
+    <section class="view" id="view-producao-lista">
+      <div id="producao-lista-body"></div>
     </section>
 
     <!-- HISTORICO -->
@@ -190,6 +201,10 @@ const APP_HTML = `
     <button data-nav="inventario">
       <svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M5 4h14v16l-7-4-7 4z"/></svg>
       Conferência
+    </button>
+    <button data-nav="producao">
+      <svg viewBox="0 0 24 24"><path d="M3 20V9l6 4V9l6 4V6h3a1 1 0 011 1v13z"/></svg>
+      Produção
     </button>
     <button data-nav="importar" data-role="supervisor">
       <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>
@@ -264,7 +279,7 @@ let db = null, downloads = null;
    (collection().doc().set/update/get, collection().onSnapshot),
    só que lendo/gravando no Postgres do Supabase, com atualização
    em tempo real entre todos os aparelhos conectados. */
-const PK = { volumes:'lote', produtos:'codigo', movimentos:'id', sessoes:'id' };
+const PK = { volumes:'lote', produtos:'codigo', movimentos:'id', sessoes:'id', producoes:'id' };
 function camelToSnake(s){ return s.replace(/[A-Z]/g, m=>'_'+m.toLowerCase()); }
 function snakeToCamel(s){ return s.replace(/_([a-z0-9])/g, (_,c)=>c.toUpperCase()); }
 function objToSnake(o){ const r={}; for(const k in o) if(o[k]!==undefined) r[camelToSnake(k)]=o[k]; return r; }
@@ -286,7 +301,13 @@ function createSupabaseDB(){
     if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
     if (limitN) q = q.limit(limitN);
     const {data, error} = await q;
-    if (error){ console.error(table, error); toast('Erro ao ler dados: '+error.message, 4000); return; }
+    if (error){
+      console.error(table, error);
+      // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
+      if (table==='producoes'){ state.producoesErro = error.message || 'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      toast('Erro ao ler dados: '+error.message, 4000); return;
+    }
+    if (table==='producoes') state.producoesErro = null;
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
   }
@@ -789,6 +810,31 @@ function reconstruirCodigoEtiquetaOCR(campos){
 // "Sessão seguida" = qual conferência este USUÁRIO LOGADO estava acompanhando —
 // guardado neste aparelho, por login. É o que permite cada pessoa abrir o app e
 // voltar direto pra conferência dela, mesmo com várias rolando ao mesmo tempo.
+/* Status que os itens bipados recebem numa conferência ("Status inicial"). Fica guardado POR
+   conferência (neste aparelho) — antes era uma variável solta, então o status de uma conferência
+   vazava pra outra e até pra aba "Bipar" (que é só consulta). */
+function nomeConf(s){ return (s && s.nome) ? String(s.nome).trim() : ''; }
+function salvarStatusConf(sessId, status){
+  try{
+    if (status) localStorage.setItem('stokk_status_conf_'+sessId, status);
+    else localStorage.removeItem('stokk_status_conf_'+sessId);
+  }catch(e){}
+}
+function lerStatusConf(sessId){
+  try{ return localStorage.getItem('stokk_status_conf_'+sessId) || null; }catch(e){ return null; }
+}
+function sincronizarCampoStatusBipar(){
+  const inp = document.getElementById('batch-status-input');
+  if (inp) inp.value = state.batchAction || '';
+  document.querySelectorAll('#batch-action-row .filter-chip').forEach(c=>{
+    c.classList.toggle('active', !!state.batchAction && c.dataset.batch===state.batchAction);
+  });
+}
+function aplicarStatusDaConferencia(){
+  state.batchAction = (state.session && state.session.ativo) ? lerStatusConf(state.session.id) : null;
+  state.batchCount = 0;
+  sincronizarCampoStatusBipar();
+}
 function obterSessaoSeguidaId(){
   if (!state.user) return null;
   try{ return localStorage.getItem('stokk_sessao_seguida_'+state.user.id) || null; }catch(e){ return null; }
@@ -841,6 +887,12 @@ function subscribeData(){
     }
     renderAll();
   }, err=>{ console.error(err); });
+
+  db.collection('producoes').orderBy('iniciadoEm','desc').limit(100).onSnapshot(snap=>{
+    state.producoes = snap.docs.map(d=>d.data());
+    producaoAoReceberLista();
+    renderAll();
+  }, err=>{ console.error(err); });
 }
 
 /* ---------------- NAV / ROUTER ---------------- */
@@ -856,13 +908,22 @@ function setView(name){
   // é quem decide isso e adiciona a classe "active" nele quando for o caso.
   if (name==='scan'){
     state.modoBiparAvulso = true;
+    // aba Bipar = só consulta: o status da conferência não pode vazar pra cá
+    state.batchAction = null; state.batchCount = 0; sincronizarCampoStatusBipar();
   } else if (name==='inventario'){
     state.modoBiparAvulso = false;
+    if (state.session && state.session.ativo) aplicarStatusDaConferencia();
+  } else if (name==='producao'){
+    // na Produção quem decide se o Bipar aparece é renderProducao(); aqui só garante que
+    // nenhum status de conferência vaza pra cá
+    state.modoBiparAvulso = true;
+    state.batchAction = null; state.batchCount = 0;
   } else {
     document.getElementById('view-scan').classList.remove('active');
   }
+  if (name!=='producao'){ state.scanOverride = null; document.getElementById('view-scan').classList.remove('modo-producao'); }
   document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.nav===name));
-  if (name!=='scan' && name!=='inventario' && state.scanning) stopScanner();
+  if (name!=='scan' && name!=='inventario' && name!=='producao' && state.scanning) stopScanner();
   if (name==='scan'){ setTimeout(()=>{ focusScanInput(); }, 50); renderConfProgress(); }
   renderView(name);
 }
@@ -880,6 +941,7 @@ function renderView(name){
     else if (state.previewSessId && state.session && state.session.ativo && state.session.id===state.previewSessId) renderRelatorioPreview(state.session);
     else renderInventario();
   }
+  else if (name==='producao') renderProducao();
   else if (name==='historico') renderHistorico();
 }
 
@@ -1086,6 +1148,7 @@ document.querySelectorAll('#batch-action-row .filter-chip').forEach(chip=>{
     chip.classList.add('active');
     state.batchAction = chip.dataset.batch || null;
     state.batchCount = 0;
+    if (!state.modoBiparAvulso && state.session && state.session.ativo) salvarStatusConf(state.session.id, state.batchAction);
     document.getElementById('batch-status-input').value = state.batchAction || '';
     renderConfProgress();
   });
@@ -1095,6 +1158,7 @@ document.getElementById('btn-batch-apply').addEventListener('click', ()=>{
   document.querySelectorAll('#batch-action-row .filter-chip').forEach(c=>c.classList.remove('active'));
   state.batchAction = v || null;
   state.batchCount = 0;
+  if (!state.modoBiparAvulso && state.session && state.session.ativo) salvarStatusConf(state.session.id, state.batchAction);
   renderConfProgress();
   toast(v ? `Status "${v}" ativo pros próximos bipes.` : 'Voltou pro modo só consultar.');
 });
@@ -1201,9 +1265,12 @@ function setScanMode(mode){
   focusScanInput();
 }
 function focusScanInput(){
-  if (state.view!=='scan' && state.view!=='inventario') return;
-  const id = state.scanMode==='coletor' ? 'coletor-code' : 'manual-code';
-  const el = document.getElementById(id);
+  if (state.view!=='scan' && state.view!=='inventario' && state.view!=='producao') return;
+  // só o campo do coletor recebe foco automático (ele tem inputmode="none": o leitor
+  // continua digitando nele, mas o teclado do celular não abre). O campo de digitação
+  // manual nunca ganha foco sozinho — só quando a pessoa toca nele.
+  if (state.scanMode!=='coletor') return;
+  const el = document.getElementById('coletor-code');
   if (el) el.focus();
 }
 document.querySelectorAll('#scan-mode-row .filter-chip').forEach(chip=>{
@@ -1242,7 +1309,7 @@ coletorInput.addEventListener('input', ()=>{
 // devolve o foco pro campo do coletor logo em seguida, pra não perder nenhuma leitura.
 document.getElementById('view-scan').addEventListener('click', e=>{
   if (state.scanMode==='coletor' && e.target.id!=='coletor-code'){
-    setTimeout(()=>{ if ((state.view==='scan'||state.view==='inventario') && state.scanMode==='coletor') coletorInput.focus(); }, 30);
+    setTimeout(()=>{ if ((state.view==='scan'||state.view==='inventario'||state.view==='producao') && state.scanMode==='coletor') coletorInput.focus(); }, 30);
   }
 });
 document.addEventListener('visibilitychange', ()=>{
@@ -1421,6 +1488,8 @@ function mostrarAvisoBipagem(sucesso, texto, sub){
 }
 
 async function handleScanned(rawText){
+  // na aba Produção toda leitura (bipe, câmera, leitura de texto) vai pro registro de produção
+  if (state.scanOverride){ state.scanOverride(rawText); return; }
   const code = extractLoteCode(rawText);
   const vol = state.volumes.get(code);
   vibrate(vol ? 60 : [80,60,80]);
@@ -2195,15 +2264,16 @@ function renderInventario(){
     document.getElementById('view-scan').classList.remove('active');
     state.confBodySessId = null;
     state.previewSessId = null;
+    state.batchAction = null; state.batchCount = 0;
     const ativas = (state.sessoes||[]).filter(s=>s.ativo);
     const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
-    body.innerHTML = `
+    const html = `
       ${ativas.length ? `<h2 class="section-title" style="margin-top:0;">Conferências em andamento agora</h2>
       <div class="card" style="padding:0;">${ativas.map(s=>`
         <div class="list-item" data-continuar="${esc(s.id)}">
           <div class="li-main">
-            <div class="li-code" style="font-size:14px;">${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Escopo ainda não definido'}</div>
-            <div class="li-desc">iniciada ${fmtDate(s.iniciadoEm)}</div>
+            <div class="li-code" style="font-size:14px;">${nomeConf(s)?esc(nomeConf(s)):(s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Escopo ainda não definido')}</div>
+            <div class="li-desc">${nomeConf(s)&&s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto))+' · ':''}iniciada ${fmtDate(s.iniciadoEm)}</div>
           </div>
           <div class="li-side">
             <div class="li-weight">${(s.contados||[]).length}</div>
@@ -2212,6 +2282,8 @@ function renderInventario(){
         </div>`).join('')}</div>
       <p class="hint" style="margin-top:6px;">Toque numa delas pra continuar de onde parou, ou inicie uma nova abaixo (de outro produto, por exemplo).</p>` : ''}
 
+      <label class="field-label">Nome da conferência (opcional)</label>
+      <input type="text" id="inv-nome" placeholder='Ex: Galpão 2 – Vergalhão 8mm' maxlength="60" autocomplete="off">
       <label class="field-label">Status inicial dos itens bipados nesta conferência *</label>
       <input type="text" id="inv-status-inicial" placeholder='Ex: Conferido'>
       <button class="btn primary" id="inv-start">Iniciar nova conferência</button>
@@ -2220,8 +2292,8 @@ function renderInventario(){
       <div class="card" style="padding:0;">${anteriores.map(s=>`
         <div class="list-item" data-sess="${esc(s.id)}">
           <div class="li-main">
-            <div class="li-code" style="font-size:14px;">${fmtDate(s.finalizadoEm||s.iniciadoEm)}</div>
-            <div class="li-desc">${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Todos os produtos'}</div>
+            <div class="li-code" style="font-size:14px;">${nomeConf(s)?esc(nomeConf(s)):fmtDate(s.finalizadoEm||s.iniciadoEm)}</div>
+            <div class="li-desc">${nomeConf(s)?fmtDate(s.finalizadoEm||s.iniciadoEm)+' · ':''}${s.filtroProduto?esc(tipoProdutoLabel(s.filtroProduto)):'Todos os produtos'}</div>
           </div>
           <div class="li-side">
             <div class="li-weight" style="color:var(--ok);">${countOf(Object.values(s.resultado.porStatus||{}).flat())} ok</div>
@@ -2230,6 +2302,27 @@ function renderInventario(){
           <button class="link-btn del-sess" data-role="supervisor" data-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>
         </div>`).join('')}</div>` : ''}
     `;
+    // Atualizações em tempo real chamam essa função toda hora (principalmente logo depois de
+    // finalizar uma conferência, quando centenas de itens são atualizados de uma vez).
+    // Se a tela já está mostrando exatamente isso, não refaz — senão o campo "Status inicial"
+    // era recriado debaixo do dedo e não dava pra digitar.
+    if (body.querySelector('#inv-start') && state.confListaHTML === html){ applyRoleUI(); return; }
+    const nomeAntigo = document.getElementById('inv-nome');
+    const nomeDigitado = nomeAntigo ? nomeAntigo.value : '';
+    const nomeTinhaFoco = !!nomeAntigo && document.activeElement === nomeAntigo;
+    const campoAntigo = document.getElementById('inv-status-inicial');
+    const valorDigitado = campoAntigo ? campoAntigo.value : '';
+    const tinhaFoco = !!campoAntigo && document.activeElement === campoAntigo;
+    const selIni = tinhaFoco ? campoAntigo.selectionStart : null;
+    const selFim = tinhaFoco ? campoAntigo.selectionEnd : null;
+    state.confListaHTML = html;
+    body.innerHTML = html;
+    const nomeNovo = document.getElementById('inv-nome');
+    if (nomeNovo && nomeDigitado) nomeNovo.value = nomeDigitado;
+    if (nomeNovo && nomeTinhaFoco) nomeNovo.focus();
+    const campoNovo = document.getElementById('inv-status-inicial');
+    if (campoNovo && valorDigitado) campoNovo.value = valorDigitado;
+    if (campoNovo && tinhaFoco){ campoNovo.focus(); try{ campoNovo.setSelectionRange(selIni, selFim); }catch(e){} }
     body.querySelectorAll('.list-item[data-continuar]').forEach(li=>{
       li.addEventListener('click', ()=>{
         const sess = state.sessoes.find(s=>s.id===li.dataset.continuar);
@@ -2257,14 +2350,28 @@ function renderInventario(){
       // restrita ao produto encontrado.
       const esperados = [...state.volumes.values()].filter(v=>v.status==='estoque');
 
-      state.session = {
+      const novaSessao = {
         id: 'sess_'+uid(), iniciadoEm: new Date().toISOString(), ativo:true,
         contados: [], filtroProduto: null, usuarioId: state.user?state.user.id:null,
         esperadosSnapshot: esperados.map(v=>v.lote)
       };
+      const nomeConfDigitado = (document.getElementById('inv-nome')||{value:''}).value.trim();
+      if (nomeConfDigitado) novaSessao.nome = nomeConfDigitado;
       state.confExpandido.delete('bipar-faltando');
-      await db.collection('sessoes').doc(state.session.id).set(state.session);
+      try{ await db.collection('sessoes').doc(novaSessao.id).set(novaSessao); }
+      catch(e){
+        console.error(e);
+        // banco ainda sem a coluna "nome" (SQL de atualização não rodado): inicia sem o nome
+        let ok = false;
+        if (novaSessao.nome){
+          delete novaSessao.nome;
+          try{ await db.collection('sessoes').doc(novaSessao.id).set(novaSessao); ok = true; toast('Conferência iniciada, mas o nome não foi salvo (falta rodar o SQL update_004 no Supabase).'); }catch(e2){ console.error(e2); }
+        }
+        if (!ok){ toast('Não consegui iniciar a conferência. Tente de novo.'); return; }
+      }
+      state.session = novaSessao;
       salvarSessaoSeguida(state.session.id);
+      salvarStatusConf(state.session.id, statusInicial);
       state.batchAction = statusInicial;
       state.batchCount = 0;
       toast('Conferência iniciada — já pode bipar aqui embaixo.');
@@ -2294,6 +2401,7 @@ function renderInventario(){
   state.modoBiparAvulso = false;
   document.getElementById('view-scan').classList.add('active');
   if (state.confBodySessId !== state.session.id){
+    aplicarStatusDaConferencia();
     // só reconstrói o card de resumo quando troca de conferência — atualizações de
     // dados em tempo real (a cada bipe) só atualizam os números abaixo, sem recriar
     // o HTML, pra não interromper quem está com a câmera ligada bipando.
@@ -2302,6 +2410,7 @@ function renderInventario(){
       <div class="card left-accent">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div>
+            ${nomeConf(state.session)?`<div style="font-weight:600;">${esc(nomeConf(state.session))}</div>`:''}
             <div>Sessão ativa desde ${fmtDate(state.session.iniciadoEm)}</div>
             <div style="margin:8px 0 4px;font-family:var(--font-head);font-size:24px;"><span id="conf-contagem-num">${state.session.contados.length}</span> <span style="font-size:14px;color:var(--text-muted);font-family:var(--font-body);">itens contados</span></div>
             <div id="conf-escopo-badge">${state.session.filtroProduto?`<div class="badge accent">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`:''}</div>
@@ -2415,7 +2524,7 @@ function renderRelatorioPreview(sess){
   const totalConferido = Object.values(rep.porStatus).reduce((s,arr)=>s+arr.length,0);
   document.getElementById('inventario-body').innerHTML = `
     <div class="card left-accent">
-      <div>Revisão da conferência — ainda não registrada</div>
+      <div>Revisão da conferência${nomeConf(sess)?' — <b>'+esc(nomeConf(sess))+'</b>':''} — ainda não registrada</div>
       ${sess.filtroProduto?`<div class="badge accent" style="margin-top:6px;">Escopo: ${esc(tipoProdutoLabel(sess.filtroProduto))}</div>`:''}
       <p class="hint" style="margin:8px 0 0;">Confira os grupos abaixo (toque pra abrir/fechar) e, se estiver tudo certo, registre a conferência.</p>
     </div>
@@ -2482,7 +2591,7 @@ function renderRelatorioRegistrado(sess){
     // conferência bem antiga — só temos os números, não a lista de itens
     document.getElementById('inventario-body').innerHTML = `
       <div class="card left-accent">
-        <div>Conferência de ${fmtDate(sess.iniciadoEm)}</div>
+        <div>${nomeConf(sess)?'<b>'+esc(nomeConf(sess))+'</b> — ':''}Conferência de ${fmtDate(sess.iniciadoEm)}</div>
         ${sess.filtroProduto?`<div class="badge accent" style="margin-top:6px;">Escopo: ${esc(tipoProdutoLabel(sess.filtroProduto))}</div>`:''}
         <p class="hint" style="margin-top:8px;">Essa conferência foi feita numa versão anterior do app, então só temos os números — não a lista detalhada de itens.</p>
       </div>
@@ -2565,22 +2674,618 @@ function renderRelatorioRegistrado(sess){
   };
 }
 
+// itens que essa conferência mexeu: os marcados com o id dela + os listados no resultado/contados
+function lotesAfetadosPorConferencia(sess){
+  const out = new Map(); // lote -> status (label) que a conferência aplicou, se souber
+  state.volumes.forEach(v=>{ if (v.ultimaConferenciaSessao===sess.id && v.statusConferencia==='contado') out.set(v.lote, null); });
+  (sess.contados||[]).forEach(l=>{ if (!out.has(l)) out.set(l, null); });
+  const r = sess.resultado;
+  if (r && r.porStatus){ for (const [label, lotes] of Object.entries(r.porStatus)) (lotes||[]).forEach(l=>out.set(l, label)); }
+  else if (r && Array.isArray(r.conferidos)){ r.conferidos.forEach(l=>out.set(l, 'Conferido')); }
+  return out;
+}
+async function reverterItensDaConferencia(sess){
+  const afetados = lotesAfetadosPorConferencia(sess);
+  const statusSalvo = lerStatusConf(sess.id);
+  let n = 0;
+  for (const [lote, label] of afetados){
+    const v = state.volumes.get(lote);
+    if (!v) continue;
+    const patch = { statusConferencia:'nao_conferido', ultimaConferenciaSessao: null };
+    const aplicado = label || statusSalvo;
+    // se o status físico foi o que a própria conferência colocou (ex: "Conferido", "LAM2"), volta pra estoque
+    if (aplicado && v.status===aplicado && aplicado!=='estoque') patch.status = 'estoque';
+    try{ await db.collection('volumes').doc(lote).update(patch); n++; }catch(e){ console.error(e); }
+  }
+  return n;
+}
+
 function confirmarExclusaoConferencia(sess){
+  const qtd = lotesAfetadosPorConferencia(sess).size;
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Excluir conferência</h2>
-    <p class="hint">Essa conferência de ${fmtDate(sess.finalizadoEm||sess.iniciadoEm)} será apagada permanentemente. Os itens do estoque não são afetados.</p>
+    <p class="hint">${nomeConf(sess)?'<b>'+esc(nomeConf(sess))+'</b> — ':''}Essa conferência de ${fmtDate(sess.finalizadoEm||sess.iniciadoEm)} será apagada permanentemente.</p>
+    <p class="hint">Os <b>${qtd}</b> item(ns) conferidos nela voltam para o status <b>Não localizado</b>.</p>
     <button class="btn danger" id="conf-del-yes">Excluir conferência</button>
     <button class="btn ghost" id="conf-del-no" style="border:1px solid var(--border);">Cancelar</button>
   `);
   document.getElementById('conf-del-no').onclick = closeSheet;
   document.getElementById('conf-del-yes').onclick = async ()=>{
     closeSheet();
-    await db.collection('sessoes').doc(sess.id).delete();
-    toast('Conferência excluída.');
-    state.session = null; state.relatorioAberto = null; state.confBodySessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
+    let n = 0;
+    try{
+      n = await reverterItensDaConferencia(sess);
+      await db.collection('sessoes').doc(sess.id).delete();
+    }catch(e){ console.error(e); toast('Não consegui excluir a conferência. Tente de novo.'); return; }
+    salvarStatusConf(sess.id, null);
+    toast(`Conferência excluída. ${n} item(ns) voltaram para Não localizado.`);
+    state.session = null; state.relatorioAberto = null; state.confBodySessId = null; state.previewSessId = null; salvarSessaoSeguida(null); document.getElementById('view-scan').classList.remove('active');
     renderInventario();
   };
 }
+
+/* ================= PRODUÇÃO (rendimento metálico) =================
+   Fluxo: escolhe o equipamento → bipa (ou digita) a MATÉRIA-PRIMA consumida →
+   "Finalizar matéria-prima" → informa o código do produto que foi gerado →
+   bipa (ou digita) os PRODUTOS gerados → "Finalizar produção". Na finalização,
+   o rendimento é calculado (peso produzido ÷ peso consumido), os rolos consumidos
+   saem do estoque (baixado) e os produtos gerados entram no estoque. */
+const EQUIPAMENTOS_PRODUCAO = ['LAM02','LAM03','RT200'];
+state.producoes = [];
+state.producoesErro = null;
+state.producaoId = null;          // produção que ESTE usuário está registrando agora
+state.producaoTrab = null;        // cópia de trabalho dela (não é sobrescrita por atualizações atrasadas)
+state.producaoRelatorioId = null; // produção finalizada cuja tela de resultado está aberta
+state.producaoEquipSel = null;
+state.producaoChave = null;       // o que está desenhado hoje no corpo (evita refazer a cada atualização)
+state.producaoListaHTML = null;
+state.producaoEscritasPend = 0;
+state.producaoUltimaEscrita = 0;
+state.producaoFila = Promise.resolve();
+state.scanOverride = null;        // quando definido, toda leitura (bipe/câmera) vai pra cá
+
+function producaoSeguidaKey(){ return 'stokk_producao_seguida_'+(state.user?state.user.id:'anon'); }
+function obterProducaoSeguidaId(){ try{ return localStorage.getItem(producaoSeguidaKey()); }catch(e){ return null; } }
+function salvarProducaoSeguida(id){ try{ if (id) localStorage.setItem(producaoSeguidaKey(), id); else localStorage.removeItem(producaoSeguidaKey()); }catch(e){} }
+function producaoClonar(o){ return JSON.parse(JSON.stringify(o)); }
+function producaoEmAndamento(p){ return !!p && (p.etapa==='materia_prima' || p.etapa==='produtos'); }
+function producaoAtual(){
+  if (!state.producaoId) return null;
+  if (state.producaoTrab && state.producaoTrab.id===state.producaoId) return state.producaoTrab;
+  return state.producoes.find(x=>x.id===state.producaoId) || null;
+}
+function producaoLado(p){ return p.etapa==='materia_prima' ? 'consumidos' : 'produzidos'; }
+function somaKg(arr){ return (arr||[]).reduce((s,i)=>s+(Number(i.pesoKg)||0),0); }
+function fmtKgNum(n){ return Math.round(Number(n)||0).toLocaleString('pt-BR'); }
+function rendimentoDe(consKg, prodKg){ return consKg>0 ? prodKg/consKg*100 : null; }
+function fmtPct(n){ return n==null ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'; }
+function producaoDescProduto(codigo){
+  if (!codigo) return '';
+  const p = state.produtos.get(codigo);
+  return p ? (p.descricao||'') : '';
+}
+// resolve o que a pessoa digitou/bipou para um código de produto do cadastro (aceita só o começo do código)
+function producaoResolverProduto(texto){
+  const t = String(texto||'').trim().toUpperCase();
+  if (!t) return null;
+  if (state.produtos.has(t)) return t;
+  return encontrarProdutoPorCodigoEtiqueta(t);
+}
+
+// chamado quando chega a lista atualizada de produções do banco
+function producaoAoReceberLista(){
+  const recente = (Date.now() - state.producaoUltimaEscrita) < 15000 || state.producaoEscritasPend>0;
+  if (!state.producaoId){
+    const seg = obterProducaoSeguidaId();
+    if (seg){
+      const f = state.producoes.find(x=>x.id===seg && producaoEmAndamento(x));
+      if (f){ state.producaoId = f.id; state.producaoTrab = producaoClonar(f); }
+    }
+    return;
+  }
+  const remota = state.producoes.find(x=>x.id===state.producaoId);
+  if (!remota){
+    if (recente) return;   // acabou de ser criada aqui: a lista ainda pode não ter chegado com ela
+    state.producaoId = null; state.producaoTrab = null; salvarProducaoSeguida(null);
+    return;
+  }
+  if (!producaoEmAndamento(remota)){
+    if (recente && producaoEmAndamento(state.producaoTrab)) return;
+    state.producaoId = null; state.producaoTrab = null; salvarProducaoSeguida(null);
+    return;
+  }
+  // enquanto este aparelho está gravando (ou acabou de gravar), a cópia local manda
+  if (!state.producaoTrab || state.producaoTrab.id!==remota.id || !recente) state.producaoTrab = producaoClonar(remota);
+}
+
+// grava um pedaço da produção, na ordem, sem deixar uma gravação atrasada apagar a outra
+function producaoSalvar(patch){
+  const p = producaoAtual();
+  if (!p) return Promise.resolve(false);
+  if (state.producaoTrab !== p){ state.producaoTrab = producaoClonar(p); }
+  const trab = state.producaoTrab;
+  Object.assign(trab, patch);
+  const id = trab.id;
+  const dados = Object.assign({}, patch);
+  state.producaoEscritasPend++; state.producaoUltimaEscrita = Date.now();
+  state.producaoFila = state.producaoFila.then(async ()=>{
+    try{ await db.collection('producoes').doc(id).update(dados); return true; }
+    catch(e){ console.error(e); toast('Não consegui salvar a última alteração. Confira a internet.', 3500); return false; }
+    finally{ state.producaoEscritasPend--; state.producaoUltimaEscrita = Date.now(); }
+  });
+  renderProducao();
+  return state.producaoFila;
+}
+
+/* ---------- leitura (bipe / câmera) ---------- */
+function producaoReceberLeitura(raw){
+  const p = producaoAtual();
+  if (!p || !producaoEmAndamento(p)) return;
+  if (p.etapa==='produtos' && !p.codigoProduto){ toast('Informe antes o código do produto.'); return; }
+  const s = String(raw||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (!s) return;
+  let item = null;
+  const etq = parseEtiquetaCodigo(s);
+  if (etq){
+    item = { lote: etq.volume, corrida: etq.corrida, pesoKg: etq.pesoKg, produtoCodigo: producaoResolverProduto(etq.codigoProduto) || etq.codigoProduto };
+  } else {
+    const code = extractLoteCode(s);
+    const vol = state.volumes.get(code);
+    if (vol) item = { lote: vol.lote, corrida: '', pesoKg: Math.round((Number(vol.quantidade)||0)*1000), produtoCodigo: vol.produtoCodigo||'' };
+  }
+  if (!item){
+    beepErro(); vibrate([80,60,80]);
+    mostrarAvisoBipagem(false, 'Não reconheci o formato', s.slice(0,28));
+    producaoPreencherManual({ lote: s }, 'Li "'+s+'", mas não consegui separar os campos. Confira e preencha abaixo.');
+    return;
+  }
+  producaoAdicionarItem(item, false);
+}
+
+function producaoPreencherManual(valores, aviso){
+  const set = (id,v)=>{ const el = document.getElementById(id); if (el && v!=null) el.value = v; };
+  set('prod-m-lote', valores.lote||''); set('prod-m-corrida', valores.corrida||'');
+  set('prod-m-peso', valores.pesoKg?valores.pesoKg:''); if (valores.produtoCodigo!=null) set('prod-m-produto', valores.produtoCodigo);
+  const lido = document.getElementById('prod-lido');
+  if (lido){ lido.textContent = aviso||''; lido.style.display = aviso ? 'block' : 'none'; }
+  const campo = document.getElementById('prod-m-peso') || document.getElementById('prod-m-lote');
+  if (campo){ try{ campo.scrollIntoView({block:'center', behavior:'smooth'}); campo.focus(); }catch(e){} }
+}
+
+async function producaoAdicionarItem(item, manual){
+  const p = producaoAtual();
+  if (!p) return false;
+  const lado = producaoLado(p);
+  item.lote = String(item.lote||'').trim().toUpperCase();
+  item.corrida = String(item.corrida||'').trim().toUpperCase();
+  item.pesoKg = Number(item.pesoKg)||0;
+  if (!item.lote){ toast('Informe o volume.'); return false; }
+  if (!(item.pesoKg>0)){ beepErro(); toast('Informe o peso em kg.'); producaoPreencherManual(item, 'Falta o peso (kg) de '+item.lote+'.'); return false; }
+  const repetido = (p.consumidos||[]).some(i=>i.lote===item.lote) || (p.produzidos||[]).some(i=>i.lote===item.lote);
+  if (repetido){
+    beepErro(); vibrate([80,60,80]);
+    mostrarAvisoBipagem(false, 'Já registrado nesta produção', item.lote);
+    toast(item.lote+' já foi registrado nesta produção.');
+    return false;
+  }
+  const cod = producaoResolverProduto(item.produtoCodigo) || String(item.produtoCodigo||'').trim().toUpperCase();
+  item.produtoCodigo = cod || (lado==='produzidos' ? (p.codigoProduto||'') : '');
+  item.produtoDescricao = producaoDescProduto(item.produtoCodigo);
+  if (lado==='produzidos' && p.codigoProduto && item.produtoCodigo && item.produtoCodigo!==p.codigoProduto) item.divergente = true;
+  const vol = state.volumes.get(item.lote);
+  if (lado==='consumidos' && vol && vol.status==='baixado') item.jaBaixado = true;
+  item.manual = !!manual;
+  item.em = new Date().toISOString();
+  beepOk(); vibrate(60);
+  mostrarAvisoBipagem(true, lado==='consumidos' ? 'Matéria-prima registrada' : 'Produto registrado', item.lote+' · '+fmtKgNum(item.pesoKg)+' kg');
+  if (item.divergente) toast('Atenção: esse produto é diferente do código informado ('+p.codigoProduto+').', 3500);
+  if (item.jaBaixado) toast('Atenção: '+item.lote+' já constava como baixado no estoque.', 3500);
+  await producaoSalvar({ [lado]: (p[lado]||[]).concat([item]) });
+  return true;
+}
+function producaoRemoverItem(lado, lote){
+  const p = producaoAtual(); if (!p) return;
+  producaoSalvar({ [lado]: (p[lado]||[]).filter(i=>i.lote!==lote) });
+}
+
+/* ---------- telas ---------- */
+const PRODUCAO_ETAPA_LABEL = { materia_prima:'Etapa 1 de 2 · Matéria-prima consumida', produtos:'Etapa 2 de 2 · Produtos gerados', finalizada:'Finalizada' };
+
+function producaoMostrarBipagem(on){
+  const scan = document.getElementById('view-scan');
+  const lv = document.getElementById('view-producao-lista');
+  scan.classList.add('modo-producao');
+  scan.classList.toggle('active', on);
+  lv.classList.toggle('active', on);
+  if (on){
+    state.scanOverride = producaoReceberLeitura;
+  } else {
+    state.scanOverride = null;
+    if (state.scanning) stopScanner();
+  }
+}
+
+function renderProducao(){
+  const body = document.getElementById('producao-body');
+  const lista = document.getElementById('producao-lista-body');
+  if (!body || !lista) return;
+  if (state.producoesErro){
+    producaoMostrarBipagem(false);
+    state.producaoChave = 'erro';
+    body.innerHTML = '<div class="card left-danger"><b>A aba Produção ainda não está pronta no banco de dados.</b><p class="hint" style="margin:8px 0 0;">Peça ao supervisor para rodar o arquivo <b>update_005_producao.sql</b> no Supabase (SQL Editor) e depois atualizar a página.</p></div>';
+    return;
+  }
+  const p = producaoAtual();
+  if (p && producaoEmAndamento(p)){
+    state.producaoRelatorioId = null;
+    if (p.etapa==='produtos' && !p.codigoProduto){ producaoMostrarBipagem(false); producaoDesenharCodigo(p); return; }
+    producaoMostrarBipagem(true);
+    producaoDesenharColeta(p);
+    return;
+  }
+  producaoMostrarBipagem(false);
+  const rel = state.producaoRelatorioId ? state.producoes.find(x=>x.id===state.producaoRelatorioId) : null;
+  if (rel){ producaoDesenharRelatorio(rel); return; }
+  producaoDesenharLista();
+}
+
+function producaoDesenharLista(){
+  const body = document.getElementById('producao-body');
+  const andamento = state.producoes.filter(producaoEmAndamento);
+  const feitas = state.producoes.filter(x=>x.etapa==='finalizada').slice(0,30);
+  const html = `
+    <h2 class="section-title" style="margin-top:0;">Registrar produção</h2>
+    <label class="field-label">Equipamento</label>
+    <div class="filter-row" style="margin-bottom:10px;">${EQUIPAMENTOS_PRODUCAO.map(e=>`<button class="filter-chip ${state.producaoEquipSel===e?'active':''}" data-prod-act="equip" data-v="${esc(e)}">${esc(e)}</button>`).join('')}</div>
+    <button class="btn primary" data-prod-act="iniciar">Iniciar registro</button>
+    ${andamento.length ? `<h2 class="section-title">Em andamento</h2>
+      <div class="card" style="padding:0;">${andamento.map(x=>`
+        <div class="list-item" data-prod-act="continuar" data-v="${esc(x.id)}">
+          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)}</div>
+            <div class="li-desc">${esc(PRODUCAO_ETAPA_LABEL[x.etapa]||'')} · iniciada ${fmtDate(x.iniciadoEm)}${x.usuarioNome?' · '+esc(x.usuarioNome):''}</div></div>
+          <div class="li-side"><div class="li-weight">${(x.consumidos||[]).length}</div><div class="li-desc">rolos</div></div>
+        </div>`).join('')}</div>` : ''}
+    ${feitas.length ? `<h2 class="section-title">Registradas</h2>
+      <div class="card" style="padding:0;">${feitas.map(x=>{
+        const r = x.resultado||{};
+        return `<div class="list-item" data-prod-act="ver" data-v="${esc(x.id)}">
+          <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)}</div>
+            <div class="li-desc">${fmtDate(x.finalizadoEm||x.iniciadoEm)} · ${fmtKgNum(r.consumidoKg)} kg → ${fmtKgNum(r.produzidoKg)} kg</div></div>
+          <div class="li-side"><div class="li-weight" style="${(r.rendimentoPct>100)?'color:var(--danger);':''}">${fmtPct(r.rendimentoPct)}</div><div class="li-desc">rendimento</div></div>
+        </div>`;}).join('')}</div>` : ''}
+  `;
+  if (state.producaoChave==='lista' && state.producaoListaHTML===html) return;
+  state.producaoChave = 'lista'; state.producaoListaHTML = html;
+  body.innerHTML = html;
+}
+
+function producaoDesenharCodigo(p){
+  const body = document.getElementById('producao-body');
+  const chave = 'codigo|'+p.id;
+  if (state.producaoChave===chave){ return; }
+  state.producaoChave = chave; state.producaoListaHTML = null;
+  body.innerHTML = `
+    <div class="card left-accent">
+      <div style="font-weight:600;">${esc(p.equipamento)}</div>
+      <div class="hint" style="margin:2px 0 0;">Matéria-prima finalizada: <b>${(p.consumidos||[]).length}</b> volume(s) · <b>${fmtKgNum(somaKg(p.consumidos))} kg</b></div>
+    </div>
+    <h2 class="section-title">Qual produto foi gerado?</h2>
+    <label class="field-label">Código do produto</label>
+    <input type="text" id="prod-codigo" list="prod-datalist-cod" autocomplete="off" placeholder="Ex: TPAIQ092B4.20" style="text-transform:uppercase;">
+    <datalist id="prod-datalist-cod">${[...state.produtos.values()].map(x=>`<option value="${esc(x.codigo)}">${esc((x.descricao||'').slice(0,50))}</option>`).join('')}</datalist>
+    <p class="hint" id="prod-codigo-desc" style="margin:0 0 12px;"></p>
+    <button class="btn primary" data-prod-act="codigo-ok">Continuar para registrar os produtos</button>
+    <button class="btn ghost" data-prod-act="voltar-mp" style="border:1px solid var(--border);">← Voltar à matéria-prima</button>
+    <div style="margin-top:6px;"><button class="link-btn" data-prod-act="sair">sair (continuar depois)</button> · <button class="link-btn" data-prod-act="cancelar" style="color:var(--danger);">cancelar este registro</button></div>
+  `;
+  setTimeout(()=>{ const c = document.getElementById('prod-codigo'); if (c) c.focus(); }, 60);
+}
+
+function producaoDesenharColeta(p){
+  const body = document.getElementById('producao-body');
+  const lista = document.getElementById('producao-lista-body');
+  const chave = 'coleta|'+p.id+'|'+p.etapa+'|'+(p.codigoProduto||'');
+  const lado = producaoLado(p);
+  if (state.producaoChave!==chave){
+    state.producaoChave = chave; state.producaoListaHTML = null;
+    const prod = p.etapa==='produtos';
+    body.innerHTML = `
+      <div class="card left-accent">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+          <div>
+            <div style="font-weight:600;">${esc(p.equipamento)}</div>
+            <div class="hint" style="margin:2px 0 0;">${esc(PRODUCAO_ETAPA_LABEL[p.etapa])}</div>
+            ${prod ? `<div class="badge accent" style="margin-top:6px;">Produto: ${esc(p.codigoProduto)}${producaoDescProduto(p.codigoProduto)?' — '+esc(producaoDescProduto(p.codigoProduto)):''}</div> <button class="link-btn" data-prod-act="trocar-codigo">trocar</button>` : ''}
+          </div>
+          <button class="link-btn" data-prod-act="sair">sair (continuar depois)</button>
+        </div>
+        <div id="prod-totais" style="margin-top:10px;"></div>
+      </div>`;
+    lista.innerHTML = `
+      <h2 class="section-title">Ou preencha manualmente</h2>
+      <div class="card">
+        <p class="hint" id="prod-lido" style="margin:0 0 8px;display:none;color:var(--danger);"></p>
+        <label class="field-label">Volume (código da etiqueta)</label>
+        <input type="text" id="prod-m-lote" autocomplete="off" placeholder="Ex: MBI01617" style="text-transform:uppercase;">
+        <label class="field-label">Corrida</label>
+        <input type="text" id="prod-m-corrida" autocomplete="off" placeholder="Ex: B02650" style="text-transform:uppercase;">
+        <label class="field-label">Peso (kg)</label>
+        <input type="number" inputmode="decimal" id="prod-m-peso" placeholder="Ex: 1860">
+        <label class="field-label">Código do produto${prod?'':' (opcional)'}</label>
+        <input type="text" id="prod-m-produto" list="prod-datalist" autocomplete="off" value="${esc(prod?(p.codigoProduto||''):'')}" style="text-transform:uppercase;">
+        <datalist id="prod-datalist"></datalist>
+        <button class="btn primary" data-prod-act="add-manual">Adicionar</button>
+      </div>
+      <h2 class="section-title">${prod?'Produtos registrados':'Matéria-prima registrada'} <span id="prod-contagem" style="color:var(--text-muted);font-weight:400;"></span></h2>
+      <div class="card" style="padding:0;" id="prod-itens"></div>
+      <button class="btn primary" id="prod-fin" data-prod-act="${prod?'fin-prod':'fin-mp'}" style="margin-top:14px;">${prod?'Finalizar produção':'Finalizar matéria-prima'}</button>
+      ${prod ? '<button class="btn ghost" data-prod-act="voltar-mp" style="border:1px solid var(--border);margin-top:6px;">← Voltar à matéria-prima</button>' : ''}
+      <div style="margin-top:8px;"><button class="link-btn" data-prod-act="cancelar" style="color:var(--danger);">cancelar este registro</button></div>
+    `;
+    setTimeout(()=>focusScanInput(), 80);
+  }
+  producaoAtualizarItens(p, lado);
+}
+
+function producaoItemHTML(it, lado){
+  const flags = [];
+  if (it.divergente) flags.push('<span class="badge danger">produto diferente do informado</span>');
+  if (it.jaBaixado) flags.push('<span class="badge info">já constava como baixado</span>');
+  const sub = [it.corrida?('corrida '+it.corrida):'', it.produtoCodigo||'', it.manual?'digitado':''].filter(Boolean).join(' · ');
+  return `<div class="list-item" style="cursor:default;">
+    <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(it.lote)}</div>
+      <div class="li-desc">${esc(sub)}</div>${flags.length?'<div style="margin-top:4px;">'+flags.join(' ')+'</div>':''}</div>
+    <div class="li-side"><div class="li-weight">${fmtKgNum(it.pesoKg)} kg</div></div>
+    <button class="link-btn" data-prod-act="remover" data-lado="${lado}" data-v="${esc(it.lote)}" style="margin-left:10px;color:var(--danger);">remover</button>
+  </div>`;
+}
+function producaoAtualizarItens(p, lado){
+  const arr = p[lado]||[];
+  const box = document.getElementById('prod-itens');
+  if (box) box.innerHTML = arr.length ? arr.slice().reverse().map(it=>producaoItemHTML(it, lado)).join('') : '<div class="empty">Nada registrado ainda.</div>';
+  const cont = document.getElementById('prod-contagem'); if (cont) cont.textContent = '('+arr.length+')';
+  const fin = document.getElementById('prod-fin'); if (fin) fin.disabled = !arr.length;
+  const cons = somaKg(p.consumidos), prod = somaKg(p.produzidos);
+  const tot = document.getElementById('prod-totais');
+  if (tot){
+    let h = `<div>Matéria-prima: <b>${(p.consumidos||[]).length}</b> vol. · <b>${fmtKgNum(cons)} kg</b></div>`;
+    if (p.etapa==='produtos') h += `<div>Produzido: <b>${(p.produzidos||[]).length}</b> vol. · <b>${fmtKgNum(prod)} kg</b> · rendimento parcial <b>${fmtPct(rendimentoDe(cons, prod))}</b></div>`;
+    tot.innerHTML = h;
+  }
+  const dl = document.getElementById('prod-datalist');
+  if (dl && dl.dataset.n !== String(state.produtos.size)){
+    dl.dataset.n = String(state.produtos.size);
+    dl.innerHTML = [...state.produtos.values()].map(x=>`<option value="${esc(x.codigo)}">${esc((x.descricao||'').slice(0,50))}</option>`).join('');
+  }
+}
+
+function producaoDesenharRelatorio(p){
+  const body = document.getElementById('producao-body');
+  const chave = 'rel|'+p.id+'|'+(p.finalizadoEm||'');
+  if (state.producaoChave===chave) return;
+  state.producaoChave = chave; state.producaoListaHTML = null;
+  const r = p.resultado || { consumidoKg: somaKg(p.consumidos), produzidoKg: somaKg(p.produzidos), rendimentoPct: rendimentoDe(somaKg(p.consumidos), somaKg(p.produzidos)) };
+  const perda = (r.consumidoKg||0) - (r.produzidoKg||0);
+  const linhas = (arr)=> (arr||[]).map(it=>`
+    <div class="list-item" style="cursor:default;">
+      <div class="li-main"><div class="li-code" style="font-size:14px;">${esc(it.lote)}</div>
+        <div class="li-desc">${esc([it.corrida?('corrida '+it.corrida):'', it.produtoCodigo||''].filter(Boolean).join(' · '))}</div></div>
+      <div class="li-side"><div class="li-weight">${fmtKgNum(it.pesoKg)} kg</div></div>
+    </div>`).join('') || '<div class="empty">—</div>';
+  body.innerHTML = `
+    <div class="card left-accent">
+      <div style="font-weight:600;">${esc(p.equipamento)} · ${fmtDate(p.finalizadoEm||p.iniciadoEm)}</div>
+      <div class="hint" style="margin:2px 0 0;">${p.codigoProduto?'Produto '+esc(p.codigoProduto)+(producaoDescProduto(p.codigoProduto)?' — '+esc(producaoDescProduto(p.codigoProduto)):'')+' · ':''}${p.usuarioNome?esc(p.usuarioNome):''}</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="hint" style="margin:0;">Rendimento metálico</div>
+      <div style="font-family:var(--font-head);font-size:38px;line-height:1.2;${(r.rendimentoPct>100)?'color:var(--danger);':''}">${fmtPct(r.rendimentoPct)}</div>
+      ${(r.rendimentoPct>100)?'<div class="badge danger">Acima de 100% — confira os pesos</div>':''}
+      <div style="display:flex;justify-content:space-around;margin-top:10px;gap:8px;">
+        <div><div class="hint" style="margin:0;">Consumido</div><b>${fmtKgNum(r.consumidoKg)} kg</b></div>
+        <div><div class="hint" style="margin:0;">Produzido</div><b>${fmtKgNum(r.produzidoKg)} kg</b></div>
+        <div><div class="hint" style="margin:0;">Diferença</div><b>${perda>=0?'':'+'}${fmtKgNum(Math.abs(perda))} kg</b></div>
+      </div>
+    </div>
+    <h2 class="section-title">Matéria-prima (${(p.consumidos||[]).length})</h2>
+    <div class="card" style="padding:0;">${linhas(p.consumidos)}</div>
+    <h2 class="section-title">Produtos gerados (${(p.produzidos||[]).length})</h2>
+    <div class="card" style="padding:0;">${linhas(p.produzidos)}</div>
+    <button class="btn primary" data-prod-act="export" data-v="${esc(p.id)}" style="margin-top:14px;">Exportar (Excel)</button>
+    <button class="btn ghost" data-prod-act="voltar-lista" style="border:1px solid var(--border);margin-top:6px;">Voltar</button>
+  `;
+}
+
+/* ---------- ações ---------- */
+function producaoCancelarOuSair(){ state.producaoId = null; state.producaoTrab = null; salvarProducaoSeguida(null); state.producaoChave = null; renderProducao(); }
+
+async function producaoIniciar(){
+  if (!state.producaoEquipSel){ toast('Escolha o equipamento.'); return; }
+  const nova = {
+    id: 'prod_'+uid(), equipamento: state.producaoEquipSel, etapa:'materia_prima', codigoProduto:null,
+    consumidos:[], produzidos:[], iniciadoEm: new Date().toISOString(), finalizadoEm:null, resultado:null,
+    usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
+  };
+  state.producaoUltimaEscrita = Date.now();
+  try{ await db.collection('producoes').doc(nova.id).set(nova); }
+  catch(e){ console.error(e); toast('Não consegui iniciar o registro. Tente de novo.'); return; }
+  state.producaoUltimaEscrita = Date.now();
+  state.producoes.unshift(nova);
+  state.producaoId = nova.id; state.producaoTrab = producaoClonar(nova);
+  salvarProducaoSeguida(nova.id);
+  state.producaoChave = null;
+  renderProducao();
+}
+function producaoContinuar(id){
+  const x = state.producoes.find(y=>y.id===id);
+  if (!x) return;
+  state.producaoId = x.id; state.producaoTrab = producaoClonar(x); state.producaoUltimaEscrita = 0;
+  salvarProducaoSeguida(x.id); state.producaoChave = null;
+  renderProducao();
+}
+function producaoPerguntar(titulo, texto, rotuloOk, aoConfirmar, perigo){
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">${esc(titulo)}</h2>
+    <div class="hint" style="margin:0 0 14px;">${texto}</div>
+    <button class="btn ${perigo?'danger':'primary'}" id="prod-sim">${esc(rotuloOk)}</button>
+    <button class="btn ghost" id="prod-nao" style="border:1px solid var(--border);">Voltar</button>
+  `);
+  document.getElementById('prod-nao').onclick = closeSheet;
+  document.getElementById('prod-sim').onclick = ()=>{ closeSheet(); aoConfirmar(); };
+}
+function producaoFinalizarMateriaPrima(){
+  const p = producaoAtual(); if (!p) return;
+  if (!(p.consumidos||[]).length){ toast('Registre ao menos um volume de matéria-prima.'); return; }
+  producaoPerguntar('Finalizar matéria-prima?', `<b>${p.consumidos.length}</b> volume(s) · <b>${fmtKgNum(somaKg(p.consumidos))} kg</b>.<br>Em seguida você informa o código do produto gerado e registra os produtos.`, 'Finalizar e continuar', ()=>{
+    producaoSalvar({ etapa:'produtos' });
+  });
+}
+function producaoConfirmarCodigo(){
+  const p = producaoAtual(); if (!p) return;
+  const campo = document.getElementById('prod-codigo');
+  const txt = campo ? campo.value.trim().toUpperCase() : '';
+  if (!txt){ toast('Digite o código do produto.'); return; }
+  const cod = producaoResolverProduto(txt) || txt;
+  const seguir = ()=>{ state.producaoChave = null; producaoSalvar({ codigoProduto: cod }); };
+  if (!state.produtos.has(cod)){
+    producaoPerguntar('Código não encontrado', `O código <b>${esc(cod)}</b> não está no cadastro de produtos. Usar assim mesmo?`, 'Usar assim mesmo', seguir);
+  } else seguir();
+}
+function producaoFinalizarProducao(){
+  const p = producaoAtual(); if (!p) return;
+  if (!(p.produzidos||[]).length){ toast('Registre ao menos um produto gerado.'); return; }
+  const cons = somaKg(p.consumidos), prod = somaKg(p.produzidos), pct = rendimentoDe(cons, prod);
+  producaoPerguntar('Finalizar produção?', `Consumido: <b>${fmtKgNum(cons)} kg</b> (${p.consumidos.length} vol.)<br>Produzido: <b>${fmtKgNum(prod)} kg</b> (${p.produzidos.length} vol.)<br>Rendimento: <b>${fmtPct(pct)}</b>${pct>100?'<br><span style="color:var(--danger);">Acima de 100% — confira os pesos antes de finalizar.</span>':''}<br><br>Os volumes de matéria-prima serão baixados do estoque e os produtos gerados entram no estoque.`, 'Finalizar produção', ()=>producaoConcluir());
+}
+async function producaoConcluir(){
+  let p = producaoAtual(); if (!p) return;
+  toast('Finalizando…', 1500);
+  try{ await state.producaoFila; }catch(e){}
+  p = producaoAtual(); if (!p) return;
+  const agora = new Date().toISOString();
+  const quem = { usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null };
+  let falhas = 0;
+  const seguro = async (fn)=>{ try{ await fn(); }catch(e){ console.error(e); falhas++; } };
+  // 1) matéria-prima consumida sai do estoque
+  for (const it of (p.consumidos||[])){
+    const vol = state.volumes.get(it.lote);
+    if (vol){
+      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'baixado', atualizadoEm: agora }));
+    }
+    await seguro(()=>db.collection('movimentos').doc('mov_'+p.id+'_c_'+it.lote).set({
+      lote: it.lote, produtoCodigo: it.produtoCodigo||(vol&&vol.produtoCodigo)||null, produtoDescricao: it.produtoDescricao||(vol&&vol.produtoDescricao)||'',
+      tipo:'baixado', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
+      obs:'Consumido na produção '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
+    }));
+  }
+  // 2) produtos gerados entram no estoque (já como conferidos: acabaram de ser vistos)
+  for (const it of (p.produzidos||[])){
+    const vol = state.volumes.get(it.lote);
+    const codigo = it.produtoCodigo || p.codigoProduto || null;
+    const desc = it.produtoDescricao || producaoDescProduto(codigo) || '';
+    if (vol){
+      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'estoque', statusConferencia:'contado', ultimaConferenciaEm: agora, atualizadoEm: agora }));
+    } else {
+      await seguro(()=>db.collection('volumes').doc(it.lote).set({
+        lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc, armazem: state.armazemPadrao||'',
+        quantidade: (Number(it.pesoKg)||0)/1000, status:'estoque', statusConferencia:'contado', origem:'producao',
+        ultimaConferenciaEm: agora, criadoEm: agora, atualizadoEm: agora
+      }));
+    }
+    await seguro(()=>db.collection('movimentos').doc('mov_'+p.id+'_p_'+it.lote).set({
+      lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc,
+      tipo:'entrada', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
+      obs:'Produzido em '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
+    }));
+  }
+  if (falhas){
+    toast('Alguns itens não foram atualizados no estoque. Confira a internet e toque em Finalizar de novo.', 5000);
+    return;
+  }
+  // 3) por último, fecha a produção (se algo acima falhou, ela continua aberta e dá pra tentar de novo)
+  const cons = somaKg(p.consumidos), prod = somaKg(p.produzidos);
+  const resultado = { consumidoKg: cons, produzidoKg: prod, rendimentoPct: rendimentoDe(cons, prod), perdaKg: cons-prod };
+  const patch = { etapa:'finalizada', finalizadoEm: agora, resultado };
+  const id = p.id;
+  try{ await db.collection('producoes').doc(id).update(patch); }
+  catch(e){ console.error(e); toast('Estoque atualizado, mas não consegui fechar o registro. Toque em Finalizar de novo.', 5000); return; }
+  const local = state.producoes.find(x=>x.id===id);
+  if (local) Object.assign(local, patch);
+  else state.producoes.unshift(Object.assign({}, p, patch));
+  state.producaoId = null; state.producaoTrab = null; salvarProducaoSeguida(null);
+  state.producaoRelatorioId = id; state.producaoChave = null;
+  toast('Produção finalizada.');
+  renderProducao();
+}
+function producaoExportar(id){
+  const p = state.producoes.find(x=>x.id===id); if (!p) return;
+  const r = p.resultado || {};
+  const rows = [];
+  (p.consumidos||[]).forEach(i=>rows.push({ lado:'Matéria-prima', lote:i.lote, corrida:i.corrida||'', produto:i.produtoCodigo||'', pesoKg:Number(i.pesoKg)||0 }));
+  (p.produzidos||[]).forEach(i=>rows.push({ lado:'Produto gerado', lote:i.lote, corrida:i.corrida||'', produto:i.produtoCodigo||'', pesoKg:Number(i.pesoKg)||0 }));
+  rows.push({ lado:'TOTAL matéria-prima', lote:'', corrida:'', produto:'', pesoKg: Math.round(r.consumidoKg!=null?r.consumidoKg:somaKg(p.consumidos)) });
+  rows.push({ lado:'TOTAL produzido', lote:'', corrida:'', produto:'', pesoKg: Math.round(r.produzidoKg!=null?r.produzidoKg:somaKg(p.produzidos)) });
+  rows.push({ lado:'RENDIMENTO', lote:'', corrida:'', produto:'', pesoKg: r.rendimentoPct!=null ? fmtPct(r.rendimentoPct) : '' });
+  const data = fmtDate(p.finalizadoEm||p.iniciadoEm);
+  exportXlsx(rows, 'rendimento_'+slugify(p.equipamento)+'_'+slugify(data)+'.xlsx', ['lado','lote','corrida','produto','pesoKg'], 'Rendimento metálico — '+p.equipamento+' — '+data);
+}
+
+function producaoAdicionarManual(){
+  const lote = (document.getElementById('prod-m-lote').value||'').trim();
+  const corrida = (document.getElementById('prod-m-corrida').value||'').trim();
+  const peso = parseFloat((document.getElementById('prod-m-peso').value||'').replace(',','.'))||0;
+  const produto = (document.getElementById('prod-m-produto').value||'').trim();
+  producaoAdicionarItem({ lote, corrida, pesoKg: peso, produtoCodigo: produto }, true).then(ok=>{
+    if (!ok) return;
+    ['prod-m-lote','prod-m-corrida','prod-m-peso'].forEach(id=>{ const el = document.getElementById(id); if (el) el.value=''; });
+    const lido = document.getElementById('prod-lido'); if (lido){ lido.style.display='none'; lido.textContent=''; }
+    const el = document.getElementById('prod-m-lote'); if (el) el.focus();
+  });
+}
+
+function producaoAcao(el){
+  const act = el.dataset.prodAct, v = el.dataset.v;
+  if (act==='equip'){ state.producaoEquipSel = v; state.producaoListaHTML = null; renderProducao(); }
+  else if (act==='iniciar') producaoIniciar();
+  else if (act==='continuar') producaoContinuar(v);
+  else if (act==='ver'){ state.producaoRelatorioId = v; state.producaoChave = null; renderProducao(); }
+  else if (act==='voltar-lista'){ state.producaoRelatorioId = null; state.producaoChave = null; renderProducao(); }
+  else if (act==='sair') producaoCancelarOuSair();
+  else if (act==='cancelar'){
+    producaoPerguntar('Cancelar este registro?', 'O que já foi bipado neste registro será descartado. O estoque não é alterado.', 'Cancelar registro', async ()=>{
+      await producaoSalvar({ etapa:'cancelada' });
+      producaoCancelarOuSair();
+    }, true);
+  }
+  else if (act==='fin-mp') producaoFinalizarMateriaPrima();
+  else if (act==='fin-prod') producaoFinalizarProducao();
+  else if (act==='codigo-ok') producaoConfirmarCodigo();
+  else if (act==='trocar-codigo'){ state.producaoChave = null; producaoSalvar({ codigoProduto:null }); }
+  else if (act==='voltar-mp'){ state.producaoChave = null; producaoSalvar({ etapa:'materia_prima', codigoProduto:null }); }
+  else if (act==='add-manual') producaoAdicionarManual();
+  else if (act==='remover') producaoRemoverItem(el.dataset.lado, v);
+  else if (act==='export') producaoExportar(v);
+}
+['producao-body','producao-lista-body'].forEach(id=>{
+  const cont = document.getElementById(id);
+  cont.addEventListener('click', e=>{
+    const el = e.target.closest('[data-prod-act]');
+    if (el && cont.contains(el)) producaoAcao(el);
+  });
+  cont.addEventListener('keydown', e=>{
+    if (e.key!=='Enter') return;
+    const alvo = e.target;
+    if (alvo.id==='prod-codigo'){ e.preventDefault(); producaoConfirmarCodigo(); }
+    else if (alvo.id && alvo.id.indexOf('prod-m-')===0){ e.preventDefault(); producaoAdicionarManual(); }
+  });
+});
+document.getElementById('producao-body').addEventListener('input', e=>{
+  if (e.target.id==='prod-codigo'){
+    const cod = producaoResolverProduto(e.target.value);
+    const d = document.getElementById('prod-codigo-desc');
+    if (d) d.textContent = cod ? (cod+' — '+producaoDescProduto(cod)) : '';
+  }
+});
 
 /* ================= HISTORICO ================= */
 document.querySelectorAll('#hist-filters .filter-chip').forEach(chip=>{
@@ -2620,7 +3325,8 @@ document.getElementById('btn-export-hist').addEventListener('click', ()=>{
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {
   situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (t)',
-  data:'Data', tipo:'Status', quantidade:'Quantidade', obs:'Observação'
+  data:'Data', tipo:'Status', quantidade:'Quantidade', obs:'Observação',
+  lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)'
 };
 // vira um nome de arquivo seguro: sem acento, sem espaço, sem caractere especial
 function slugify(texto){
