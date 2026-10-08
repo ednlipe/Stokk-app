@@ -3174,19 +3174,19 @@ async function producaoConcluirInterno(){
   // o histórico de movimentos só aceita INSERIR (não alterar). Por isso cada registro tem id novo,
   // e numa nova tentativa pula o que já foi gravado antes (mesmo lote + mesma observação nesta produção).
   const jaTem = (lote, obs)=> state.movimentos.some(m=>m.lote===lote && m.obs===obs && m.timestamp && new Date(m.timestamp)>=new Date(p.iniciadoEm));
-  let falhas = 0;
-  const seguro = async (fn)=>{ try{ await fn(); }catch(e){ console.error(e); falhas++; } };
+  let falhas = 0; const motivos = [];
+  const seguro = async (fn, rotulo)=>{ try{ await fn(); }catch(e){ console.error(e); falhas++; motivos.push((rotulo?rotulo+': ':'')+((e&&e.message)||'erro')); } };
   // 1) matéria-prima consumida sai do estoque
   for (const it of (p.consumidos||[])){
     const vol = state.volumes.get(it.lote);
     if (vol){
-      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'baixado', atualizadoEm: agora }));
+      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'baixado', atualizadoEm: agora }), 'baixa de '+it.lote);
     }
     if (!jaTem(it.lote, 'Consumido na produção '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: it.produtoCodigo||(vol&&vol.produtoCodigo)||null, produtoDescricao: it.produtoDescricao||(vol&&vol.produtoDescricao)||'',
       tipo:'baixado', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
       obs:'Consumido na produção '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
-    }));
+    }), 'histórico de '+it.lote);
   }
   // 2) produtos gerados entram no estoque (já como conferidos: acabaram de ser vistos)
   for (const it of (p.produzidos||[])){
@@ -3194,22 +3194,22 @@ async function producaoConcluirInterno(){
     const codigo = it.produtoCodigo || p.codigoProduto || null;
     const desc = it.produtoDescricao || producaoDescProduto(codigo) || '';
     if (vol){
-      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'estoque', statusConferencia:'contado', ultimaConferenciaEm: agora, atualizadoEm: agora }));
+      await seguro(()=>db.collection('volumes').doc(it.lote).update({ status:'estoque', statusConferencia:'contado', ultimaConferenciaEm: agora, atualizadoEm: agora }), 'entrada de '+it.lote);
     } else {
       await seguro(()=>db.collection('volumes').doc(it.lote).set({
         lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc, armazem: state.armazemPadrao||'',
         quantidade: (Number(it.pesoKg)||0)/1000, status:'estoque', statusConferencia:'contado', origem:'producao',
         ultimaConferenciaEm: agora, criadoEm: agora, atualizadoEm: agora
-      }));
+      }), 'cadastro de '+it.lote);
     }
     if (!jaTem(it.lote, 'Produzido em '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc,
       tipo:'entrada', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
       obs:'Produzido em '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
-    }));
+    }), 'histórico de '+it.lote);
   }
   if (falhas){
-    toast('Alguns itens não foram atualizados no estoque. Confira a internet e toque em Finalizar de novo.', 5000);
+    toast('Não consegui atualizar o estoque ('+falhas+' falha(s)). Primeiro erro — '+(motivos[0]||'?')+'. Toque em Finalizar de novo.', 9000);
     return;
   }
   // 3) por último, fecha a produção (se algo acima falhou, ela continua aberta e dá pra tentar de novo)
