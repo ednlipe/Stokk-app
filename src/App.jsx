@@ -37,6 +37,7 @@ const APP_HTML = `
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
       <button class="btn ghost" id="btn-dash-refresh" style="border:1px solid var(--border);margin-bottom:12px;width:auto;padding:8px 14px;font-size:12.5px;">↻ Atualizar</button>
+      <div id="dash-aviso-conf"></div>
       <div id="dash-categorias"></div>
       <div id="dash-armazens"></div>
 
@@ -390,6 +391,13 @@ function applyRoleUI(){
 }
 async function onAuthed(user){
   const {data:profile} = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  // conta sem perfil ou bloqueada (profiles.ativo = false): não entra. (ativo indefinido = banco ainda sem update_008)
+  if (!profile || profile.ativo === false){
+    await sb.auth.signOut();
+    showLogin();
+    document.getElementById('login-error').textContent = 'Conta aguardando liberação. Peça ao supervisor para ativar seu acesso.';
+    return;
+  }
   state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador' };
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='flex';
@@ -952,7 +960,27 @@ document.getElementById('btn-dash-refresh').addEventListener('click', async (e)=
   try{ if (db.refetchAll) await db.refetchAll(); toast('Dashboard atualizado.'); }
   finally{ btn.disabled = false; btn.textContent = '↻ Atualizar'; }
 });
+// Aviso: conferência aberta há mais de CONF_ABERTA_AVISO_H horas (esquecida sem finalizar).
+const CONF_ABERTA_AVISO_H = 12;
+function renderAvisoConferencia(){
+  const box = document.getElementById('dash-aviso-conf');
+  if (!box) return;
+  const limite = Date.now() - CONF_ABERTA_AVISO_H*3600*1000;
+  const velhas = (state.sessoes||[]).filter(s=>s.ativo && s.iniciadoEm && new Date(s.iniciadoEm).getTime() < limite);
+  if (!velhas.length){ box.innerHTML=''; return; }
+  const horas = s=>Math.floor((Date.now()-new Date(s.iniciadoEm).getTime())/3600000);
+  const tempo = s=>{ const h=horas(s); return h>=48 ? Math.floor(h/24)+' dias' : h+' h'; };
+  box.innerHTML = `<div class="card" style="border:1px solid var(--warn,#d99a00);background:rgba(217,154,0,.12);margin-bottom:12px;">
+    <div style="font-weight:700;margin-bottom:4px;">⚠ Conferência esquecida em aberto</div>
+    ${velhas.map(s=>`<div style="font-size:13px;margin:2px 0;">${esc(nomeConf(s)||(s.filtroProduto?tipoProdutoLabel(s.filtroProduto):'Sem nome'))} · aberta há ${tempo(s)} · ${(s.contados||[]).length} contados</div>`).join('')}
+    <div class="hint" style="margin:6px 0 8px;">Se a contagem já terminou, finalize para gerar o relatório. Se não vale mais, um supervisor pode excluir.</div>
+    <button class="btn primary" id="btn-aviso-conf" style="width:auto;padding:8px 14px;">Abrir conferências</button>
+  </div>`;
+  document.getElementById('btn-aviso-conf').onclick = ()=>setView('inventario');
+}
+
 function renderDashboard(){
+  renderAvisoConferencia();
   const vols = [...state.volumes.values()];
   // distribuição física por armazém: considera todo item com status "estoque",
   // independente de já ter passado por conferência de pátio ou não.

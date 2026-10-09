@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.js"></script>
 <style>
 :root{
   --bg:#14171A; --surface:#1E2226; --surface-2:#262B30; --surface-3:#2E343B;
@@ -824,6 +824,13 @@ function applyRoleUI(){
 }
 async function onAuthed(user){
   const {data:profile} = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  // conta sem perfil ou bloqueada (profiles.ativo = false): não entra. (ativo indefinido = banco ainda sem update_008)
+  if (!profile || profile.ativo === false){
+    await sb.auth.signOut();
+    showLogin();
+    document.getElementById('login-error').textContent = 'Conta aguardando liberação. Peça ao supervisor para ativar seu acesso.';
+    return;
+  }
   state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador' };
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='grid';
