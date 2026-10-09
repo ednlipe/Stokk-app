@@ -390,6 +390,58 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
   nav.bottom button{flex-direction:column;text-align:center;}
   main{padding:18px 16px 60px;}
 }
+
+/* ================= RENDIMENTO METÁLICO ================= */
+#view-rendimento{--warn:#E0A800;--warn-dim:rgba(224,168,0,.16);}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) #view-rendimento{--warn:#9A6F00;--warn-dim:#FBEFC4;} }
+:root[data-theme="light"] #view-rendimento{--warn:#9A6F00;--warn-dim:#FBEFC4;}
+main .view#view-rendimento.active{max-width:1240px;}
+.rend-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;margin-bottom:14px;}
+.rend-mes{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-size:21px;text-transform:capitalize;}
+.rend-mes button{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:18px;cursor:pointer;}
+.rend-mes button:hover{background:var(--surface-2);}
+.rend-top .filter-row{margin-bottom:0;}
+.rend-top .spacer{flex:1;}
+.rend-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px;}
+.rend-kpis .stat .n{font-size:24px;white-space:nowrap;}
+.rend-kpis .stat .n.ok{color:var(--ok);} .rend-kpis .stat .n.warn{color:var(--warn);} .rend-kpis .stat .n.bad{color:var(--danger);}
+.rend-kpis .stat.ok{border-left:3px solid var(--ok);} .rend-kpis .stat.warn{border-left:3px solid var(--warn);} .rend-kpis .stat.bad{border-left:3px solid var(--danger);}
+.rend-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px;align-items:start;}
+.rend-grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px;margin-top:16px;align-items:start;}
+@media (max-width:980px){ .rend-grid,.rend-grid-2{grid-template-columns:1fr;} }
+.rend-card-t{font-family:var(--font-head);font-size:14px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);margin:0 0 10px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;}
+.rend-card-t small{font-family:var(--font-body);font-size:11.5px;letter-spacing:0;text-transform:none;font-weight:400;}
+.rend-scroll{overflow-x:auto;}
+table.rend-tab{width:100%;border-collapse:separate;border-spacing:0 3px;font-variant-numeric:tabular-nums;}
+.rend-tab th{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);text-align:right;padding:4px 8px;white-space:nowrap;}
+.rend-tab th:first-child,.rend-tab td:first-child{text-align:left;}
+.rend-tab td{padding:5px 8px;text-align:right;font-family:var(--font-mono);font-size:12.5px;white-space:nowrap;}
+.rend-tab td:first-child{font-family:var(--font-body);color:var(--text);}
+.rend-tab td:first-child span{color:var(--text-muted);font-size:11px;margin-left:4px;}
+.rend-tab td.c{border-radius:5px;cursor:pointer;}
+.rend-tab td.c:hover{filter:brightness(1.15);outline:1px solid var(--border);}
+.rend-tab td.c.ok{background:var(--ok-dim);color:var(--ok);}
+.rend-tab td.c.warn{background:var(--warn-dim);color:var(--warn);}
+.rend-tab td.c.bad{background:var(--danger-dim);color:var(--danger);}
+.rend-tab td.c.vazio{color:var(--text-muted);cursor:default;opacity:.55;}
+.rend-tab td.c.tot{font-weight:700;}
+.rend-tab tr.mes td{font-weight:700;}
+.rend-tab tr.mes td:first-child{font-family:var(--font-head);letter-spacing:.5px;}
+.rend-leg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12px;color:var(--text-muted);}
+.rend-leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;}
+.rend-leg .ok i{background:var(--ok);} .rend-leg .warn i{background:var(--warn);} .rend-leg .bad i{background:var(--danger);}
+.rend-svg{display:block;width:100%;height:auto;overflow:visible;}
+.rend-svg text{font-family:var(--font-mono);font-size:11px;fill:var(--text-muted);}
+.rend-svg .pt{cursor:pointer;}
+.rend-bar{margin-bottom:14px;}
+.rend-bar .t{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;gap:10px;}
+.rend-bar .t b{font-family:var(--font-mono);font-weight:600;font-size:13px;}
+.rend-bar .track{height:12px;background:var(--surface-2);border-radius:3px;overflow:hidden;}
+.rend-bar .fill{height:100%;background:var(--accent);border-radius:0 3px 3px 0;}
+.rend-bar .n{font-size:12px;color:var(--text-muted);margin-top:3px;}
+.rend-bar .n.ok{color:var(--ok);} .rend-bar .n.warn{color:var(--warn);} .rend-bar .n.bad{color:var(--danger);}
+.rend-vazio{padding:34px 16px;text-align:center;color:var(--text-muted);font-size:14px;}
+#rend-tip{position:fixed;z-index:60;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--accent);border-radius:6px;padding:7px 10px;font-family:var(--font-mono);font-size:12px;line-height:1.45;opacity:0;max-width:260px;box-shadow:0 6px 24px rgba(0,0,0,.35);}
 </style>
 </head>
 <body>
@@ -573,6 +625,11 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
       <button class="btn ghost" id="btn-export-hist" style="border:1px solid var(--border);">Exportar histórico (Excel)</button>
       <div id="hist-list"></div>
     </section>
+
+    <!-- RENDIMENTO METÁLICO -->
+    <section class="view" id="view-rendimento">
+      <div id="rend-body"></div>
+    </section>
   </main>
 
   <nav class="bottom">
@@ -583,6 +640,10 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
     <button data-nav="estoque">
       <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
       Estoque
+    </button>
+    <button data-nav="rendimento">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      Rendimento
     </button>
     <button data-nav="inventario">
       <svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M5 4h14v16l-7-4-7 4z"/></svg>
@@ -643,6 +704,11 @@ const state = {
   sessoes: [],
   confExpandido: new Set(),
   pendingReport: null,
+  producoes: [],
+  producoesCarregadas: false,
+  rendMes: null,
+  rendEquip: 'TODOS',
+  rendHtml: '',
   armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || ''
 };
 
@@ -1055,6 +1121,12 @@ function subscribeData(){
     }
     renderAll();
   }, err=>{ console.error(err); });
+
+  db.collection('producoes').orderBy('iniciadoEm','desc').limit(1000).onSnapshot(snap=>{
+    state.producoes = snap.docs.map(d=>d.data());
+    state.producoesCarregadas = true;
+    renderAll();
+  }, err=>{ console.error(err); });
 }
 
 /* ---------------- NAV / ROUTER ---------------- */
@@ -1078,7 +1150,237 @@ function renderView(name){
   else if (name==='estoque') renderEstoque();
   else if (name==='inventario') { state.relatorioAberto ? renderRelatorioRegistrado(state.relatorioAberto) : renderInventario(); }
   else if (name==='historico') renderHistorico();
+  else if (name==='rendimento') renderRendimento();
 }
+
+/* ================= RENDIMENTO METÁLICO =================
+   Mesmas regras do app: só produções finalizadas; rendimento = soma produzida ÷ soma consumida
+   (nunca média de %); a cor segue o número com 1 casa (99,0 verde / 98,0 amarelo / abaixo vermelho);
+   turno salvo vale, e sem turno usa os cortes 07:10 / 15:10 / 23:10; 3º turno antes das 07:10
+   conta para o dia anterior. */
+const REND_EQUIPS = ['LAM02','LAM03','RT200'];
+const REND_TURNOS = { 1:'1º turno', 2:'2º turno', 3:'3º turno' };
+const REND_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const REND_DIAS = ['dom','seg','ter','qua','qui','sex','sáb'];
+const rKg = n => Math.round(Number(n)||0).toLocaleString('pt-BR');
+const rPct = v => v==null ? '—' : v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+const rZ = n => String(n).padStart(2,'0');
+function rYmd(d){ return d.getFullYear()+'-'+rZ(d.getMonth()+1)+'-'+rZ(d.getDate()); }
+function rTurnoPorHora(d){ const m=d.getHours()*60+d.getMinutes(); if (m>=430 && m<910) return 1; if (m>=910 && m<1390) return 2; return 3; }
+function rTurnoDe(p){ const t=Number(p.turno); if (t>=1 && t<=3) return t; return rTurnoPorHora(new Date(p.finalizadoEm||p.iniciadoEm)); }
+function rDataDe(p){
+  if (p.dataProducao) return String(p.dataProducao).slice(0,10);
+  const d = new Date(p.finalizadoEm||p.iniciadoEm);
+  if (rTurnoDe(p)===3 && d.getHours()*60+d.getMinutes()<430) d.setDate(d.getDate()-1);
+  return rYmd(d);
+}
+function rBand(pct){ const r=Math.round(pct*10)/10; return r>=99 ? 'ok' : (r>=98 ? 'warn' : 'bad'); }
+const rPctDe = (c,p) => c>0 ? p/c*100 : null;
+
+function rendDados(){
+  if (!state.rendMes){ const h=new Date(); state.rendMes = h.getFullYear()+'-'+rZ(h.getMonth()+1); }
+  const [ano, mes] = state.rendMes.split('-').map(Number);
+  const equip = state.rendEquip;
+  const cel = {};
+  const add = (k,c,p)=>{ const o = cel[k] || (cel[k]={c:0,p:0,n:0}); o.c+=c; o.p+=p; o.n++; };
+  const porEquip = {};
+  const lista = [];
+  state.producoes.forEach(x=>{
+    if (x.etapa!=='finalizada' || !x.resultado) return;
+    const d = rDataDe(x);
+    if (d.slice(0,7)!==state.rendMes) return;
+    const c = Number(x.resultado.consumidoKg)||0, p = Number(x.resultado.produzidoKg)||0;
+    const pe = porEquip[x.equipamento] || (porEquip[x.equipamento]={c:0,p:0,n:0});
+    pe.c+=c; pe.p+=p; pe.n++;
+    if (equip!=='TODOS' && x.equipamento!==equip) return;
+    const t = rTurnoDe(x);
+    add(d+'|'+t,c,p); add(d+'|D',c,p); add('M|'+t,c,p); add('M|D',c,p);
+    lista.push({x, d, t, c, p});
+  });
+  const dias = new Date(ano,mes,0).getDate(), hj = new Date();
+  const ate = (hj.getFullYear()===ano && hj.getMonth()+1===mes) ? Math.min(hj.getDate(), dias) : dias;
+  return { ano, mes, dias, ate, cel, porEquip, lista, equip };
+}
+function rendCelula(dado, chave, d, t, extra){
+  const o = dado.cel[chave];
+  if (!o || !(o.c>0)) return '<td class="c vazio">–</td>';
+  const pct = rPctDe(o.c, o.p);
+  const tipo = (d ? d.slice(8)+'/'+d.slice(5,7) : 'Mês')+' · '+(t==='D' ? 'dia todo' : REND_TURNOS[t]);
+  const tip = esc(tipo)+'<br>Consumido '+rKg(o.c)+' kg<br>Produzido '+rKg(o.p)+' kg<br>'+o.n+' produç'+(o.n===1?'ão':'ões');
+  return `<td class="c ${rBand(pct)}${extra||''}" data-tip="${tip}" ${d?`data-rend-cel data-d="${d}" data-t="${t}"`:''}>${rPct(pct)}${pct>100?' ⚠':''}</td>`;
+}
+function rendGrafico(dado){
+  const pts = [];
+  for (let dia=1; dia<=dado.ate; dia++){
+    const d = dado.ano+'-'+rZ(dado.mes)+'-'+rZ(dia);
+    const o = dado.cel[d+'|D'];
+    if (o && o.c>0) pts.push({dia, d, v:rPctDe(o.c,o.p), c:o.c, p:o.p});
+  }
+  if (!pts.length) return '<div class="rend-vazio">Sem produções finalizadas neste mês.</div>';
+  const W=640, H=270, L=46, R=16, T=14, B=30;
+  const vmin = Math.min(...pts.map(p=>p.v)), vmax = Math.max(...pts.map(p=>p.v));
+  const y0 = Math.min(96, Math.floor(vmin)), y1 = Math.max(100, Math.ceil(vmax));
+  const X = dia => L + (dia-1)/(Math.max(dado.ate-1,1))*(W-L-R);
+  const Y = v => T + (1-(v-y0)/(y1-y0))*(H-T-B);
+  const passo = (y1-y0)>8 ? 2 : 1;
+  let s = '';
+  for (let g=y0; g<=y1; g+=passo) s += `<line x1="${L}" x2="${W-R}" y1="${Y(g)}" y2="${Y(g)}" stroke="var(--border)" stroke-opacity=".6"/><text x="${L-8}" y="${Y(g)+4}" text-anchor="end">${g}%</text>`;
+  if (99>=y0 && 99<=y1) s += `<line x1="${L}" x2="${W-R}" y1="${Y(99)}" y2="${Y(99)}" stroke="var(--ok)" stroke-dasharray="5 4"/><text x="${W-R}" y="${Y(99)-5}" text-anchor="end" style="fill:var(--ok)">meta 99%</text>`;
+  if (98>=y0 && 98<=y1) s += `<line x1="${L}" x2="${W-R}" y1="${Y(98)}" y2="${Y(98)}" stroke="var(--danger)" stroke-dasharray="5 4"/><text x="${L+6}" y="${Y(98)+14}" style="fill:var(--danger)">98%</text>`;
+  for (let dia=1; dia<=dado.ate; dia++) if (dia===1 || dia%5===0 || dia===dado.ate) s += `<text x="${X(dia)}" y="${H-8}" text-anchor="middle">${rZ(dia)}</text>`;
+  const path = pts.map((p,i)=>(i?'L':'M')+X(p.dia).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ');
+  s += `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>`;
+  const cor = { ok:'var(--ok)', warn:'var(--warn)', bad:'var(--danger)' };
+  pts.forEach(p=>{
+    const tip = esc(p.d.slice(8)+'/'+p.d.slice(5,7)+' · dia todo')+'<br>Rendimento '+rPct(p.v)+'<br>Consumido '+rKg(p.c)+' kg<br>Produzido '+rKg(p.p)+' kg';
+    s += `<circle cx="${X(p.dia).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="5" fill="${cor[rBand(p.v)]}" stroke="var(--surface)" stroke-width="2"/>`;
+    s += `<circle class="pt" cx="${X(p.dia).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="13" fill="transparent" data-tip="${tip}" data-rend-cel data-d="${p.d}" data-t="D"/>`;
+  });
+  return `<svg class="rend-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rendimento por dia">${s}</svg>`;
+}
+function renderRendimento(){
+  const body = document.getElementById('rend-body');
+  if (!body) return;
+  if (!state.producoesCarregadas){ state.rendHtml = ''; body.innerHTML = '<div class="rend-vazio">Carregando produções…</div>'; return; }
+  const dado = rendDados();
+  const M = dado.cel['M|D'];
+  const C = M ? M.c : 0, P = M ? M.p : 0;
+  const pctM = rPctDe(C,P), banda = pctM==null ? '' : rBand(pctM);
+  let diasRuins = 0, diasComDado = 0;
+  for (let dia=1; dia<=dado.dias; dia++){
+    const o = dado.cel[dado.ano+'-'+rZ(dado.mes)+'-'+rZ(dia)+'|D'];
+    if (o && o.c>0){ diasComDado++; if (rBand(rPctDe(o.c,o.p))==='bad') diasRuins++; }
+  }
+  const BANDA_TXT = { ok:'dentro da meta (99%)', warn:'abaixo da meta', bad:'abaixo de 98%' };
+  const kpis = `
+    <div class="rend-kpis">
+      <div class="stat ${banda}"><div class="n ${banda}">${rPct(pctM)}</div><div class="l">Rendimento do mês${banda?' · '+BANDA_TXT[banda]:''}</div></div>
+      <div class="stat"><div class="n">${rKg(C)} kg</div><div class="l">Consumido (matéria-prima)</div></div>
+      <div class="stat"><div class="n">${rKg(P)} kg</div><div class="l">Produzido</div></div>
+      <div class="stat"><div class="n">${rKg(C-P)} kg</div><div class="l">Perda${C>0?' · '+rPct((C-P)/C*100)+' do consumido':''}</div></div>
+      <div class="stat"><div class="n">${M?M.n:0}</div><div class="l">Produções finalizadas</div></div>
+      <div class="stat ${diasRuins?'bad':''}"><div class="n ${diasRuins?'bad':''}">${diasRuins}</div><div class="l">Dias abaixo de 98% (de ${diasComDado})</div></div>
+    </div>`;
+  let linhas = '';
+  for (let dia=dado.ate; dia>=1; dia--){
+    const d = dado.ano+'-'+rZ(dado.mes)+'-'+rZ(dia);
+    const sem = REND_DIAS[new Date(dado.ano, dado.mes-1, dia).getDay()];
+    linhas += `<tr><td>${rZ(dia)}<span>${sem}</span></td>${[1,2,3].map(t=>rendCelula(dado,d+'|'+t,d,t)).join('')}${rendCelula(dado,d+'|D',d,'D',' tot')}</tr>`;
+  }
+  const mesRow = `<tr class="mes"><td>Mês</td>${[1,2,3].map(t=>rendCelula(dado,'M|'+t,'',t)).join('')}${rendCelula(dado,'M|D','','D',' tot')}</tr>`;
+  const equipsVistos = REND_EQUIPS.concat(Object.keys(dado.porEquip).filter(e=>!REND_EQUIPS.includes(e)));
+  const maxPerda = Math.max(1, ...equipsVistos.map(e=>{ const o=dado.porEquip[e]; return o ? o.c-o.p : 0; }));
+  const barras = equipsVistos.map(e=>{
+    const o = dado.porEquip[e];
+    const perda = o ? o.c-o.p : 0, pct = o ? rPctDe(o.c,o.p) : null;
+    const tip = esc(e)+'<br>Perda '+rKg(perda)+' kg<br>Rendimento '+rPct(pct);
+    return `<div class="rend-bar" style="opacity:${dado.equip==='TODOS'||dado.equip===e?1:.4}">
+      <div class="t"><span>${esc(e)}</span><b>${o?rKg(perda)+' kg':'—'}</b></div>
+      <div class="track"><div class="fill" style="width:${o?Math.max(perda,0)/maxPerda*100:0}%" data-tip="${tip}"></div></div>
+      <div class="n ${pct==null?'':rBand(pct)}">${o?'rendimento '+rPct(pct)+' · '+o.n+' produç'+(o.n===1?'ão':'ões'):'sem produções'}</div></div>`;
+  }).join('');
+  const recentes = dado.lista.slice().sort((a,b)=> (b.d.localeCompare(a.d)) || (b.t-a.t) || String(b.x.finalizadoEm||'').localeCompare(String(a.x.finalizadoEm||''))).slice(0,10);
+  const itens = recentes.map(r=>{
+    const pct = rPctDe(r.c,r.p);
+    return `<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">${esc(r.x.equipamento)} · ${REND_TURNOS[r.t]}</div>
+      <div class="li-desc">${r.d.slice(8)}/${r.d.slice(5,7)} · ${rKg(r.c)} kg → ${rKg(r.p)} kg${r.x.usuarioNome?' · '+esc(r.x.usuarioNome):''}</div></div>
+      <div class="li-side"><div class="li-weight" style="${pct==null?'':'color:var(--'+(rBand(pct)==='bad'?'danger':rBand(pct))+');font-weight:700;'}">${rPct(pct)}${pct>100?' ⚠':''}</div></div></div>`;
+  }).join('');
+  const html = `
+    <div class="rend-top">
+      <div class="rend-mes"><button data-rend-act="mes" data-v="-1" aria-label="Mês anterior">‹</button><span>${REND_MESES[dado.mes-1]} / ${dado.ano}</span><button data-rend-act="mes" data-v="1" aria-label="Próximo mês">›</button></div>
+      <div class="filter-row wrap">${['TODOS'].concat(REND_EQUIPS).map(e=>`<button class="filter-chip ${dado.equip===e?'active':''}" data-rend-act="equip" data-v="${e}">${e==='TODOS'?'Todos':e}</button>`).join('')}</div>
+      <div class="spacer"></div>
+      <button class="btn ghost small" data-rend-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button>
+      <button class="btn primary small" data-rend-act="export">Exportar (Excel)</button>
+    </div>
+    ${kpis}
+    <div class="rend-grid">
+      <div class="card">
+        <div class="rend-card-t">Rendimento por dia e turno <small>${dado.equip==='TODOS'?'todos os equipamentos':esc(dado.equip)}</small></div>
+        <div class="rend-scroll"><table class="rend-tab"><thead><tr><th>Dia</th><th>1º turno</th><th>2º turno</th><th>3º turno</th><th>Dia todo</th></tr></thead><tbody>${mesRow}${linhas}</tbody></table></div>
+        <div class="rend-leg"><span class="ok"><i></i>99% ou mais</span><span class="warn"><i></i>98% a 98,9%</span><span class="bad"><i></i>abaixo de 98%</span><span>⚠ acima de 100%: confira os pesos</span><span>Clique num valor para ver as produções. Dias mais recentes primeiro.</span></div>
+      </div>
+      <div class="card">
+        <div class="rend-card-t">Rendimento do dia <small>soma produzida ÷ soma consumida</small></div>
+        ${rendGrafico(dado)}
+      </div>
+    </div>
+    <div class="rend-grid-2">
+      <div class="card"><div class="rend-card-t">Perda por equipamento <small>kg no mês</small></div>${barras}</div>
+      <div class="card" style="padding-bottom:6px;"><div class="rend-card-t">Últimas produções <small>${dado.lista.length} no mês</small></div>${itens || '<div class="rend-vazio">Nenhuma produção finalizada neste mês.</div>'}</div>
+    </div>
+    <p class="hint" style="margin-top:14px;">Turnos: 1º 7h–15h20 · 2º 15h–23h20 · 3º 23h–7h20. O 3º turno antes das 7h10 conta para o dia anterior. Só entram produções finalizadas.</p>`;
+  if (state.rendHtml === html) return;
+  state.rendHtml = html;
+  body.innerHTML = html;
+}
+function rendDetalhe(d, t){
+  const equip = state.rendEquip;
+  const lista = state.producoes.filter(x=>x.etapa==='finalizada' && x.resultado && rDataDe(x)===d
+    && (equip==='TODOS' || x.equipamento===equip) && (t==='D' || String(rTurnoDe(x))===t));
+  const titulo = d.slice(8)+'/'+d.slice(5,7)+' · '+(t==='D' ? 'dia todo' : REND_TURNOS[t])+' · '+(equip==='TODOS'?'todos os equipamentos':equip);
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">${esc(titulo)}</h2>
+    ${lista.length ? '<div class="card" style="padding:0;">'+lista.map(x=>{
+      const c = Number(x.resultado.consumidoKg)||0, p = Number(x.resultado.produzidoKg)||0, pct = rPctDe(c,p);
+      return `<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">${esc(x.equipamento)} · ${REND_TURNOS[rTurnoDe(x)]}</div>
+        <div class="li-desc">${rKg(c)} kg → ${rKg(p)} kg${x.usuarioNome?' · '+esc(x.usuarioNome):''}</div></div>
+        <div class="li-side"><div class="li-weight">${rPct(pct)}</div></div></div>`;}).join('')+'</div>' : '<p class="hint">Nenhuma produção.</p>'}
+    <button class="btn ghost" id="rend-det-fechar" style="border:1px solid var(--border);margin-top:10px;">Fechar</button>`);
+  document.getElementById('rend-det-fechar').onclick = closeSheet;
+}
+function rendExportar(){
+  const dado = rendDados();
+  const aoa = [['Dia','Equipamento','1º turno (%)','2º turno (%)','3º turno (%)','Dia todo (%)','Consumido (kg)','Produzido (kg)','Perda (kg)']];
+  const eq = dado.equip==='TODOS' ? 'Todos' : dado.equip;
+  const v = k => { const o = dado.cel[k]; return o && o.c>0 ? Math.round(rPctDe(o.c,o.p)*10)/10 : ''; };
+  for (let dia=1; dia<=dado.dias; dia++){
+    const d = dado.ano+'-'+rZ(dado.mes)+'-'+rZ(dia), o = dado.cel[d+'|D'];
+    if (!o || !(o.c>0)) continue;
+    aoa.push([rZ(dia)+'/'+rZ(dado.mes)+'/'+dado.ano, eq, v(d+'|1'), v(d+'|2'), v(d+'|3'), v(d+'|D'), Math.round(o.c), Math.round(o.p), Math.round(o.c-o.p)]);
+  }
+  const m = dado.cel['M|D'];
+  if (m) aoa.push(['MÊS', eq, v('M|1'), v('M|2'), v('M|3'), v('M|D'), Math.round(m.c), Math.round(m.p), Math.round(m.c-m.p)]);
+  if (aoa.length===1){ toast('Sem produções neste mês para exportar.'); return; }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:12},{wch:13},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rendimento');
+  XLSX.writeFile(wb, 'rendimento_'+state.rendMes+'_'+eq+'.xlsx');
+}
+(function ligarRendimento(){
+  const view = document.getElementById('view-rendimento');
+  const tip = document.createElement('div'); tip.id = 'rend-tip'; document.body.appendChild(tip);
+  view.addEventListener('mousemove', e=>{
+    const t = e.target.closest('[data-tip]');
+    if (!t){ tip.style.opacity = 0; return; }
+    tip.innerHTML = t.getAttribute('data-tip');
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(e.clientX+14, innerWidth-280)+'px';
+    tip.style.top = (e.clientY+14)+'px';
+  });
+  view.addEventListener('mouseleave', ()=>{ tip.style.opacity = 0; });
+  view.addEventListener('click', async e=>{
+    const cel = e.target.closest('[data-rend-cel]');
+    if (cel){ tip.style.opacity = 0; rendDetalhe(cel.dataset.d, cel.dataset.t); return; }
+    const b = e.target.closest('[data-rend-act]');
+    if (!b) return;
+    const a = b.dataset.rendAct;
+    if (a==='mes'){
+      const [y,m] = state.rendMes.split('-').map(Number);
+      const n = new Date(y, m-1+Number(b.dataset.v), 1);
+      state.rendMes = n.getFullYear()+'-'+rZ(n.getMonth()+1);
+      renderRendimento();
+    } else if (a==='equip'){ state.rendEquip = b.dataset.v; renderRendimento(); }
+    else if (a==='export'){ rendExportar(); }
+    else if (a==='refresh'){
+      b.disabled = true; b.textContent = 'Atualizando…';
+      try{ if (db && db.refetchAll) await db.refetchAll(); toast('Rendimento atualizado.'); }
+      finally{ b.disabled = false; b.textContent = '↻ Atualizar'; }
+    }
+  });
+})();
 
 /* ================= DASHBOARD ================= */
 function renderDashHeader(){
