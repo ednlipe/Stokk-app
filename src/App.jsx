@@ -3003,11 +3003,10 @@ function producaoDesenharLista(){
   const html = `
     ${producaoModoChips()}
     <h2 class="section-title" style="margin-top:0;">Registrar produção</h2>
-    <label class="field-label">Equipamento</label>
+    <label class="field-label">Equipamentos</label>
     <div class="filter-row" style="margin-bottom:10px;">${EQUIPAMENTOS_PRODUCAO.map(e=>`<button class="filter-chip ${state.producaoEquipSel===e?'active':''}" data-prod-act="equip" data-v="${esc(e)}">${esc(e)}</button>`).join('')}</div>
-    <label class="field-label">Turno</label>
-    <div class="filter-row" style="margin-bottom:4px;">${[1,2,3].map(t=>`<button class="filter-chip ${state.producaoTurnoSel===t?'active':''}" data-prod-act="turno" data-v="${t}">${PRODUCAO_TURNOS[t].label}</button>`).join('')}</div>
-    <p class="hint" style="margin:0 0 10px;">${state.producaoTurnoSel ? PRODUCAO_TURNOS[state.producaoTurnoSel].horas : '1º 7h–15h20 · 2º 15h–23h20 · 3º 23h–7h20'}</p>
+    <label class="field-label">Turnos</label>
+    <div class="filter-row" style="margin-bottom:10px;">${[1,2,3].map(t=>`<button class="filter-chip ${state.producaoTurnoSel===t?'active':''}" data-prod-act="turno" data-v="${t}">${PRODUCAO_TURNOS[t].label}</button>`).join('')}</div>
     <label class="field-label">Data do turno</label>
     <input type="date" id="prod-data" value="${esc(state.producaoDataSel)}" style="margin-bottom:12px;">
     <button class="btn primary" data-prod-act="iniciar">Iniciar registro</button>

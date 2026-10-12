@@ -1317,7 +1317,7 @@ function renderRendimento(){
       <div class="card"><div class="rend-card-t">Perda por equipamento <small>kg no mês</small></div>${barras}</div>
       <div class="card" style="padding-bottom:6px;"><div class="rend-card-t">Últimas produções <small>${dado.lista.length} no mês</small></div>${itens || '<div class="rend-vazio">Nenhuma produção finalizada neste mês.</div>'}</div>
     </div>
-    <p class="hint" style="margin-top:14px;">Turnos: 1º 7h–15h20 · 2º 15h–23h20 · 3º 23h–7h20. O 3º turno antes das 7h10 conta para o dia anterior. Só entram produções finalizadas.</p>`;
+    <p class="hint" style="margin-top:14px;">O 3º turno antes das 7h10 conta para o dia anterior. Só entram produções finalizadas.</p>`;
   if (state.rendHtml === html) return;
   state.rendHtml = html;
   body.innerHTML = html;
