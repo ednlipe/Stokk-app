@@ -18,6 +18,7 @@ const APP_HTML = `
     <div id="login-error"></div>
     <button class="btn login-enter" id="login-btn">Entrar</button>
     <p class="hint" style="text-align:center;">Não tem login? Peça ao supervisor pra te cadastrar.</p>
+    <p class="hint" id="login-versao" style="text-align:center;opacity:.6;font-size:11px;"></p>
   </div>
 </div>
 </div>
@@ -410,6 +411,7 @@ async function onAuthed(user){
   setView('dashboard');
 }
 async function boot(){
+  const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
   if (session) await onAuthed(session.user);
   else showLogin();
@@ -2157,8 +2159,9 @@ function parseItemRow(vals, produtoCodigo){
     if (!tipoMov && s!==categoria) tipoMov = s;
   }
   if (!lote || nums.length===0) return null;
-  const quantidade = nums.length>=2 ? nums[nums.length-2] : nums[0];
-  const saldoAcumulado = nums.length>=2 ? nums[nums.length-1] : null;
+  // a planilha do ERP vem em TONELADAS; o STOKK guarda tudo em KG
+  const quantidade = Math.round((nums.length>=2 ? nums[nums.length-2] : nums[0]) * 1000 * 10) / 10;
+  const saldoAcumulado = nums.length>=2 ? Math.round(nums[nums.length-1] * 1000 * 10) / 10 : null;
   return { categoria, tipoMov, armazem, lote, quantidade, saldoAcumulado };
 }
 
@@ -3343,7 +3346,7 @@ async function producaoGravarVolumeNovo(lote, dados){
     await db.collection('volumes').doc(lote).set(semProduto);
   }
 }
-const APP_VERSAO = '08.10-d';
+const APP_VERSAO = __APP_VERSION__ + ' · ' + __APP_BUILD__;
 async function producaoConcluir(){
   if (state.producaoConcluindo) return;
   state.producaoConcluindo = true;
