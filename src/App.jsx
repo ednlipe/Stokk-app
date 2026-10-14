@@ -486,8 +486,7 @@ function beepErro(){
     setTimeout(()=>ctx.close(), 400);
   }catch(e){}
 }
-function fmtKg(n){ if(n==null||isNaN(n))return '—'; return Math.round(n*1000).toLocaleString('pt-BR'); }
-function fmtTon(n){ if(n==null||isNaN(n))return '—'; return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:3}); }
+function fmtTon(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:1}); } // peso em kg (nome antigo mantido)
 function fmtDate(iso){
   if(!iso) return '—';
   const d = new Date(iso);
@@ -1005,7 +1004,7 @@ function renderDashboard(){
         <div class="list-item" style="cursor:default;">
           <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
           <div class="li-side">
-            <div class="li-weight">${fmtTon(grupos[label].peso)} t</div>
+            <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
             <div class="li-desc">${grupos[label].vol} vol.</div>
           </div>
         </div>`).join('') + '</div>';
@@ -1063,7 +1062,7 @@ function renderArmazemBreakdown(emEstoque){
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
           <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
-          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} t <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
+          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} kg <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
         </div>
         <div style="background:var(--surface-3);border-radius:3px;height:${destaque?'11px':'7px'};overflow:hidden;">
           <div style="width:${pct}%;height:100%;background:${barCor};"></div>
@@ -1089,7 +1088,7 @@ function renderConsumoInterno(emEstoque){
     <div class="list-item" style="cursor:default;">
       <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
       <div class="li-side">
-        <div class="li-weight">${fmtTon(grupos[label].peso)} t</div>
+        <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
         <div class="li-desc">${grupos[label].vol} vol.</div>
       </div>
     </div>`).join('') + '</div>';
@@ -1114,7 +1113,7 @@ function renderComparativoArmazens(emEstoque){
     <div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
         <div style="font-size:13.5px;font-weight:600;">${esc(d.label)} <span class="li-desc" style="display:inline;">(${d.cod})</span></div>
-        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtTon(d.peso)} t <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
+        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtTon(d.peso)} kg <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
       </div>
       <div style="background:var(--surface-3);border-radius:3px;height:10px;overflow:hidden;">
         <div style="width:${pct}%;height:100%;background:${d.cor};"></div>
@@ -1163,7 +1162,7 @@ function renderProdutosEmEstoque(emEstoque){
       <div class="list-item" style="cursor:default;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(grupos[label].peso)} t</div>
+          <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
           <div class="li-desc">${grupos[label].vol} vol.</div>
         </div>
       </div>`).join('') + '</div>';
@@ -1595,7 +1594,7 @@ function renderScanResult(code, vol, rawText){
         <div class="li-code" style="font-size:17px;">${esc(code)}</div>
         <div class="badge danger" style="margin-top:6px;">Não encontrado no sistema</div>
         ${etiqueta
-          ? `<p class="hint" style="margin:10px 0 12px;">Li a etiqueta: peso <b>${fmtTon(etiqueta.pesoKg/1000)} t</b>${produtoInfo?', produto <b>'+esc(produtoInfo.descricao||produtoSugerido)+'</b>':' — produto não encontrado no cadastro, selecione manualmente'}. Confira antes de salvar.</p>`
+          ? `<p class="hint" style="margin:10px 0 12px;">Li a etiqueta: peso <b>${fmtTon(etiqueta.pesoKg)} kg</b>${produtoInfo?', produto <b>'+esc(produtoInfo.descricao||produtoSugerido)+'</b>':' — produto não encontrado no cadastro, selecione manualmente'}. Confira antes de salvar.</p>`
           : `<p class="hint" style="margin:10px 0 12px;">Esse código não está em nenhuma planilha importada. Pode ser um item novo — cadastre manualmente se necessário.</p>`}
         <button class="btn primary" id="btn-cad-manual">Cadastrar manualmente</button>
       </div>`;
@@ -1612,7 +1611,7 @@ function renderScanResult(code, vol, rawText){
       <div class="li-desc" style="white-space:normal;margin-top:3px;">${esc(vol.produtoDescricao||produto.descricao||vol.produtoCodigo||'')}</div>
       <div style="display:flex;gap:14px;margin:10px 0;font-size:13px;color:var(--text-muted);">
         <div>Armazém <b style="color:var(--text)">${vol.armazem?armazemChipHTML(vol.armazem):'—'}</b></div>
-        <div>Peso <b style="color:var(--text)">${fmtTon(vol.quantidade)} t</b></div>
+        <div>Peso <b style="color:var(--text)">${fmtTon(vol.quantidade)} kg</b></div>
       </div>
       <span class="badge ${info.badge}">${esc(info.label)}</span>
       <div style="margin-top:14px;">
@@ -1656,7 +1655,7 @@ function renderConfProgress(){
       const v = state.volumes.get(code);
       return `<div class="list-item" style="cursor:default;">
         <div class="li-main"><div class="li-code">${esc(code)}</div><div class="li-desc">${esc(v&&v.produtoDescricao||'')}</div></div>
-        <div class="li-side"><div class="li-weight">${v&&v.quantidade!=null?fmtTon(v.quantidade)+' t':'—'}</div></div>
+        <div class="li-side"><div class="li-weight">${v&&v.quantidade!=null?fmtTon(v.quantidade)+' kg':'—'}</div></div>
       </div>`;
     }).join('')}</div>` : ''}
   `;
@@ -1688,7 +1687,7 @@ function openCadastroManual(code, etiqueta){
   // que já existia só porque o cadastro manual foi aberto por engano.
   const existente = state.volumes.get(code);
   const produtoEtiqueta = (!existente && etiqueta) ? encontrarProdutoPorCodigoEtiqueta(etiqueta.codigoProduto) : null;
-  const pesoEtiqueta = (!existente && etiqueta) ? (etiqueta.pesoKg/1000) : null;
+  const pesoEtiqueta = (!existente && etiqueta) ? (etiqueta.pesoKg) : null;
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Cadastrar volume</h2>
     ${existente ? `<p class="hint" style="margin-top:0;color:var(--danger);">Atenção: esse código já existe no sistema (${esc(existente.produtoDescricao||existente.produtoCodigo||'')}). Os campos abaixo foram preenchidos com os dados atuais — confira antes de salvar.</p>` : ''}
@@ -1701,8 +1700,8 @@ function openCadastroManual(code, etiqueta){
     <label class="field-label">Armazém</label>
     <input type="text" id="cm-armazem" placeholder="Ex: 02" value="${esc((existente&&existente.armazem)||state.armazemPadrao||'')}">
     <p class="hint" style="margin:2px 0 0;">Fica salvo como padrão pros próximos itens, até você trocar aqui.</p>
-    <label class="field-label">Peso (toneladas)</label>
-    <input type="number" step="0.001" id="cm-peso" placeholder="Ex: 1.05" value="${existente&&existente.quantidade!=null?existente.quantidade:(pesoEtiqueta!=null?pesoEtiqueta.toFixed(3):'')}">
+    <label class="field-label">Peso (kg)</label>
+    <input type="number" step="0.1" id="cm-peso" placeholder="Ex: 1050" value="${existente&&existente.quantidade!=null?existente.quantidade:(pesoEtiqueta!=null?String(Math.round(pesoEtiqueta*10)/10):'')}">
     <button class="btn primary" id="cm-save">Salvar</button>
   `);
   if (existente && existente.produtoCodigo){
@@ -1889,7 +1888,7 @@ function renderEstoque(){
           <div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div>
         </div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(peso)} t</div>
+          <div class="li-weight">${fmtTon(peso)} kg</div>
           <div class="li-desc">${itens.length} vol.</div>
         </div>
       </div>
@@ -1904,7 +1903,7 @@ function renderEstoque(){
             <div class="li-desc">${armazemChipHTML(v.armazem)}</div>
           </div>
           <div class="li-side">
-            <div class="li-weight">${fmtTon(v.quantidade)} t</div>
+            <div class="li-weight">${fmtTon(v.quantidade)} kg</div>
             <span class="badge ${info.badge}">${esc(info.label)}</span>
           </div>
         </div>`;
@@ -1999,7 +1998,7 @@ document.getElementById('sel-report').addEventListener('click', ()=>{
     const info = statusDisplayInfo(v);
     return {
       lote: v.lote, produto: v.produtoCodigo||v.produtoDescricao||'', armazem: v.armazem||'',
-      peso: v.quantidade!=null ? Number(v.quantidade).toFixed(3) : '', situacao: info.label,
+      peso: v.quantidade!=null ? Math.round(Number(v.quantidade)*10)/10 : '', situacao: info.label,
       data: v.ultimaConferenciaEm ? fmtDate(v.ultimaConferenciaEm) : ''
     };
   });
@@ -2007,7 +2006,7 @@ document.getElementById('sel-report').addEventListener('click', ()=>{
   const pesoTotal = vols.reduce((s,v)=>s+(v.quantidade||0),0);
   exportXlsx(rows, `relatorio_inventario_${slugify(hoje)}.xlsx`,
     ['lote','produto','armazem','peso','situacao','data'],
-    `Relatório de inventário — ${hoje} — ${vols.length} item(ns), ${fmtTon(pesoTotal)} t`);
+    `Relatório de inventário — ${hoje} — ${vols.length} item(ns), ${fmtTon(pesoTotal)} kg`);
 });
 document.getElementById('sel-status').addEventListener('click', ()=>{
   const lotes = [...state.selecionados];
@@ -2069,7 +2068,7 @@ function openVolumeDetail(lote){
     <div class="li-desc" style="white-space:normal;margin:4px 0 12px;">${esc(v.produtoDescricao||v.produtoCodigo||'')}</div>
     <div class="card">
       <div class="progress-line"><span>Armazém</span><b>${v.armazem?armazemChipHTML(v.armazem):'—'}</b></div>
-      <div class="progress-line"><span>Peso</span><b>${fmtTon(v.quantidade)} t</b></div>
+      <div class="progress-line"><span>Peso</span><b>${fmtTon(v.quantidade)} kg</b></div>
       <div class="progress-line"><span>Status</span><b>${esc(info.label)}</b></div>
       <div class="progress-line"><span>Conferência</span><b>${v.statusConferencia==='contado'?'Conferido':(v.statusConferencia==='nao_conferido'?'⚠ Não conferido':'—')}</b></div>
       <div class="progress-line"><span>Origem</span><b>${esc(v.origem||'—')}</b></div>
@@ -2511,7 +2510,7 @@ function renderGruposHTML(grupos, keyPrefix){
     return `<div class="card" style="padding:0;margin-top:10px;">
       <div class="list-item grupo-conf-toggle" data-key="${esc(key)}" style="cursor:pointer;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div></div>
-        <div class="li-side"><div class="li-weight">${fmtTon(peso)} t</div><div class="li-desc">${items.length} vol.</div></div>
+        <div class="li-side"><div class="li-weight">${fmtTon(peso)} kg</div><div class="li-desc">${items.length} vol.</div></div>
       </div>
       ${aberto ? items.map(v=>{
         const dias = ehNaoLocalizado ? diasSemVer(v) : null;
@@ -2520,7 +2519,7 @@ function renderGruposHTML(grupos, keyPrefix){
         <div class="list-item" style="border-top:1px solid var(--border);padding-left:14px;cursor:default;">
           <div class="li-main"><div class="li-code">${esc(v.lote)}</div><div class="li-desc">${esc(v.produtoDescricao||v.produtoCodigo||(v.semCadastro?'Sem cadastro no sistema':''))}${dias!=null?` · não visto há ${dias} dia${dias===1?'':'s'}`:''}</div></div>
           <div class="li-side">
-            <div class="li-weight">${v.quantidade!=null?fmtTon(v.quantidade)+' t':'—'}</div>
+            <div class="li-weight">${v.quantidade!=null?fmtTon(v.quantidade)+' kg':'—'}</div>
             ${jaResolvido?`<span class="badge ${jaResolvido.badge}">${esc(jaResolvido.label)}</span>`:''}
           </div>
         </div>`;
@@ -2678,7 +2677,7 @@ function renderRelatorioRegistrado(sess){
     const pesoTotal = pendentesBaixa.reduce((s,v)=>s+(v.quantidade||0),0);
     openSheet(`
       <h2 class="section-title" style="margin-top:0;color:var(--danger);">Dar baixa em ${pendentesBaixa.length} item(ns)?</h2>
-      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtTon(pesoTotal)} t no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
+      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtTon(pesoTotal)} kg no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
       <button class="btn danger" id="conf-baixa-sim">Confirmar baixa</button>
       <button class="btn ghost" id="conf-baixa-nao" style="border:1px solid var(--border);">Cancelar</button>
     `);
@@ -2859,7 +2858,7 @@ function producaoReceberLeitura(raw){
   } else {
     const code = extractLoteCode(s);
     const vol = state.volumes.get(code);
-    if (vol) item = { lote: vol.lote, corrida: '', pesoKg: Math.round((Number(vol.quantidade)||0)*1000), produtoCodigo: vol.produtoCodigo||'' };
+    if (vol) item = { lote: vol.lote, corrida: '', pesoKg: Math.round(Number(vol.quantidade)||0), produtoCodigo: vol.produtoCodigo||'' };
   }
   if (!item){
     beepErro(); vibrate([80,60,80]);
@@ -3371,7 +3370,7 @@ async function producaoConcluirInterno(){
     }
     if (!jaTem(it.lote, 'Consumido na produção '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: it.produtoCodigo||(vol&&vol.produtoCodigo)||null, produtoDescricao: it.produtoDescricao||(vol&&vol.produtoDescricao)||'',
-      tipo:'baixado', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
+      tipo:'baixado', quantidade: (Number(it.pesoKg)||0), timestamp: agora, exportado:false,
       obs:'Consumido na produção '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
     }), 'histórico de '+it.lote);
   }
@@ -3388,13 +3387,13 @@ async function producaoConcluirInterno(){
     } else {
       await seguro(()=>producaoGravarVolumeNovo(it.lote, {
         lote: it.lote, produtoCodigo: codigo, produtoDescricao: desc, armazem: state.armazemPadrao||'',
-        quantidade: (Number(it.pesoKg)||0)/1000, status:'estoque', statusConferencia:'contado', origem:'producao',
+        quantidade: (Number(it.pesoKg)||0), status:'estoque', statusConferencia:'contado', origem:'producao',
         ultimaConferenciaEm: agora, criadoEm: agora, atualizadoEm: agora
       }), 'cadastro de '+it.lote);
     }
     if (!jaTem(it.lote, 'Produzido em '+p.equipamento)) await seguro(()=>db.collection('movimentos').doc('mov_'+uid()).set({
       lote: it.lote, produtoCodigo: codigoDigitado, produtoDescricao: desc,
-      tipo:'entrada', quantidade: (Number(it.pesoKg)||0)/1000, timestamp: agora, exportado:false,
+      tipo:'entrada', quantidade: (Number(it.pesoKg)||0), timestamp: agora, exportado:false,
       obs:'Produzido em '+p.equipamento, usuarioId: quem.usuarioId, usuarioNome: quem.usuarioNome
     }), 'histórico de '+it.lote);
   }
@@ -3543,7 +3542,7 @@ document.getElementById('btn-export-hist').addEventListener('click', ()=>{
 
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {
-  situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (t)',
+  situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (kg)',
   data:'Data', tipo:'Status', quantidade:'Quantidade', obs:'Observação',
   lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)',
   dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo'
