@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1083569831271",
+    "project_id": "stokk-d7bf6",
+    "storage_bucket": "stokk-d7bf6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1083569831271:android:a181ac1882c4b6bb6bc3c2",
+        "android_client_info": {
+          "package_name": "com.stokk.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnEA7qdXjmX8NQ13RUID4rYFrIg0dLR1Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

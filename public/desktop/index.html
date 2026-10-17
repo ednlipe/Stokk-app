@@ -843,7 +843,7 @@ async function onAuthed(user){
   subscribeData();
   setView('dashboard');
 }
-const APP_VERSAO = '1.1.0 · 14/10';
+const APP_VERSAO = '1.2.0 · 16/10';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();

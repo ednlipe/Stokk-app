@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import * as XLSXLib from 'xlsx';
 import { createClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
 
 /* Marcação original do app STOKK (idêntica ao index.html single-file).
    Injetada via dangerouslySetInnerHTML porque a lógica abaixo manipula
@@ -409,6 +410,31 @@ async function onAuthed(user){
   document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO;
   subscribeData();
   setView('dashboard');
+  registrarPush(user.id);
+}
+
+/* ================= PUSH (somente no app Android) =================
+   Pede permissão, registra o token do aparelho em public.push_tokens e,
+   ao tocar na notificação, abre a tela de Conferência. No navegador/desktop
+   não faz nada. Falhas aqui nunca podem atrapalhar o login. */
+async function registrarPush(userId){
+  try{
+    if (!Capacitor.isNativePlatform()) return;
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+    let perm = await PushNotifications.checkPermissions();
+    if (perm.receive === 'prompt') perm = await PushNotifications.requestPermissions();
+    if (perm.receive !== 'granted') return;
+    await PushNotifications.removeAllListeners();
+    await PushNotifications.addListener('registration', async (t)=>{
+      try{
+        await sb.rpc('registrar_push_token', { p_token: t.value, p_plataforma: 'android' });
+      }catch(e){ console.warn('push token', e); }
+    });
+    await PushNotifications.addListener('registrationError', (e)=>console.warn('push registro falhou', e));
+    await PushNotifications.addListener('pushNotificationActionPerformed', ()=>{ try{ setView('inventario'); }catch(e){} });
+    try{ await PushNotifications.createChannel({ id:'conferencias', name:'Conferências', description:'Avisos de conferência em aberto', importance:4 }); }catch(e){}
+    await PushNotifications.register();
+  }catch(e){ console.warn('push indisponível', e); }
 }
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
@@ -3257,6 +3283,7 @@ function producaoDesenharRelatorio(p){
     <div class="card" style="padding:0;">${linhas(p.produzidos)}</div>
     <button class="btn primary" data-prod-act="export" data-v="${esc(p.id)}" style="margin-top:14px;">Exportar (Excel)</button>
     <button class="btn ghost" data-prod-act="voltar-lista" style="border:1px solid var(--border);margin-top:6px;">Voltar</button>
+    ${(state.user && state.user.role==='supervisor') ? `<div style="margin-top:10px;"><button class="link-btn" data-prod-act="excluir-prod" data-v="${esc(p.id)}" style="color:var(--danger);">excluir este registro de produção</button></div>` : ''}
   `;
 }
 
@@ -3473,6 +3500,14 @@ function producaoAcao(el){
     producaoPerguntar('Cancelar este registro?', 'O que já foi bipado neste registro será descartado. O estoque não é alterado.', 'Cancelar registro', async ()=>{
       await producaoSalvar({ etapa:'cancelada' });
       producaoCancelarOuSair();
+    }, true);
+  }
+  else if (act==='excluir-prod'){
+    producaoPerguntar('Excluir este registro de produção?', 'O registro some da lista e do rendimento (Power BI). <b>O estoque não é alterado</b> — se precisar, exclua os volumes na tela de Estoque. Não dá para desfazer.', 'Excluir registro', async ()=>{
+      try{ await db.collection('producoes').doc(v).delete(); }
+      catch(e){ console.error(e); toast('Não consegui excluir. Tente de novo.'); return; }
+      toast('Registro de produção excluído.');
+      state.producaoRelatorioId = null; state.producaoChave = null; renderProducao();
     }, true);
   }
   else if (act==='fin-mp') producaoFinalizarMateriaPrima();
