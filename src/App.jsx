@@ -505,7 +505,7 @@ async function onAuthed(user){
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
   state.ready.db = true; state.ready.downloads = true;
-  document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + (state.user.areaNome ? ' · ' + state.user.areaNome : '') + ' · v' + APP_VERSAO;
+  document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
   setView('dashboard');
   registrarPush(user.id);

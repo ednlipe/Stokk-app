@@ -230,3 +230,13 @@ nav.bottom button.active svg{stroke:var(--accent);}
 .filter-chip{flex-shrink:0;padding:7px 13px;border-radius:20px;border:1px solid var(--border);background:transparent;
   color:var(--text-muted);font-size:12.5px;cursor:pointer;font-family:var(--font-body);}
 .filter-chip.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;}
+
+/* área em destaque na barra do topo + botão de trocar de área */
+.subtitle .sub-area{display:block;font-family:var(--font-head);font-size:17px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--accent);line-height:1.15;}
+.subtitle .sub-user{display:block;font-size:10.5px;margin-top:2px;}
+#btn-area{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:13px;font-weight:700;text-decoration:none;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;min-height:36px;}
+#btn-area:active{opacity:.85;}
+@media (max-width:640px){
+  .topbar-actions{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;}
+  .topbar-actions .subtitle{flex:1 1 100%;}
+}
