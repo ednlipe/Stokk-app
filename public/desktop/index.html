@@ -726,6 +726,63 @@ function snakeToCamel(s){ return s.replace(/_([a-z0-9])/g, (_,c)=>c.toUpperCase(
 function objToSnake(o){ const r={}; for(const k in o) if(o[k]!==undefined) r[camelToSnake(k)]=o[k]; return r; }
 function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; return r; }
 
+/* ---------------- ÁREAS (update_012/013) ----------------
+   Cada pessoa tem uma ou mais áreas (Trefilaria, Planta 1…). O app mostra e grava só a área escolhida
+   (state.area). Quem tem uma área só entra direto; quem tem várias escolhe ao entrar e troca no botão do topo.
+   A proteção real está no banco (RLS); aqui é só a escolha. state.area vazio = banco ainda sem update_012. */
+// abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
+const ABAS_OCULTAS_POR_AREA = { planta1: ['rendimento'] };
+function esconderAbasPorArea(){
+  const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
+  document.querySelectorAll('[data-nav]').forEach(el=>{
+    if (ocultas.includes(el.getAttribute('data-nav'))) el.style.display = 'none';
+  });
+}
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes'];
+function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
+function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
+function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
+function escolherAreaTela(areas, nomeUsuario){
+  return new Promise(resolve=>{
+    const el = document.createElement('div');
+    el.id = 'area-picker';
+    el.style.cssText = 'position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;flex-direction:column;justify-content:center;padding:24px;overflow:auto;';
+    el.innerHTML = '<div style="max-width:420px;width:100%;margin:0 auto;">'
+      + '<h2 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Escolha a área</h2>'
+      + '<p class="hint" style="margin:0 0 16px;">'+esc(nomeUsuario)+', em qual área você vai trabalhar agora? Dá para trocar depois pelo botão no topo.</p>'
+      + areas.map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+esc(a.nome)+'</button>').join('')
+      + '<button class="btn ghost" id="area-sair">Sair</button></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click', async e=>{
+      const b = e.target.closest('[data-area]');
+      if (b){ el.remove(); resolve(b.getAttribute('data-area')); return; }
+      if (e.target.closest('#area-sair')){ await sb.auth.signOut(); location.reload(); }
+    });
+  });
+}
+function montarBotaoArea(){
+  if (!state.areas || state.areas.length < 2 || document.getElementById('btn-area')) return;
+  const bar = document.querySelector('.topbar-actions'); if (!bar) return;
+  const b = document.createElement('button');
+  b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = 'trocar área';
+  bar.insertBefore(b, document.getElementById('btn-theme-toggle') || document.getElementById('btn-logout'));
+  b.addEventListener('click', ()=>{
+    const atual = state.areas.find(a=>a.id===state.area);
+    openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Trocar de área</h3>'
+      + '<p class="hint" style="margin:0 0 14px;">Área atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
+      + state.areas.map(a=>'<button class="btn '+(a.id===state.area?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+esc(a.nome)+(a.id===state.area?' · atual':'')+'</button>').join(''));
+  });
+  document.getElementById('sheet-content').addEventListener('click', e=>{
+    const t = e.target.closest('[data-troca-area]'); if (!t) return;
+    const novo = t.getAttribute('data-troca-area');
+    closeSheet();
+    if (novo === state.area) return;
+    salvarArea(state.user.id, novo);
+    toast('Trocando de área…', 1500);
+    setTimeout(()=>location.reload(), 350);
+  });
+}
+
 function createSupabaseDB(){
   const listeners = {};
   const channels = {};
@@ -739,6 +796,7 @@ function createSupabaseDB(){
   }
   async function refetch(table, orderField, orderDir, limitN){
     let q = sb.from(table).select('*');
+    const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
     if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
     if (limitN) q = q.limit(limitN);
     const {data, error} = await q;
@@ -754,20 +812,27 @@ function createSupabaseDB(){
         return {
           async set(dataObj){
             const row = Object.assign(objToSnake(dataObj), {[camelToSnake(pk)]: id});
+            const ar = areaDaTabela(table); if (ar) row.area = ar;
             const {error} = await sb.from(table).upsert(row);
             if (error){ toast('Erro ao salvar: '+error.message, 4000); throw error; }
           },
           async update(dataObj){
-            const {error} = await sb.from(table).update(objToSnake(dataObj)).eq(camelToSnake(pk), id);
+            let q = sb.from(table).update(objToSnake(dataObj)).eq(camelToSnake(pk), id);
+            const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
+            const {error} = await q;
             if (error){ toast('Erro ao atualizar: '+error.message, 4000); throw error; }
           },
           async get(){
-            const {data, error} = await sb.from(table).select('*').eq(camelToSnake(pk), id).maybeSingle();
+            let q = sb.from(table).select('*').eq(camelToSnake(pk), id);
+            const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
+            const {data, error} = await q.maybeSingle();
             if (error){ console.error(error); return {exists:false, data:()=>null}; }
             return { exists: !!data, data: ()=> data ? objToCamel(data) : null };
           },
           async delete(){
-            const {error} = await sb.from(table).delete().eq(camelToSnake(pk), id);
+            let q = sb.from(table).delete().eq(camelToSnake(pk), id);
+            const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
+            const {error} = await q;
             if (error){ toast('Erro ao excluir: '+error.message, 4000); throw error; }
           }
         };
@@ -832,18 +897,51 @@ async function onAuthed(user){
     document.getElementById('login-error').textContent = 'Conta aguardando liberação. Peça ao supervisor para ativar seu acesso.';
     return;
   }
-  state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador' };
+  // áreas (update_012/013): conta sem área ou com todas as áreas desativadas não entra.
+  // (profile.area indefinida = banco ainda sem update_012: tudo funciona como antes, sem filtro de área)
+  let areaNome = '';
+  state.areas = []; state.area = null;
+  if (profile.area !== undefined){
+    const ids = new Set(profile.area ? [profile.area] : []);
+    try{
+      const ua = await sb.from('usuario_areas').select('area').eq('user_id', user.id);
+      if (!ua.error) (ua.data||[]).forEach(r=>ids.add(r.area));
+    }catch(e){}
+    let areas = [];
+    if (ids.size){
+      const r = await sb.from('areas').select('id,nome,ativa').in('id', [...ids]);
+      areas = (r.data||[]).filter(a=>a.ativa!==false);
+      areas.sort((a,b)=> ((b.id===profile.area)-(a.id===profile.area)) || String(a.nome).localeCompare(String(b.nome)));
+    }
+    if (!areas.length){
+      await sb.auth.signOut();
+      showLogin();
+      document.getElementById('login-error').textContent = !ids.size
+        ? 'Sua conta ainda não tem uma área definida. Peça ao supervisor para definir sua área.'
+        : 'Você não tem permissão para acessar esta área. Fale com o supervisor.';
+      return;
+    }
+    let escolhida = areaSalva(user.id);
+    if (!areas.some(a=>a.id===escolhida)) escolhida = areas.length===1 ? areas[0].id : null;
+    if (!escolhida) escolhida = await escolherAreaTela(areas, (profile&&profile.nome)||user.email);
+    salvarArea(user.id, escolhida);
+    state.areas = areas; state.area = escolhida;
+    areaNome = (areas.find(a=>a.id===escolhida)||{}).nome || '';
+  }
+  state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador', area: state.area, areaNome };
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='grid';
   applyRoleUI();
+  montarBotaoArea();
+  esconderAbasPorArea();
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
   state.ready.db = true; state.ready.downloads = true;
-  document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO;
+  document.getElementById('topbar-sub').textContent = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + (state.user.areaNome ? ' · ' + state.user.areaNome : '') + ' · v' + APP_VERSAO;
   subscribeData();
   setView('dashboard');
 }
-const APP_VERSAO = '1.2.0 · 16/10';
+const APP_VERSAO = '1.3.0 · 20/10';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();

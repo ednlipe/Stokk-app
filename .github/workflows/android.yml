@@ -1,10 +1,10 @@
 name: Build APK (STOKK)
 
 # Gera o APK automaticamente sempre que você enviar (push) mudanças pra branch
-# main, ou quando você rodar manualmente pela aba "Actions" do GitHub.
+# master, ou quando você rodar manualmente pela aba "Actions" do GitHub.
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: Preparar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Preparar Java
         uses: actions/setup-java@v4
