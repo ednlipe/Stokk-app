@@ -30,4 +30,6 @@ antes disso aparece como **"Aguardando conferência"** ou **"Não conferido"**.
 - O **3º turno antes das 07:10 conta para o dia anterior**; `data_producao` gravada tem prioridade.
 - **Todo peso é guardado e mostrado em KG** (desde 2026-10-13, `update_009`): `volumes.quantidade`, `movimentos.quantidade` e pesos de produção. A planilha importada vinha em **toneladas** (convertida por `update_010`); o importador do app agora multiplica por 1000 ao importar.
 
+- **Áreas (desde 2026-10-20, `update_012`):** o app tem ambientes separados por área: **Trefilaria** (`trefila`, tudo que existia antes) e **Planta 1 (laminação)** (`planta1`). Cada usuário pertence a uma só área e só vê e grava dados dela; supervisor e operador valem dentro da própria área. Os armazéns são por área (`armazens_area`; os da Planta 1 ainda serão cadastrados). O número do lote é único no banco inteiro. Produtos são compartilhados. Quem precisa ver todas as áreas usa o Power BI.
+
 ---

@@ -12,7 +12,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 | App (telas e regras) | `stokk-vite/src/App.jsx` |
 | Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
 | Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…011_*.sql` na raiz |
+| Banco | `schema.sql` + `update_001…013_*.sql` na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 
@@ -21,6 +21,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Nunca registre segredos** (senhas, `service_role`, `CRON_SECRET`, chave do Firebase, senha do `powerbi_leitor`) em arquivos, docs ou commits.
 - **Mudança de banco = novo `update_0NN_*.sql`** idempotente (pode rodar mais de uma vez), na raiz, listado em `docs/banco.md`. Não edite migrações antigas.
 - **Não enfraqueça a segurança (RLS).** Contas novas nascem bloqueadas (`profiles.ativo=false`); `role` e `ativo` só mudam pelo painel do Supabase. Veja `update_008_seguranca.sql` e `docs/seguranca.md`.
+- **Áreas (update_012 + 013):** `trefila` e `planta1`. Uma pessoa pode ter várias áreas (`usuario_areas` + `profiles.area` principal); `volumes`, `movimentos`, `sessoes` e `producoes` têm `area` e a RLS filtra com `area = any ((select public.areas_do_usuario())::text[])` (o cast é obrigatório). Não reescreva políticas sem esse filtro. `volumes.lote` é único entre áreas; `role` vale para todas as áreas; `produtos` é compartilhado. O Power BI vê todas as áreas.
 - **Todo peso está em kg** (`volumes.quantidade`, `movimentos.quantidade`, produção). O Power BI tem `quantidade_kg` e `quantidade_ton`.
 - **Rendimento metálico = soma produzida ÷ soma consumida** (nunca média de percentuais). Cor pelo valor com 1 casa decimal: ≥ 99 verde, ≥ 98 amarelo, abaixo vermelho.
 - **Turnos:** 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20.
