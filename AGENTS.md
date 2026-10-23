@@ -9,9 +9,9 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 ## Mapa do projeto
 | Parte | Onde |
 |---|---|
-| App (telas e regras) | `stokk-vite/src/App.jsx` |
-| Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
-| Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
+| App (telas e regras) | `src/App.jsx` |
+| Site desktop (mesmas regras do app) | `public/desktop/index.html` |
+| Android / Capacitor | `android/` (versão em `android/app/build.gradle` e `package.json`) |
 | Banco | `schema.sql` + `update_001…013_*.sql` na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
@@ -30,7 +30,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 
 ## Versão do app
 - Rótulo na tela vem de `package.json` (`version`) + carimbo da build. No desktop, a constante `APP_VERSAO` em `index.html`.
-- Cada APK novo precisa subir `versionCode` e `versionName` em `stokk-vite/android/app/build.gradle`.
+- Cada APK novo precisa subir `versionCode` e `versionName` em `android/app/build.gradle`.
 
 ## Notificações push (resumo)
 - Uma Edge Function atende 3 tipos pelo corpo `{"tipo": "conferencia" | "inventario" | "rendimento"}`, cada um com seu cron. Detalhes e horários em `docs/deploy.md`.
