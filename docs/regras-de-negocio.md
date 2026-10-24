@@ -21,6 +21,16 @@ antes disso aparece como **"Aguardando conferência"** ou **"Não conferido"**.
 5. Ao registrar: grupos por status, lista de **faltando** (não localizados → `nao_conferido`, **sem mudar o armazém**), e **não cadastrados**; gera movimento `conferencia`.
 6. Supervisor pode excluir a conferência (reverte os itens afetados) e dar baixa em não localizados.
 
+### 9.3.1 Contagem cega (v1.4.0)
+Conferência ao contrário: **primeiro bipa tudo, depois compara com a planilha do Protheus**. Não altera o estoque (`volumes`); guarda em `sessoes` (`tipo='cega'`, `itens`, `contados` = lista de lotes).
+- **Leitura da etiqueta (código de barras da lateral)** — campos colados, lidos **por posição** (as letras do volume e da corrida mudam e nada depende delas): volume (8) + corrida (6) + peso em kg (4 dígitos) + código do produto (termina na **bitola** `B` + número + `.` + 2 casas, ex. `B4.20`) + quantidade de peças (o que sobra). Ex.: `PCI00096PCI0032202TPAIQ092B4.20100`. Aceita também o código curto de baixo da etiqueta (só o volume). Se não separar produto/peças, o item entra marcado **"revisar"**; código fora do padrão **não é contado** (aparece em "leituras fora do padrão"). Lote repetido não conta duas vezes.
+- **Chave de comparação:** o **Volume** da etiqueta é o **Lote** do Protheus.
+- **Planilha:** o mesmo relatório do Protheus que a aba Importar lê (blocos `Produto:` + linhas `Saldo / Saldo Inicial`, com armazém e lote). A quantidade vem em **toneladas** (UM `TL`) e vira kg; linhas de saldo **repetidas** no relatório são ignoradas; vendas futuras (`Saída`) são ignoradas.
+- **Comparação:** *conferem*, *faltando* (na planilha e não bipado), *sobrando* (bipado e fora da planilha), *peso diferente* (tolerância 1 kg; só quando a etiqueta traz o peso), *em outro armazém* (existe na planilha, mas em armazém fora do filtro escolhido), *produto diferente* (informativo) e *para revisar*. O filtro de armazéns escolhe quais armazéns da planilha entram na conta (nenhum = todos).
+- **Fluxo:** Conferência › **Iniciar conferência** › popup "Qual tipo de conferência?" (**Padrão** = como antes; **Cega**) › bipar › **Comparar com a planilha** › (opcional) filtrar armazéns › **Exportar planilha** › **Encerrar e guardar**. Dá para sair e continuar depois; o app retoma a contagem deste aparelho.
+- **Limites:** uma pessoa/aparelho por contagem (dois aparelhos na mesma contagem se sobrescrevem); a comparação usa a planilha que você subir (se estiver velha, aparecem falsas diferenças); só roda no app e no site desktop (no desktop, o leitor digita no campo da tela).
+- **Código:** núcleo em `src/App.jsx` (bloco "CONTAGEM CEGA — núcleo": `cegaLerEtiqueta`, `cegaLerPlanilha`, `cegaComparar`) e cópia idêntica em `public/desktop/index.html`; testes em `tests/cega_core.test.cjs` (`node tests/cega_core.test.cjs`).
+
 ### 9.4 Rendimento metálico
 - **Rendimento = soma produzida ÷ soma consumida.** Nunca média de percentuais (vale para dia, turno, mês e total).
 - Só entram produções com `etapa = 'finalizada'` e `resultado` preenchido.

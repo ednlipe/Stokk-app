@@ -55,6 +55,7 @@ Lista de volumes com busca, filtros múltiplos (status e armazém), badges de si
 e (supervisor) **seleção e exclusão em lote**. Exporta o relatório de inventário em Excel.
 
 ### 7.4 Conferência (inventário)
+> **Contagem cega (v1.4.0):** ao tocar em "Iniciar conferência" abre um popup para escolher **Padrão** ou **Cega** (o nome opcional da cega vem do campo de nome da tela); a tela também lista as contagens cegas em andamento e anteriores. A bipagem usa a mesma tela Bipar (`scanOverride = cegaBipar`, como na Produção) e a lista fica em `#view-cega-lista`. Regras em `regras-de-negocio.md` §9.3.1. **Status:** testado em navegador com API simulada; falta testar com coletor/celular reais e com a planilha do mesmo produto das etiquetas.
 Fluxo detalhado na [seção 9.3](#93-conferência-de-inventário).
 
 ### 7.5 Produção (rendimento metálico)

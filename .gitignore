@@ -5,3 +5,10 @@ android/.gradle
 android/build
 android/app/build
 android/local.properties
+
+# segredos e chaves (nunca versionar)
+.env
+.env.*
+*.jks
+*.keystore
+*.pem

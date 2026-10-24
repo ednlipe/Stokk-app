@@ -11,8 +11,8 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 |---|---|
 | App (telas e regras) | `src/App.jsx` |
 | Site desktop (mesmas regras do app) | `public/desktop/index.html` |
-| Android / Capacitor | `android/` (versão em `android/app/build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…013_*.sql` na raiz |
+| Android / Capacitor | `android/` (versão em `build.gradle` e `package.json`) |
+| Banco | `schema.sql` + `update_001…014_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 
@@ -22,6 +22,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Mudança de banco = novo `update_0NN_*.sql`** idempotente (pode rodar mais de uma vez), na raiz, listado em `docs/banco.md`. Não edite migrações antigas.
 - **Não enfraqueça a segurança (RLS).** Contas novas nascem bloqueadas (`profiles.ativo=false`); `role` e `ativo` só mudam pelo painel do Supabase. Veja `update_008_seguranca.sql` e `docs/seguranca.md`.
 - **Áreas (update_012 + 013):** `trefila` e `planta1`. Uma pessoa pode ter várias áreas (`usuario_areas` + `profiles.area` principal); `volumes`, `movimentos`, `sessoes` e `producoes` têm `area` e a RLS filtra com `area = any ((select public.areas_do_usuario())::text[])` (o cast é obrigatório). Não reescreva políticas sem esse filtro. `volumes.lote` é único entre áreas; `role` vale para todas as áreas; `produtos` é compartilhado. O Power BI vê todas as áreas.
+- **Contagem cega (update_014):** a etiqueta é lida por **posição** (volume 8 + corrida 6 + peso 4 + código do produto terminado na bitola + peças); o Volume da etiqueta = Lote do Protheus; a planilha vem em toneladas. Núcleo e testes em `src/App.jsx` / `tests/cega_core.test.cjs`; mesma cópia no desktop. Veja `docs/regras-de-negocio.md` §9.3.1.
 - **Todo peso está em kg** (`volumes.quantidade`, `movimentos.quantidade`, produção). O Power BI tem `quantidade_kg` e `quantidade_ton`.
 - **Rendimento metálico = soma produzida ÷ soma consumida** (nunca média de percentuais). Cor pelo valor com 1 casa decimal: ≥ 99 verde, ≥ 98 amarelo, abaixo vermelho.
 - **Turnos:** 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20.

@@ -170,6 +170,11 @@ const APP_HTML = `
       <div id="producao-lista-body"></div>
     </section>
 
+    <!-- CONTAGEM CEGA: lista dos volumes contados (fica abaixo da bipagem) -->
+    <section class="view" id="view-cega-lista">
+      <div id="cega-lista-body"></div>
+    </section>
+
     <!-- HISTORICO -->
     <section class="view" id="view-historico">
       <h2 class="section-title">Histórico de movimentos</h2>
@@ -1018,6 +1023,7 @@ function subscribeData(){
         state.session = null; state.relatorioAberto = null; salvarSessaoSeguida(null);
       }
     }
+    cegaAoReceberSessoes();
     renderAll();
   }, err=>{ console.error(err); });
 
@@ -2413,14 +2419,16 @@ function pararDeAcompanharConferencia(){
 }
 function renderInventario(){
   const body = document.getElementById('inventario-body');
+  if (state.cegaRel){ cegaMostrarBipagem(false); cegaRenderRel(); return; }
+  if (state.cega){ cegaRenderContagem(); return; }
 
   if (!state.session || !state.session.ativo){
     document.getElementById('view-scan').classList.remove('active');
     state.confBodySessId = null;
     state.previewSessId = null;
     state.batchAction = null; state.batchCount = 0;
-    const ativas = (state.sessoes||[]).filter(s=>s.ativo);
-    const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado);
+    const ativas = (state.sessoes||[]).filter(s=>s.ativo && s.tipo!=='cega');
+    const anteriores = (state.sessoes||[]).filter(s=>!s.ativo && s.resultado && s.tipo!=='cega');
     const html = `
       ${ativas.length ? `<h2 class="section-title" style="margin-top:0;">Conferências em andamento agora</h2>
       <div class="card" style="padding:0;">${ativas.map(s=>`
@@ -2438,7 +2446,7 @@ function renderInventario(){
 
       <label class="field-label">Nome da conferência (opcional)</label>
       <input type="text" id="inv-nome" placeholder='Ex: Galpão 2 – Vergalhão 8mm' maxlength="60" autocomplete="off">
-      <label class="field-label">Status inicial dos itens bipados nesta conferência *</label>
+      <label class="field-label">Status inicial dos itens bipados (conferência padrão) *</label>
       <input type="text" id="inv-status-inicial" placeholder='Ex: Conferido'>
       <button class="btn primary" id="inv-start">Iniciar nova conferência</button>
 
@@ -2455,6 +2463,7 @@ function renderInventario(){
           </div>
           <button class="link-btn del-sess" data-role="supervisor" data-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>
         </div>`).join('')}</div>` : ''}
+      ${cegaListaHTML()}
     `;
     // Atualizações em tempo real chamam essa função toda hora (principalmente logo depois de
     // finalizar uma conferência, quando centenas de itens são atualizados de uma vez).
@@ -2469,8 +2478,15 @@ function renderInventario(){
     const tinhaFoco = !!campoAntigo && document.activeElement === campoAntigo;
     const selIni = tinhaFoco ? campoAntigo.selectionStart : null;
     const selFim = tinhaFoco ? campoAntigo.selectionEnd : null;
+    const cegaNomeAntigo = document.getElementById('cega-nome');
+    const cegaNomeVal = cegaNomeAntigo ? cegaNomeAntigo.value : '';
+    const cegaNomeFoco = !!cegaNomeAntigo && document.activeElement === cegaNomeAntigo;
     state.confListaHTML = html;
     body.innerHTML = html;
+    const cegaNomeNovo = document.getElementById('cega-nome');
+    if (cegaNomeNovo && cegaNomeVal) cegaNomeNovo.value = cegaNomeVal;
+    if (cegaNomeNovo && cegaNomeFoco) cegaNomeNovo.focus();
+    cegaBindLista(body);
     const nomeNovo = document.getElementById('inv-nome');
     if (nomeNovo && nomeDigitado) nomeNovo.value = nomeDigitado;
     if (nomeNovo && nomeTinhaFoco) nomeNovo.focus();
@@ -2486,7 +2502,7 @@ function renderInventario(){
         renderInventario();
       });
     });
-    document.getElementById('inv-start').onclick = async ()=>{
+    const iniciarConferenciaPadrao = async ()=>{
       const statusInicial = document.getElementById('inv-status-inicial').value.trim();
       if (!statusInicial){
         openSheet(`
@@ -2530,6 +2546,24 @@ function renderInventario(){
       state.batchCount = 0;
       toast('Conferência iniciada — já pode bipar aqui embaixo.');
       renderInventario();
+    };
+    // um único botão de iniciar: pergunta qual tipo de conferência fazer
+    document.getElementById('inv-start').onclick = ()=>{
+      openSheet(`
+        <h2 class="section-title" style="margin-top:0;">Qual tipo de conferência?</h2>
+        <button class="btn primary" id="tipo-padrao" style="text-align:left;">
+          Padrão
+          <span style="display:block;font-size:12px;font-weight:400;opacity:.9;margin-top:3px;">Parte da lista do estoque do app e mostra o que falta. Usa o status inicial digitado na tela.</span>
+        </button>
+        <button class="btn" id="tipo-cega" style="text-align:left;margin-top:8px;">
+          Cega
+          <span style="display:block;font-size:12px;font-weight:400;opacity:.8;margin-top:3px;">Bipe tudo primeiro, sem ver a lista. No fim, suba a planilha do Protheus para comparar.</span>
+        </button>
+        <button class="link-btn" id="tipo-cancelar" style="margin-top:14px;">cancelar</button>
+      `);
+      document.getElementById('tipo-cancelar').onclick = closeSheet;
+      document.getElementById('tipo-padrao').onclick = ()=>{ closeSheet(); iniciarConferenciaPadrao(); };
+      document.getElementById('tipo-cega').onclick = ()=>{ const n = (document.getElementById('inv-nome')||{value:''}).value; closeSheet(); cegaIniciar(n); };
     };
     body.querySelectorAll('.list-item[data-sess]').forEach(li=>{
       li.addEventListener('click', (e)=>{
@@ -3675,6 +3709,543 @@ document.getElementById('btn-export-hist').addEventListener('click', ()=>{
   const rows = movs.map(m=>({data:fmtDate(m.timestamp), tipo:m.tipo, lote:m.lote||'', produto:m.produtoCodigo||(state.volumes.get(m.lote)||{}).produtoCodigo||m.produtoDescricao||'', quantidade:m.quantidade||'', obs:m.obs||''}));
   exportXlsx(rows, 'historico_movimentos.xlsx', ['data','tipo','lote','produto','quantidade','obs']);
 });
+
+/* ================= CONTAGEM CEGA — núcleo (leitura da etiqueta, planilha e comparação) =================
+   Sem tela aqui: só regras. Igual no app e no site desktop. */
+const CEGA_TOL_KG = 1; // diferença de peso aceita (kg) entre a etiqueta e a planilha
+
+// Etiqueta (código de barras da lateral): campos colados, sem separador, por POSIÇÃO:
+//   volume (8) + corrida (6) + peso em kg (4 dígitos) + código do produto (termina na bitola, ex.: B4.20) + peças
+//   ex.: PCI00096 PCI003 2202 TPAIQ092B4.20 100
+// As letras do volume e da corrida mudam de etiqueta para etiqueta, por isso nada depende delas.
+// Também aceita o código de barras curto de baixo da etiqueta (só o volume, ex.: PCJ00041).
+function cegaLerEtiqueta(raw){
+  const bruto = String(raw==null?'':raw).replace(/[\u0000-\u001f\u007f]/g,'').trim();
+  const t = bruto.replace(/\s+/g,'');
+  if (!t) return null;
+  const LOTE = /^[A-Za-z]{3}\d{5}$/;
+  if (LOTE.test(t)) return { lote:t.toUpperCase(), curto:true, revisar:false, bruto };
+  if (t.length>=19 && LOTE.test(t.slice(0,8)) && /^[A-Za-z]{3}\d{3}$/.test(t.slice(8,14)) && /^\d{4}$/.test(t.slice(14,18))){
+    const base = { lote:t.slice(0,8).toUpperCase(), corrida:t.slice(8,14).toUpperCase(), pesoKg:Number(t.slice(14,18)), bruto };
+    const resto = t.slice(18);
+    const m = resto.match(/^(.+?B\d+\.\d{2})(\d+)$/i);
+    if (m) return Object.assign(base, { produto:m[1].toUpperCase(), pecas:Number(m[2]), revisar:false });
+    return Object.assign(base, { produto:resto.toUpperCase(), pecas:null, revisar:true, motivo:'Não separei o código do produto e a quantidade de peças' });
+  }
+  if (t.length>=8 && LOTE.test(t.slice(0,8))) return { lote:t.slice(0,8).toUpperCase(), revisar:true, motivo:'Formato diferente do esperado', bruto };
+  return { desconhecido:true, bruto };
+}
+
+// Planilha do Protheus (Projeção de Estoque / saldo por lote): blocos "Produto:" e linhas de saldo.
+// Mesma leitura do importador do app; a quantidade vem em TONELADAS e aqui vira KG.
+function cegaParseProdutoRow(vals){
+  const obj = {};
+  let i = 1;
+  obj.codigo = String(vals[i++]||'').trim();
+  if (vals[i]==='-') i++;
+  obj.descricao = String(vals[i++]||'').trim();
+  while (i < vals.length-1){
+    const label = String(vals[i]||'').trim();
+    if (label.endsWith(':')){ obj[label.slice(0,-1).toLowerCase()] = String(vals[i+1]||'').trim(); i+=2; }
+    else i++;
+  }
+  return obj;
+}
+function cegaParseItemRow(vals, produtoCodigo){
+  const categoria = String(vals[0]||'').trim();
+  if (!categoria || categoria==='Registro' || categoria==='Produto:') return null;
+  let armazem = null, lote = null;
+  const nums = [];
+  for (const v of vals){
+    if (typeof v === 'number'){ nums.push(v); continue; }
+    const s = String(v||'').trim();
+    if (!s) continue;
+    const mArm = s.match(/^Armaz[eé]m:\s*(.+)$/i);
+    if (mArm){ armazem = mArm[1].trim(); continue; }
+    if (/^[A-Z]{2,6}\d{4,7}$/i.test(s) && s.toUpperCase()!==String(produtoCodigo||'').toUpperCase()){ lote = s.toUpperCase(); continue; }
+  }
+  if (!lote || nums.length===0) return null;
+  return { categoria, armazem, lote, qtd: nums[0] };
+}
+// rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true})
+function cegaLerPlanilha(rows){
+  const mapa = new Map();      // produto|armazem|lote -> item
+  let atual = null, repetidas = 0, linhas = 0;
+  for (const row of rows){
+    const vals = (row||[]).filter(v=>v!==null && v!=='');
+    if (!vals.length) continue;
+    if (vals[0]==='Produto:'){ atual = cegaParseProdutoRow(vals); continue; }
+    if (!atual) continue;
+    const it = cegaParseItemRow(vals, atual.codigo);
+    if (!it || it.categoria!=='Saldo') continue;          // só as linhas de saldo (ignora vendas futuras etc.)
+    linhas++;
+    const kg = /^K/i.test(atual.um||'') ? it.qtd : Math.round(it.qtd*1000*10)/10;   // TL (toneladas) -> kg
+    const chave = atual.codigo+'|'+(it.armazem||'')+'|'+it.lote;
+    const ja = mapa.get(chave);
+    if (ja){
+      if (Math.abs(ja.pesoKg-kg)<0.05){ repetidas++; continue; }  // mesma linha repetida no relatório
+      ja.pesoKg = Math.round((ja.pesoKg+kg)*10)/10; continue;     // mesmo lote em duas linhas com valores diferentes: soma
+    }
+    mapa.set(chave, { lote:it.lote, produto:atual.codigo, descricao:atual.descricao||'', armazem:it.armazem||'', pesoKg:kg });
+  }
+  const itens = [...mapa.values()];
+  return { itens, repetidas, linhas, produtos:new Set(itens.map(i=>i.produto)).size,
+           armazens:[...new Set(itens.map(i=>i.armazem))].sort() };
+}
+
+// itens = lidos na contagem; esperados = planilha; armazens = Set de armazéns a considerar (vazio = todos)
+function cegaComparar(itens, esperados, armazens, tolKg){
+  const tol = tolKg==null ? CEGA_TOL_KG : tolKg;
+  const filtro = armazens && armazens.size ? armazens : null;
+  const dentro = e => !filtro || filtro.has(e.armazem);
+  const porLote = new Map();
+  for (const e of esperados){ const k=e.lote; if(!porLote.has(k)) porLote.set(k,[]); porLote.get(k).push(e); }
+  const r = { conferem:[], pesoDiferente:[], faltando:[], sobrando:[], outroArmazem:[], revisar:[], produtoDiferente:[] };
+  const tocados = new Set();
+  for (const c of itens){
+    if (c.revisar) r.revisar.push({ lote:c.lote, motivo:c.motivo||'', bruto:c.bruto||'' });
+    const lista = porLote.get(c.lote) || [];
+    const e = lista.find(dentro);
+    if (!e){
+      if (lista.length){ const o=lista[0]; r.outroArmazem.push({ lote:c.lote, produto:o.produto, armazem:o.armazem, pesoPlanilha:o.pesoKg, pesoEtiqueta:c.pesoKg==null?null:c.pesoKg }); }
+      else r.sobrando.push({ lote:c.lote, produto:c.produto||'', pesoEtiqueta:c.pesoKg==null?null:c.pesoKg, pecas:c.pecas==null?null:c.pecas });
+      continue;
+    }
+    tocados.add(e.produto+'|'+e.armazem+'|'+e.lote);
+    const dif = c.pesoKg==null ? 0 : Math.round((c.pesoKg - e.pesoKg)*10)/10;
+    const linha = { lote:c.lote, produto:e.produto, armazem:e.armazem, pesoPlanilha:e.pesoKg, pesoEtiqueta:c.pesoKg==null?null:c.pesoKg, diferenca:dif };
+    if (c.pesoKg!=null && Math.abs(dif)>tol) r.pesoDiferente.push(linha); else r.conferem.push(linha);
+    if (c.produto && e.produto && c.produto.toUpperCase()!==e.produto.toUpperCase()) r.produtoDiferente.push({ lote:c.lote, produtoEtiqueta:c.produto, produtoPlanilha:e.produto });
+  }
+  for (const e of esperados){
+    if (!dentro(e)) continue;
+    if (!tocados.has(e.produto+'|'+e.armazem+'|'+e.lote)) r.faltando.push({ lote:e.lote, produto:e.produto, armazem:e.armazem, pesoPlanilha:e.pesoKg });
+  }
+  const soma = (a,f)=>a.reduce((s,x)=>s+(Number(x[f])||0),0);
+  const esperadosDentro = esperados.filter(dentro);
+  r.resumo = {
+    contados: itens.length, kgContado: Math.round(soma(itens,'pesoKg')),
+    naPlanilha: esperadosDentro.length, kgPlanilha: Math.round(soma(esperadosDentro,'pesoKg')),
+    conferem: r.conferem.length, pesoDiferente: r.pesoDiferente.length, faltando: r.faltando.length,
+    sobrando: r.sobrando.length, outroArmazem: r.outroArmazem.length, revisar: r.revisar.length,
+    produtoDiferente: r.produtoDiferente.length, toleranciaKg: tol, armazens: filtro ? [...filtro] : []
+  };
+  return r;
+}
+
+/* ================= CONTAGEM CEGA — telas (app) =================
+   Bipa tudo primeiro (etiqueta com todos os dados) e só no fim compara com a planilha do Protheus.
+   Não mexe no estoque (volumes). Guarda tudo em sessoes (tipo 'cega', itens) — update_014. */
+state.cega = null;      // contagem cega aberta neste aparelho
+state.cegaTelaId = null; // id da contagem cuja tela já está montada
+state.cegaRel = null;   // tela de resultado (comparação)
+function cegaChaveLocal(){ return 'stokk_cega_' + (state.user ? state.user.id : 'x'); }
+function cegaLocalGuardar(){
+  try{
+    const c = state.cega;
+    if (!c){ localStorage.removeItem(cegaChaveLocal()); return; }
+    localStorage.setItem(cegaChaveLocal(), JSON.stringify({ id:c.id, itens:c.itens, ignorados:c.ignorados }));
+  }catch(e){}
+}
+function cegaLocalLer(id){
+  try{ const o = JSON.parse(localStorage.getItem(cegaChaveLocal())||'null'); return (o && o.id===id) ? o : null; }catch(e){ return null; }
+}
+function cegaPayload(c){
+  return {
+    iniciadoEm:c.iniciadoEm, ativo:c.ativo, contados:c.itens.map(i=>i.lote), usuarioId:c.usuarioId,
+    nome:c.nome||null, tipo:'cega', itens:c.itens, filtroProduto:null, esperadosSnapshot:null,
+    finalizadoEm:c.finalizadoEm||null, resultado:c.resultado||null
+  };
+}
+let cegaTimer = null, cegaSalvando = false, cegaPendente = false;
+function cegaAgendarSalvar(ms){
+  clearTimeout(cegaTimer);
+  cegaTimer = setTimeout(cegaSalvarAgora, ms==null ? 1000 : ms);
+}
+async function cegaSalvarAgora(){
+  const c = state.cega; if (!c) return true;
+  if (cegaSalvando){ cegaPendente = true; return false; }
+  cegaSalvando = true;
+  let ok = true;
+  try{ await db.collection('sessoes').doc(c.id).set(cegaPayload(c)); c.erroSalvar = false; }
+  catch(e){ ok = false; c.erroSalvar = true; cegaAgendarSalvar(8000); }
+  finally{
+    cegaSalvando = false;
+    if (cegaPendente){ cegaPendente = false; cegaAgendarSalvar(300); }
+    cegaAtualizarStatus();
+  }
+  return ok;
+}
+function cegaAtualizarStatus(){
+  const el = document.getElementById('cega-status'); const c = state.cega;
+  if (el && c) el.innerHTML = c.erroSalvar ? '<span style="color:var(--danger);">⚠ sem conexão — guardado neste aparelho, tentando salvar de novo</span>' : '<span style="color:var(--ok);">✓ salvo</span>';
+}
+function cegaKg(n){ return n==null ? '—' : fmtKgNum(n)+' kg'; }
+
+function cegaMostrarBipagem(on){
+  const scan = document.getElementById('view-scan');
+  const lv = document.getElementById('view-cega-lista');
+  if (!scan || !lv) return;
+  scan.classList.toggle('modo-producao', on);
+  scan.classList.toggle('active', on);
+  lv.classList.toggle('active', on);
+  if (on){ state.modoBiparAvulso = true; state.scanOverride = cegaBipar; setTimeout(()=>{ try{ focusScanInput(); }catch(e){} }, 60); }
+  else {
+    if (state.scanOverride===cegaBipar) state.scanOverride = null;
+    if (state.scanning) stopScanner();
+  }
+}
+
+// chamada a cada atualização da lista de sessões: retoma a contagem deste aparelho depois de recarregar a página
+function cegaAoReceberSessoes(){
+  const todas = state.sessoes||[];
+  if (state.cega){
+    const remota = todas.find(s=>s.id===state.cega.id);
+    if (!remota && state.cega.salvoUmaVez){ // excluída por outra pessoa
+      state.cega = null; state.cegaTelaId = null; cegaLocalGuardar(); cegaMostrarBipagem(false); toast('Esta contagem foi excluída.');
+    } else if (remota && remota.ativo===false && state.cega.ativo){ // encerrada em outro aparelho
+      state.cega = null; state.cegaTelaId = null; cegaLocalGuardar(); cegaMostrarBipagem(false); toast('Esta contagem foi encerrada em outro aparelho.');
+    } else if (remota) state.cega.salvoUmaVez = true;
+    return;
+  }
+  let id = null;
+  try{ const o = JSON.parse(localStorage.getItem(cegaChaveLocal())||'null'); id = o && o.id; }catch(e){}
+  if (!id) return;
+  const s = todas.find(x=>x.id===id && x.tipo==='cega' && x.ativo);
+  if (!s){ return; }
+  const loc = cegaLocalLer(id);
+  const remotos = Array.isArray(s.itens) ? s.itens : [];
+  const itens = (loc && loc.itens && loc.itens.length > remotos.length) ? loc.itens : remotos;
+  state.cega = { id:s.id, nome:s.nome||'', iniciadoEm:s.iniciadoEm, ativo:true, usuarioId:s.usuarioId, itens, ignorados:(loc&&loc.ignorados)||[], ultimo:null, salvoUmaVez:true };
+  if (itens.length > remotos.length) cegaAgendarSalvar(500);
+}
+
+async function cegaIniciar(nome){
+  const c = { id:'cega_'+uid(), nome:(nome||'').trim(), iniciadoEm:new Date().toISOString(), ativo:true,
+              usuarioId: state.user ? state.user.id : null, itens:[], ignorados:[], ultimo:null };
+  try{ await db.collection('sessoes').doc(c.id).set(cegaPayload(c)); }
+  catch(e){
+    openSheet(`<h2 class="section-title" style="margin-top:0;">Não consegui iniciar</h2>
+      <p class="hint">Se for a primeira vez que usa a contagem cega, peça ao supervisor para rodar o arquivo <b>update_014_contagem_cega.sql</b> no Supabase (SQL Editor) e tente de novo.</p>
+      <button class="btn primary" id="cega-ok-erro">Entendi</button>`);
+    document.getElementById('cega-ok-erro').onclick = closeSheet;
+    return;
+  }
+  c.salvoUmaVez = true;
+  state.cega = c; state.cegaRel = null; cegaLocalGuardar();
+  toast('Contagem cega iniciada — pode bipar.');
+  renderInventario();
+}
+function cegaAbrirExistente(id){
+  const s = (state.sessoes||[]).find(x=>x.id===id); if (!s) return;
+  if (s.ativo){
+    const loc = cegaLocalLer(id);
+    const remotos = Array.isArray(s.itens) ? s.itens : [];
+    const itens = (loc && loc.itens && loc.itens.length > remotos.length) ? loc.itens : remotos;
+    state.cega = { id:s.id, nome:s.nome||'', iniciadoEm:s.iniciadoEm, ativo:true, usuarioId:s.usuarioId, itens, ignorados:(loc&&loc.ignorados)||[], ultimo:null, salvoUmaVez:true };
+    cegaLocalGuardar();
+  } else if (s.resultado){
+    state.cegaRel = { sess:s, rel:s.resultado, salvo:true };
+  }
+  renderInventario();
+}
+async function cegaSair(){
+  clearTimeout(cegaTimer);
+  await cegaSalvarAgora();
+  state.cega = null; state.cegaTelaId = null; cegaLocalGuardar(); cegaMostrarBipagem(false);
+  renderInventario();
+}
+
+function cegaBipar(raw){
+  const c = state.cega; if (!c || !c.ativo) return;
+  const e = cegaLerEtiqueta(raw); if (!e) return;
+  if (e.desconhecido){
+    c.ignorados.push({ bruto:e.bruto, em:new Date().toISOString() });
+    c.ultimo = { tipo:'ignorado', texto:e.bruto };
+    beepErro(); vibrate([80,60,80]);
+    mostrarAvisoBipagem(false, 'Código fora do padrão', e.bruto.slice(0,40));
+    cegaLocalGuardar(); cegaAtualizarTela(); return;
+  }
+  if (c.itens.some(i=>i.lote===e.lote)){
+    c.ultimo = { tipo:'duplicado', lote:e.lote };
+    beepErro(); vibrate([80,60,80]);
+    mostrarAvisoBipagem(false, 'Já contado', e.lote);
+    cegaAtualizarTela(); return;
+  }
+  const item = { lote:e.lote, corrida:e.corrida||null, pesoKg:e.pesoKg==null?null:e.pesoKg, produto:e.produto||null,
+                 pecas:e.pecas==null?null:e.pecas, revisar:!!e.revisar, motivo:e.motivo||null, em:new Date().toISOString() };
+  c.itens.push(item);
+  c.ultimo = { tipo:'ok', item };
+  beepOk(); vibrate(60);
+  mostrarAvisoBipagem(true, item.revisar ? 'Contado — revisar' : 'Contado', item.lote + (item.pesoKg!=null ? ' · '+fmtKgNum(item.pesoKg)+' kg' : ''));
+  cegaLocalGuardar(); cegaAgendarSalvar(); cegaAtualizarTela();
+}
+function cegaRemover(lote){
+  const c = state.cega; if (!c) return;
+  c.itens = c.itens.filter(i=>i.lote!==lote);
+  c.ultimo = null;
+  cegaLocalGuardar(); cegaAgendarSalvar(300); cegaAtualizarTela();
+  toast('Item removido da contagem.');
+}
+
+function cegaAtualizarTela(){
+  const c = state.cega; if (!c) return;
+  const resumo = document.getElementById('cega-resumo');
+  if (resumo){
+    const kg = c.itens.reduce((s,i)=>s+(Number(i.pesoKg)||0),0);
+    const rev = c.itens.filter(i=>i.revisar).length;
+    resumo.innerHTML = `<div class="cega-grid">
+      <div class="cega-stat"><b>${c.itens.length}</b><span>volumes contados</span></div>
+      <div class="cega-stat"><b>${fmtKgNum(kg)}</b><span>kg somados</span></div>
+      ${rev ? `<div class="cega-stat" style="grid-column:1 / -1;"><b style="color:var(--warn,#d99a00);">${rev}</b><span>para revisar</span></div>`:''}
+    </div>`;
+  }
+  const ult = document.getElementById('cega-ultimo');
+  if (ult){
+    const u = c.ultimo;
+    if (!u) ult.innerHTML = '';
+    else if (u.tipo==='ok'){
+      const it = u.item;
+      ult.innerHTML = `<div class="card" style="border-left:4px solid ${it.revisar?'var(--warn,#d99a00)':'var(--ok)'};">
+        <div style="font-weight:700;">${esc(it.lote)} <span class="hint" style="font-weight:400;">· último bipe</span></div>
+        <div class="li-desc">${it.produto?esc(it.produto)+' · ':''}${it.pesoKg!=null?fmtKgNum(it.pesoKg)+' kg':'sem peso (código curto)'}${it.pecas!=null?' · '+it.pecas+' pç':''}${it.corrida?' · corrida '+esc(it.corrida):''}</div>
+        ${it.revisar?`<div class="hint" style="color:var(--warn,#d99a00);">Revisar: ${esc(it.motivo||'')}</div>`:''}
+      </div>`;
+    } else if (u.tipo==='duplicado'){
+      ult.innerHTML = `<div class="card" style="border-left:4px solid var(--danger);"><b>${esc(u.lote)}</b> já estava na contagem — não foi contado de novo.</div>`;
+    } else {
+      ult.innerHTML = `<div class="card" style="border-left:4px solid var(--danger);"><b>Código fora do padrão — não contei.</b><div class="li-desc" style="word-break:break-all;">${esc(u.texto)}</div></div>`;
+    }
+  }
+  const lista = document.getElementById('cega-lista-body');
+  if (lista){
+    const ign = c.ignorados.length;
+    const ultimos = c.itens.slice().reverse().slice(0, 40);
+    lista.innerHTML = `
+      <h2 class="section-title">Contados (mais recentes primeiro)</h2>
+      ${ultimos.length ? `<div class="card" style="padding:0;">${ultimos.map(i=>`
+        <div class="list-item">
+          <div class="li-main">
+            <div class="li-code" style="font-size:14px;">${esc(i.lote)}${i.revisar?' <span style="color:var(--warn,#d99a00);">⚠</span>':''}</div>
+            <div class="li-desc">${i.produto?esc(i.produto)+' · ':''}${i.corrida?'corrida '+esc(i.corrida):''}${i.pecas!=null?' · '+i.pecas+' pç':''}</div>
+          </div>
+          <div class="li-side"><div class="li-weight">${i.pesoKg!=null?fmtKgNum(i.pesoKg):'—'}</div><div class="li-desc">kg</div></div>
+          <button class="link-btn" data-cega-del="${esc(i.lote)}" style="margin-left:10px;color:var(--danger);">remover</button>
+        </div>`).join('')}</div>
+        ${c.itens.length>ultimos.length?`<p class="hint">Mostrando os ${ultimos.length} mais recentes de ${c.itens.length}. Todos entram na comparação.</p>`:''}`
+        : '<p class="hint">Nenhum volume bipado ainda.</p>'}
+      ${ign ? `<details style="margin-top:10px;"><summary class="hint">${ign} leitura(s) fora do padrão — não contadas</summary>
+        <div class="card" style="word-break:break-all;font-size:12px;">${c.ignorados.slice(-20).reverse().map(x=>esc(x.bruto)).join('<br>')}</div></details>`:''}
+    `;
+    lista.querySelectorAll('[data-cega-del]').forEach(b=>{
+      b.onclick = ()=>cegaRemover(b.getAttribute('data-cega-del'));
+    });
+  }
+  cegaAtualizarStatus();
+}
+
+function cegaRenderContagem(){
+  const c = state.cega;
+  const body = document.getElementById('inventario-body');
+  // atualizações em tempo real chamam isto toda hora: se a tela já está montada, só atualiza os números
+  if (state.cegaTelaId===c.id && document.getElementById('cega-resumo')){ cegaMostrarBipagem(true); cegaAtualizarTela(); return; }
+  state.cegaTelaId = c.id;
+  body.innerHTML = `
+    <div class="card">
+      <div class="li-code" style="font-size:15px;">${esc(c.nome||'Contagem cega')}</div>
+      <div class="li-desc">Contagem cega · iniciada ${fmtDate(c.iniciadoEm)} · <span id="cega-status"></span></div>
+      <p class="hint" style="margin:8px 0 0;">Bipe a etiqueta de cada volume. A lista do sistema só aparece no fim, quando você subir a planilha do Protheus.</p>
+    </div>
+    <div id="cega-resumo"></div>
+    <div id="cega-ultimo"></div>
+    <div class="btn-row" style="margin:10px 0;">
+      <button class="btn primary" id="cega-comparar">Comparar com a planilha</button>
+      <button class="btn" id="cega-sair">Sair (continuar depois)</button>
+    </div>
+    <button class="link-btn" id="cega-excluir" data-role="supervisor" style="color:var(--danger);margin-bottom:6px;">excluir esta contagem</button>`;
+  document.getElementById('cega-sair').onclick = cegaSair;
+  document.getElementById('cega-comparar').onclick = cegaEscolherPlanilha;
+  document.getElementById('cega-excluir').onclick = ()=>{
+    openSheet(`<h2 class="section-title" style="margin-top:0;">Excluir contagem?</h2>
+      <p class="hint">Os ${c.itens.length} volume(s) contados serão apagados. Não dá para desfazer.</p>
+      <button class="btn danger" id="cega-ex-sim">Excluir</button> <button class="btn" id="cega-ex-nao">Cancelar</button>`);
+    document.getElementById('cega-ex-nao').onclick = closeSheet;
+    document.getElementById('cega-ex-sim').onclick = async ()=>{
+      closeSheet();
+      try{ await db.collection('sessoes').doc(c.id).delete(); }catch(e){ return; }
+      state.cega = null; state.cegaTelaId = null; cegaLocalGuardar(); cegaMostrarBipagem(false); toast('Contagem excluída.'); renderInventario();
+    };
+  };
+  applyRoleUI();
+  cegaMostrarBipagem(true);
+  cegaAtualizarTela();
+}
+
+/* ---------- lista na tela de Conferência ---------- */
+function cegaListaHTML(){
+  const cegas = (state.sessoes||[]).filter(s=>s.tipo==='cega');
+  const ativas = cegas.filter(s=>s.ativo), antes = cegas.filter(s=>!s.ativo && s.resultado);
+  const linha = (s, fim)=>`
+    <div class="list-item" data-cega-abrir="${esc(s.id)}">
+      <div class="li-main">
+        <div class="li-code" style="font-size:14px;">${esc(s.nome||'Contagem cega')}</div>
+        <div class="li-desc">${fmtDate(fim ? (s.finalizadoEm||s.iniciadoEm) : s.iniciadoEm)}${fim&&s.resultado&&s.resultado.resumo?' · '+(s.resultado.resumo.faltando||0)+' faltando · '+(s.resultado.resumo.sobrando||0)+' sobrando':''}</div>
+      </div>
+      <div class="li-side"><div class="li-weight">${(s.contados||[]).length}</div><div class="li-desc">volumes</div></div>
+      ${fim?`<button class="link-btn del-cega" data-role="supervisor" data-cega-del-sess="${esc(s.id)}" style="margin-left:10px;color:var(--danger);">excluir</button>`:''}
+    </div>`;
+  return `
+    ${ativas.length?`<h2 class="section-title">Contagens cegas em andamento</h2>
+    <div class="card" style="padding:0;">${ativas.map(s=>linha(s,false)).join('')}</div>
+    <p class="hint" style="margin-top:6px;">Toque numa delas para continuar de onde parou.</p>`:''}
+    ${antes.length?`<h2 class="section-title">Contagens cegas anteriores</h2><div class="card" style="padding:0;">${antes.map(s=>linha(s,true)).join('')}</div>`:''}`;
+}
+function cegaBindLista(body){
+  const ini = body.querySelector('#cega-start');
+  if (ini) ini.onclick = ()=>{ const n = (document.getElementById('cega-nome')||{value:''}).value; cegaIniciar(n); };
+  body.querySelectorAll('[data-cega-abrir]').forEach(el=>{
+    el.addEventListener('click', e=>{ if (e.target.closest('.del-cega')) return; cegaAbrirExistente(el.getAttribute('data-cega-abrir')); });
+  });
+  body.querySelectorAll('[data-cega-del-sess]').forEach(b=>{
+    b.addEventListener('click', e=>{
+      e.stopPropagation();
+      const id = b.getAttribute('data-cega-del-sess');
+      openSheet(`<h2 class="section-title" style="margin-top:0;">Excluir esta contagem?</h2><p class="hint">O resultado da comparação será apagado.</p>
+        <button class="btn danger" id="cega-ex2-sim">Excluir</button> <button class="btn" id="cega-ex2-nao">Cancelar</button>`);
+      document.getElementById('cega-ex2-nao').onclick = closeSheet;
+      document.getElementById('cega-ex2-sim').onclick = async ()=>{ closeSheet(); try{ await db.collection('sessoes').doc(id).delete(); toast('Contagem excluída.'); }catch(err){} };
+    });
+  });
+}
+
+/* ---------- planilha + comparação ---------- */
+function cegaEscolherPlanilha(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = async ()=>{
+    const f = inp.files && inp.files[0]; if (!f) return;
+    toast('Lendo a planilha…', 2000);
+    try{
+      const buf = await f.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:null, raw:true});
+      const p = cegaLerPlanilha(rows);
+      if (!p.itens.length){
+        openSheet(`<h2 class="section-title" style="margin-top:0;">Planilha não reconhecida</h2>
+          <p class="hint">Não achei linhas de saldo por lote nessa planilha. Use o relatório do Protheus com os lotes (o mesmo que o app importa no estoque, ex.: Projeção de Estoque / saldo por lote).</p>
+          <button class="btn primary" id="cega-ok-pl">Entendi</button>`);
+        document.getElementById('cega-ok-pl').onclick = closeSheet; return;
+      }
+      clearTimeout(cegaTimer); await cegaSalvarAgora();
+      cegaMostrarBipagem(false); state.cegaTelaId = null;
+      state.cegaRel = { sess:state.cega, arquivo:f.name, planilha:p, armazens:new Set(), salvo:false };
+      cegaCalcularRel();
+      renderInventario();
+    }catch(e){ console.error(e); toast('Não consegui ler essa planilha.', 3500); }
+  };
+  inp.click();
+}
+function cegaCalcularRel(){
+  const R = state.cegaRel;
+  const rel = cegaComparar(R.sess.itens, R.planilha.itens, R.armazens);
+  rel.arquivo = R.arquivo;
+  rel.comparadoEm = new Date().toISOString();
+  rel.planilhaInfo = { linhas:R.planilha.linhas, repetidas:R.planilha.repetidas, produtos:R.planilha.produtos, armazens:R.planilha.armazens, lotes:R.planilha.itens.length };
+  R.rel = rel;
+}
+function cegaSecao(titulo, cor, lista, linhaFn, aberto){
+  if (!lista.length) return '';
+  return `<details class="cega-sec" ${aberto?'open':''}><summary style="border-left:4px solid ${cor};">${esc(titulo)} <b>(${lista.length})</b></summary>
+    <div class="card" style="padding:0;">${lista.slice(0,300).map(linhaFn).join('')}</div>
+    ${lista.length>300?`<p class="hint">Mostrando 300 de ${lista.length}. A planilha exportada tem todos.</p>`:''}</details>`;
+}
+function cegaRenderRel(){
+  const R = state.cegaRel, rel = R.rel, rs = rel.resumo;
+  const nome = (R.sess && R.sess.nome) || 'Contagem cega';
+  const info = rel.planilhaInfo || {};
+  const arms = (info.armazens||[]);
+  const L1 = (a,b)=>`<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">${esc(a)}</div><div class="li-desc">${b}</div></div></div>`;
+  const dif = Math.round(rs.kgContado - rs.kgPlanilha);
+  document.getElementById('inventario-body').innerHTML = `
+    <div class="card">
+      <div class="li-code" style="font-size:15px;">${esc(nome)}</div>
+      <div class="li-desc">Comparação com <b>${esc(rel.arquivo||'planilha')}</b> · ${fmtDate(rel.comparadoEm)}</div>
+      <div class="li-desc">${info.lotes||0} lote(s) na planilha${info.repetidas?` · ${info.repetidas} linha(s) repetida(s) ignorada(s)`:''}</div>
+    </div>
+    ${(!R.salvo && arms.length>1)?`<label class="field-label">Armazéns que você contou (toque para escolher; nenhum = todos)</label>
+      <div class="filter-row" id="cega-arms">${arms.map(a=>`<button class="filter-chip ${R.armazens.has(a)?'active':''}" data-cega-arm="${esc(a)}">Armazém ${esc(a)}</button>`).join('')}</div>`
+      : (rs.armazens&&rs.armazens.length?`<p class="hint">Armazéns considerados: ${rs.armazens.map(esc).join(', ')}</p>`:'')}
+    <div class="cega-grid">
+      <div class="cega-stat"><b>${rs.contados}</b><span>contados · ${fmtKgNum(rs.kgContado)} kg</span></div>
+      <div class="cega-stat"><b>${rs.naPlanilha}</b><span>na planilha · ${fmtKgNum(rs.kgPlanilha)} kg</span></div>
+      <div class="cega-stat"><b style="color:var(--ok);">${rs.conferem}</b><span>conferem</span></div>
+      <div class="cega-stat"><b style="color:var(--danger);">${rs.faltando}</b><span>faltando (não bipados)</span></div>
+      <div class="cega-stat"><b style="color:var(--danger);">${rs.sobrando}</b><span>sobrando (fora da planilha)</span></div>
+      <div class="cega-stat"><b style="color:var(--warn,#d99a00);">${rs.pesoDiferente}</b><span>peso diferente</span></div>
+    </div>
+    <p class="hint">Diferença total: <b>${dif>0?'+':''}${fmtKgNum(dif)} kg</b> (contado − planilha)${rs.outroArmazem?` · ${rs.outroArmazem} em outro armazém`:''}${rs.revisar?` · ${rs.revisar} para revisar`:''}.</p>
+    ${cegaSecao('Faltando — estão na planilha e não foram bipados','var(--danger)', rel.faltando, x=>L1(x.lote, `${esc(x.produto)} · armazém ${esc(x.armazem)} · ${cegaKg(x.pesoPlanilha)}`), true)}
+    ${cegaSecao('Sobrando — bipados e fora da planilha','var(--danger)', rel.sobrando, x=>L1(x.lote, `${x.produto?esc(x.produto)+' · ':''}${cegaKg(x.pesoEtiqueta)}${x.pecas!=null?' · '+x.pecas+' pç':''}`), true)}
+    ${cegaSecao('Peso diferente','var(--warn,#d99a00)', rel.pesoDiferente, x=>L1(x.lote, `${esc(x.produto)} · etiqueta ${cegaKg(x.pesoEtiqueta)} · planilha ${cegaKg(x.pesoPlanilha)} · <b>${x.diferenca>0?'+':''}${fmtKgNum(x.diferenca)} kg</b>`), true)}
+    ${cegaSecao('Em outro armazém','var(--warn,#d99a00)', rel.outroArmazem, x=>L1(x.lote, `${esc(x.produto)} · planilha: armazém ${esc(x.armazem)} · ${cegaKg(x.pesoPlanilha)}`), false)}
+    ${cegaSecao('Para revisar','var(--warn,#d99a00)', rel.revisar, x=>L1(x.lote, esc(x.motivo||'')+' · '+esc(x.bruto||'')), false)}
+    ${cegaSecao('Produto diferente (código da etiqueta × planilha)','var(--muted,#888)', rel.produtoDiferente, x=>L1(x.lote, `etiqueta ${esc(x.produtoEtiqueta)} · planilha ${esc(x.produtoPlanilha)}`), false)}
+    ${cegaSecao('Conferem','var(--ok)', rel.conferem, x=>L1(x.lote, `${esc(x.produto)} · armazém ${esc(x.armazem)} · ${cegaKg(x.pesoPlanilha)}`), false)}
+    <div class="btn-row" style="margin:14px 0 6px;">
+      <button class="btn primary" id="cega-exp">Exportar planilha</button>
+      ${R.salvo ? '<button class="btn" id="cega-fechar">Fechar</button>'
+                : '<button class="btn" id="cega-voltar">Voltar à contagem</button>'}
+    </div>
+    ${R.salvo ? '' : '<button class="btn" id="cega-encerrar" style="width:100%;">Encerrar e guardar este resultado</button>'}`;
+  document.getElementById('cega-exp').onclick = ()=>cegaExportar(nome, rel);
+  const fechar = document.getElementById('cega-fechar'); if (fechar) fechar.onclick = ()=>{ state.cegaRel = null; renderInventario(); };
+  const voltar = document.getElementById('cega-voltar'); if (voltar) voltar.onclick = ()=>{ state.cegaRel = null; renderInventario(); };
+  const enc = document.getElementById('cega-encerrar'); if (enc) enc.onclick = cegaEncerrar;
+  document.querySelectorAll('[data-cega-arm]').forEach(b=>{
+    b.onclick = ()=>{
+      const a = b.getAttribute('data-cega-arm');
+      if (R.armazens.has(a)) R.armazens.delete(a); else R.armazens.add(a);
+      cegaCalcularRel(); cegaRenderRel();
+    };
+  });
+}
+async function cegaEncerrar(){
+  const R = state.cegaRel, c = R.sess;
+  c.ativo = false; c.finalizadoEm = new Date().toISOString(); c.resultado = R.rel;
+  clearTimeout(cegaTimer);
+  const ok = await cegaSalvarAgora();
+  if (!ok){ c.ativo = true; c.finalizadoEm = null; c.resultado = null; toast('Não consegui guardar. Verifique a conexão e tente de novo.', 3500); return; }
+  const sessSalva = { id:c.id, nome:c.nome, iniciadoEm:c.iniciadoEm, finalizadoEm:c.finalizadoEm, ativo:false, tipo:'cega', contados:c.itens.map(i=>i.lote), itens:c.itens, resultado:R.rel };
+  state.cega = null; state.cegaTelaId = null; cegaLocalGuardar();
+  state.cegaRel = { sess:sessSalva, rel:R.rel, salvo:true };
+  toast('Contagem encerrada e guardada.');
+  renderInventario();
+}
+function cegaExportar(nome, rel){
+  try{
+    const rs = rel.resumo;
+    const aba = (titulo, cab, linhas)=>{ const ws = XLSX.utils.aoa_to_sheet([cab, ...linhas]); ws['!cols'] = cab.map(()=>({wch:20})); return [titulo, ws]; };
+    const wb = XLSX.utils.book_new();
+    const resumo = [
+      ['Contagem cega', nome], ['Comparada em', fmtDate(rel.comparadoEm)], ['Planilha', rel.arquivo||''], [],
+      ['Volumes contados', rs.contados], ['Peso contado (kg)', rs.kgContado],
+      ['Lotes na planilha', rs.naPlanilha], ['Peso na planilha (kg)', rs.kgPlanilha],
+      ['Conferem', rs.conferem], ['Faltando', rs.faltando], ['Sobrando', rs.sobrando], ['Peso diferente', rs.pesoDiferente],
+      ['Em outro armazém', rs.outroArmazem], ['Para revisar', rs.revisar],
+      ['Tolerância de peso (kg)', rs.toleranciaKg], ['Armazéns considerados', (rs.armazens&&rs.armazens.length)?rs.armazens.join(', '):'todos']
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumo), 'Resumo');
+    const add = (titulo, cab, linhas)=>{ if (!linhas.length) return; const [t, ws] = aba(titulo, cab, linhas); XLSX.utils.book_append_sheet(wb, ws, t); };
+    add('Faltando', ['Lote/Volume','Produto','Armazém','Peso planilha (kg)'], rel.faltando.map(x=>[x.lote,x.produto,x.armazem,x.pesoPlanilha]));
+    add('Sobrando', ['Lote/Volume','Produto (etiqueta)','Peso etiqueta (kg)','Peças'], rel.sobrando.map(x=>[x.lote,x.produto,x.pesoEtiqueta==null?'':x.pesoEtiqueta,x.pecas==null?'':x.pecas]));
+    add('Peso diferente', ['Lote/Volume','Produto','Armazém','Peso etiqueta (kg)','Peso planilha (kg)','Diferença (kg)'], rel.pesoDiferente.map(x=>[x.lote,x.produto,x.armazem,x.pesoEtiqueta,x.pesoPlanilha,x.diferenca]));
+    add('Outro armazém', ['Lote/Volume','Produto','Armazém na planilha','Peso planilha (kg)'], rel.outroArmazem.map(x=>[x.lote,x.produto,x.armazem,x.pesoPlanilha]));
+    add('Revisar', ['Lote/Volume','Motivo','Leitura'], rel.revisar.map(x=>[x.lote,x.motivo,x.bruto]));
+    add('Conferem', ['Lote/Volume','Produto','Armazém','Peso planilha (kg)','Peso etiqueta (kg)'], rel.conferem.map(x=>[x.lote,x.produto,x.armazem,x.pesoPlanilha,x.pesoEtiqueta==null?'':x.pesoEtiqueta]));
+    XLSX.writeFile(wb, 'contagem_cega_'+slugify(nome)+'_'+todayStr()+'.xlsx');
+    toast('Arquivo exportado.');
+  }catch(e){ console.error(e); toast('Não foi possível exportar o arquivo.'); }
+}
 
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {

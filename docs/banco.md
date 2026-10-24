@@ -56,6 +56,7 @@ Itens de `consumidos`/`produzidos` (chaves em camelCase): `lote`, `corrida`, `pe
 | `update_009_unidade_kg.sql` / `update_010_importados_kg.sql` | Converte pesos para kg (produção e importados) com backup; recria `bi.estoque` (`quantidade_kg`, `quantidade_ton`). Abortam se rodados duas vezes. |
 | `update_012_areas.sql` | **Áreas (ambientes):** tabela `areas` (`trefila` = Trefilaria, `planta1` = Planta 1 (laminação)); `profiles.area`; coluna `area` (NOT NULL, padrão `area_padrao()`) em `volumes`, `movimentos`, `sessoes` e `producoes`; funções `area_do_usuario()` e `area_padrao()`; RLS refeita filtrando por área; `proteger_profiles()` bloqueia mudar `area` pelo app; tabela `armazens_area`; views `bi.*` ganham `area` e `area_nome` no fim, mais `bi.areas` e `bi.armazens_area`. Idempotente; testada em Postgres local. |
 | `update_013_multiarea.sql` | **Várias áreas por usuário:** tabela `usuario_areas(user_id, area)` (RLS: só lê as próprias linhas; sem escrita pelo app), função `areas_do_usuario()` (text[]), políticas de `volumes`/`movimentos`/`sessoes`/`producoes`/`armazens_area` recriadas com `area = any ((select public.areas_do_usuario())::text[])` (o cast `::text[]` é obrigatório) e gatilho `proteger_area_registro` (`trg_proteger_area`) que impede mudar a `area` de um registro pelo app. Rodar depois do 012. **Status:** testado só em Postgres local. |
+| `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
 | `update_011_push.sql` | Push: `push_tokens`, `push_avisos`, função `registrar_push_token()`; bloco comentado com o agendamento `pg_cron`. Usada pela Edge Function `supabase/functions/avisar-conferencias`. |
 
 Todas são idempotentes (podem rodar mais de uma vez), exceto `schema.sql` na primeira execução.
@@ -84,3 +85,6 @@ Usuário `powerbi_leitor`: `connection limit 20`, `default_transaction_read_only
 `statement_timeout = 60s`, sem acesso às tabelas de `public`. Detalhes em [Power BI](#11-power-bi).
 
 ---
+
+
+> **`schema_atual.sql` (raiz):** foto das tabelas, chaves, índices e regras RLS conferidas no Supabase em 23/10/2026, feita porque o `schema.sql` original e os `update_001…006`, `009` e `010` foram perdidos. É só referência: **não rode** no banco que já existe. Funções, gatilhos e views do Power BI estão nos `update_007`, `008`, `011`, `012` e `013`.

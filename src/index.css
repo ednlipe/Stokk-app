@@ -240,3 +240,11 @@ nav.bottom button.active svg{stroke:var(--accent);}
   .topbar-actions{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;}
   .topbar-actions .subtitle{flex:1 1 100%;}
 }
+
+/* contagem cega */
+.cega-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;}
+.cega-stat{background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
+.cega-stat b{font-family:var(--font-head);font-size:24px;line-height:1.1;}
+.cega-stat span{font-size:11px;color:var(--text-muted);}
+details.cega-sec{margin:10px 0;}
+details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-size:14px;margin-bottom:6px;}

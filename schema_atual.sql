@@ -1,5 +1,5 @@
 -- ============================================================
--- STOKK — FOTO DO BANCO (schema "public") em 23/10/2026
+-- STOKK — FOTO DO BANCO (schema "public") em 23/10/2026 (+ colunas do update_014 de 24/10)
 -- Reconstruído a partir de consultas ao Supabase em produção (colunas, políticas RLS,
 -- chaves, índices e restrições — todos conferidos)
 -- porque o schema.sql original e os update_001…006, 009 e 010 foram perdidos.
@@ -14,6 +14,7 @@
 --      update_011_push.sql      (push_tokens, push_avisos, pg_cron/pg_net)
 --      update_012_areas.sql     (areas, area_padrao, area_do_usuario, coluna area)
 --      update_013_multiarea.sql (usuario_areas, areas_do_usuario, proteger_area_registro)
+--      update_014_contagem_cega.sql (sessoes.tipo e sessoes.itens — já incluídas abaixo)
 --  * Tabelas "_bkp_*" são cópias de segurança feitas pelos update_009 e update_010
 --    (conversão de unidade para kg). Podem ser apagadas quando você não precisar mais delas.
 -- ============================================================
@@ -90,6 +91,8 @@ create table public.sessoes (
   esperados_snapshot jsonb,
   nome text,
   area text not null default public.area_padrao() references public.areas(id),
+  tipo text not null default 'normal' check (tipo in ('normal','cega')),   -- update_014
+  itens jsonb,                                                              -- update_014 (contagem cega)
   primary key (id)
 );
 create index sessoes_area_idx on public.sessoes (area);
