@@ -3973,7 +3973,7 @@ function cegaBipar(raw){
     cegaAtualizarTela(); return;
   }
   const item = { lote:e.lote, corrida:e.corrida||null, pesoKg:e.pesoKg==null?null:e.pesoKg, produto:e.produto||null,
-                 pecas:e.pecas==null?null:e.pecas, revisar:!!e.revisar, motivo:e.motivo||null, em:new Date().toISOString() };
+                 pecas:e.pecas==null?null:e.pecas, revisar:!!e.revisar, motivo:e.motivo||null, bruto:e.bruto||null, em:new Date().toISOString() };
   c.itens.push(item);
   c.ultimo = { tipo:'ok', item };
   beepOk(); vibrate(60);
@@ -4028,6 +4028,7 @@ function cegaAtualizarTela(){
           <div class="li-main">
             <div class="li-code" style="font-size:14px;">${esc(i.lote)}${i.revisar?' <span style="color:var(--warn,#d99a00);">⚠</span>':''}</div>
             <div class="li-desc">${i.produto?esc(i.produto)+' · ':''}${i.corrida?'corrida '+esc(i.corrida):''}${i.pecas!=null?' · '+i.pecas+' pç':''}</div>
+            ${i.revisar&&i.bruto?`<div class="li-desc" style="word-break:break-all;color:var(--warn,#d99a00);">lido: ${esc(i.bruto)} (${String(i.bruto).length} caract.)</div>`:''}
           </div>
           <div class="li-side"><div class="li-weight">${i.pesoKg!=null?fmtKgNum(i.pesoKg):'—'}</div><div class="li-desc">kg</div></div>
           <button class="link-btn" data-cega-del="${esc(i.lote)}" style="margin-left:10px;color:var(--danger);">remover</button>
