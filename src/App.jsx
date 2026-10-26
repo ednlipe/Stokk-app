@@ -3725,11 +3725,12 @@ function cegaLerEtiqueta(raw){
   if (!t) return null;
   const LOTE = /^[A-Za-z]{3}\d{5}$/;
   if (LOTE.test(t)) return { lote:t.toUpperCase(), curto:true, revisar:false, bruto };
-  if (t.length>=19 && LOTE.test(t.slice(0,8)) && /^[A-Za-z]{3}\d{3}$/.test(t.slice(8,14)) && /^\d{4}$/.test(t.slice(14,18))){
+  if (t.length>=19 && LOTE.test(t.slice(0,8)) && /^[A-Za-z0-9]{6}$/.test(t.slice(8,14)) && /^\d{4}$/.test(t.slice(14,18))){
     const base = { lote:t.slice(0,8).toUpperCase(), corrida:t.slice(8,14).toUpperCase(), pesoKg:Number(t.slice(14,18)), bruto };
     const resto = t.slice(18);
-    const m = resto.match(/^(.+?B\d+\.\d{2})(\d+)$/i);
-    if (m) return Object.assign(base, { produto:m[1].toUpperCase(), pecas:Number(m[2]), revisar:false });
+    // tela soldada: bitola com decimal (B4.20); barra: bitola inteira de 2 dígitos (B16)
+    const m = resto.match(/^(.+?B\d+\.\d{2})(\d+)$/i) || resto.match(/^(.+?B\d{2})(\d*)$/i);
+    if (m){ const pc = m[2]===''?null:Number(m[2]); return Object.assign(base, { produto:m[1].toUpperCase(), pecas:pc?pc:null, revisar:false }); }
     return Object.assign(base, { produto:resto.toUpperCase(), pecas:null, revisar:true, motivo:'Não separei o código do produto e a quantidade de peças' });
   }
   if (t.length>=8 && LOTE.test(t.slice(0,8))) return { lote:t.slice(0,8).toUpperCase(), revisar:true, motivo:'Formato diferente do esperado', bruto };
