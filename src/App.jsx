@@ -362,11 +362,26 @@ function createSupabaseDB(){
       .subscribe();
   }
   async function refetch(table, orderField, orderDir, limitN){
-    let q = sb.from(table).select('*');
-    const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
-    if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
-    if (limitN) q = q.limit(limitN);
-    const {data, error} = await q;
+    // O Supabase devolve no máximo 1000 linhas por pedido. Para não perder volumes quando o
+    // estoque passa disso, lemos em páginas de 1000 até acabar (ou até o limite pedido).
+    const PAGINA = 1000;
+    const pkCol = camelToSnake(PK[table] || 'id');
+    const ar = areaDaTabela(table);
+    const data = []; let error = null;
+    while (true){
+      let q = sb.from(table).select('*');
+      if (ar) q = q.eq('area', ar);
+      if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
+      q = q.order(pkCol, {ascending:true});          // desempate fixo, para a paginação não repetir nem pular linhas
+      const falta = limitN ? (limitN - data.length) : PAGINA;
+      const pedir = Math.min(PAGINA, falta);
+      q = q.range(data.length, data.length + pedir - 1);
+      const r = await q;
+      if (r.error){ error = r.error; break; }
+      const lote = r.data || [];
+      data.push(...lote);
+      if (lote.length < pedir || (limitN && data.length >= limitN)) break;
+    }
     if (error){
       console.error(table, error);
       // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
