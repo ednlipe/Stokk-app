@@ -1765,6 +1765,8 @@ function renderConfProgress(){
   const falta = faltamCodes.length;
   const chaveAberto = 'bipar-faltando';
   const aberto = state.confExpandido.has(chaveAberto);
+  const abertoBip = state.confExpandido.has('bipar-bipados');
+  const bipadosRec = (state.session.contados||[]).slice().reverse();
   el.innerHTML = `
     <h2 class="section-title" style="font-size:14px;">Progresso da conferência</h2>
     <div class="card left-accent">
@@ -1781,8 +1783,19 @@ function renderConfProgress(){
       ${state.session.filtroProduto
         ? `<div class="badge accent" style="margin-top:10px;">Escopo: ${esc(tipoProdutoLabel(state.session.filtroProduto))}</div>`
         : `<p class="hint" style="margin:10px 0 0;">Escopo ainda não definido — o primeiro item bipado encontrado no sistema define automaticamente qual produto está sendo conferido.</p>`}
-      ${falta ? `<button class="link-btn" id="toggle-faltando" style="margin-top:10px;">${aberto?'ocultar':'ver'} o que ainda falta</button>` : ''}
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        ${jaBipado ? `<button class="link-btn" id="toggle-bipados" style="margin-top:10px;">${abertoBip?'ocultar':'ver'} o que já foi bipado</button>` : ''}
+        ${falta ? `<button class="link-btn" id="toggle-faltando" style="margin-top:10px;">${aberto?'ocultar':'ver'} o que ainda falta</button>` : ''}
+      </div>
     </div>
+    ${abertoBip && jaBipado ? `<div class="card" style="padding:0;">${bipadosRec.slice(0,300).map(code=>{
+      const v = state.volumes.get(code);
+      return `<div class="list-item" style="cursor:default;">
+        <div class="li-main"><div class="li-code">${esc(code)}</div><div class="li-desc">${v?esc(v.produtoDescricao||v.produtoCodigo||''):'Sem cadastro no sistema'}</div></div>
+        <div class="li-side"><div class="li-weight">${v&&v.quantidade!=null?fmtTon(v.quantidade)+' kg':'—'}</div>${v?`<span class="badge ${statusDisplayInfo(v).badge}">${esc(statusDisplayInfo(v).label)}</span>`:''}</div>
+      </div>`;
+    }).join('')}</div>
+    ${bipadosRec.length>300?`<p class="hint">Mostrando os 300 mais recentes de ${bipadosRec.length}.</p>`:''}` : ''}
     ${aberto && falta ? `<div class="card" style="padding:0;">${faltamCodes.slice(0,300).map(code=>{
       const v = state.volumes.get(code);
       return `<div class="list-item" style="cursor:default;">
@@ -1791,6 +1804,12 @@ function renderConfProgress(){
       </div>`;
     }).join('')}</div>` : ''}
   `;
+  const toggleBip = document.getElementById('toggle-bipados');
+  if (toggleBip) toggleBip.onclick = ()=>{
+    if (state.confExpandido.has('bipar-bipados')) state.confExpandido.delete('bipar-bipados');
+    else state.confExpandido.add('bipar-bipados');
+    renderConfProgress();
+  };
   const toggleBtn = document.getElementById('toggle-faltando');
   if (toggleBtn) toggleBtn.onclick = ()=>{
     if (state.confExpandido.has(chaveAberto)) state.confExpandido.delete(chaveAberto);
@@ -2252,7 +2271,30 @@ function openVolumeDetail(lote){
     </div>
     ${outrasAcoes.map(s=>`<button class="btn ${s==='estoque'?'ok':(s==='baixado'||s==='bloqueado'?'danger':'ghost')} det-status-act" style="${s!=='estoque'&&s!=='baixado'&&s!=='bloqueado'?'border:1px solid var(--border);':''}" data-status="${s}">${esc(STATUS[s].acao)}</button>`).join('')}
     <button class="btn ghost" id="btn-trocar-armazem" style="border:1px solid var(--border);">Trocar armazém</button>
+    <p class="hint" style="margin:14px 0 6px;">Status de conferência:</p>
+    <div class="btn-row">
+      <button class="btn ghost det-conf-act" data-conf="contado" style="border:1px solid var(--border);">Conferido</button>
+      <button class="btn ghost det-conf-act" data-conf="aguardando" style="border:1px solid var(--border);">Aguardando</button>
+      <button class="btn ghost det-conf-act" data-conf="nao_conferido" style="border:1px solid var(--border);">Não localizado</button>
+    </div>
   `);
+  document.querySelectorAll('.det-conf-act').forEach(btn=>{
+    btn.onclick = async()=>{
+      const alvo = btn.dataset.conf;
+      const agora = new Date().toISOString();
+      try{
+        await db.collection('volumes').doc(lote).update({ statusConferencia: alvo==='aguardando' ? null : alvo, ultimaConferenciaEm: agora });
+        await db.collection('movimentos').doc('mov_'+uid()).set({
+          lote, produtoCodigo: v.produtoCodigo||null, produtoDescricao: v.produtoDescricao||'',
+          tipo:'ajuste_status', quantidade: v.quantidade||null, timestamp: agora, exportado:false,
+          obs: `Status de conferência alterado para "${alvo==='contado'?'Em estoque (conferido)':alvo==='nao_conferido'?'Não localizado':'Aguardando conferência'}"`,
+          usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
+        });
+        toast('Status de conferência atualizado.');
+      }catch(e){ console.error(e); toast('Não consegui alterar o status.'); }
+      closeSheet();
+    };
+  });
   document.querySelectorAll('.det-status-act').forEach(btn=>{
     btn.onclick = async()=>{ await confirmMovimento(lote, btn.dataset.status); closeSheet(); };
   });
