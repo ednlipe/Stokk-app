@@ -16,6 +16,12 @@ r = C.cegaLerEtiqueta('XYZ12345ABC1230987TXYZB10.0012');          // letras dife
 assert.deepStrictEqual([r.lote, r.corrida, r.pesoKg, r.produto, r.pecas], ['XYZ12345', 'ABC123', 987, 'TXYZB10.00', 12]);
 r = C.cegaLerEtiqueta(' pcj00041\r\n ');                           // código curto de baixo da etiqueta
 assert.deepStrictEqual([r.lote, r.curto], ['PCJ00041', true]);
+r = C.cegaLerEtiqueta('LLI05835A629602037VCA50B160000000');   // barra: corrida A62960, bitola inteira B16, peças 0
+assert.deepStrictEqual([r.lote, r.corrida, r.pesoKg, r.produto, r.pecas, r.revisar], ['LLI05835', 'A62960', 2037, 'VCA50B16', null, false]);
+r = C.cegaLerEtiqueta('LLI10881F80021988VCA50B8.000000000');
+assert.deepStrictEqual([r.lote, r.corrida, r.pesoKg, r.produto, r.pecas, r.revisar], ['LLI10881', 'F8002', 1988, 'VCA50B8.00', null, false]);
+r = C.cegaLerEtiqueta('LLI05755A629562017VCA50B160000000');
+assert.deepStrictEqual([r.lote, r.corrida, r.pesoKg, r.produto, r.pecas, r.revisar], ['LLI05755', 'A62956', 2017, 'VCA50B16', null, false]);
 r = C.cegaLerEtiqueta('PCI00096PCI0032202TPAIQ092');               // sem bitola: lote ok, mas marcado para revisar
 assert.ok(r.revisar && r.lote === 'PCI00096');
 assert.ok(C.cegaLerEtiqueta('abc').desconhecido);

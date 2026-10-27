@@ -1,6 +1,6 @@
 # STOKK — Índice da documentação
 
-**Última atualização:** 2026-10-24 · **Versão do app (rótulo na tela):** `1.4.0 · <carimbo da build>`
+**Última atualização:** 2026-10-26 · **Versão do app (rótulo na tela):** `1.4.1 · <carimbo da build>`
 
 Leia só o arquivo da área em que vai mexer:
 

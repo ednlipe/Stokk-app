@@ -2012,16 +2012,19 @@ function renderEstoque(){
   list.innerHTML = nomesOrdenados.map(label=>{
     const itens = grupos[label].sort((a,b)=>(a.lote||'').localeCompare(b.lote||''));
     const peso = itens.reduce((s,v)=>s+(v.quantidade||0),0);
-    const aberto = forcarAberto || sel || state.estoqueExpandido.has(label);
+    const aberto = forcarAberto || state.estoqueExpandido.has(label);
+    const todosDoGrupo = sel && itens.length>0 && itens.every(v=>state.selecionados.has(v.lote));
+    const qtdSelGrupo = sel ? itens.filter(v=>state.selecionados.has(v.lote)).length : 0;
     return `
     <div class="card" style="padding:0;margin-top:10px;">
       <div class="list-item grupo-toggle" data-grupo="${esc(label)}" style="cursor:pointer;">
+        ${sel ? `<input type="checkbox" class="sel-grupo" data-grupo="${esc(label)}" ${todosDoGrupo?'checked':''} aria-label="Selecionar o grupo todo" style="width:20px;height:20px;margin-right:10px;flex-shrink:0;">` : ''}
         <div class="li-main">
           <div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div>
         </div>
         <div class="li-side">
           <div class="li-weight">${fmtTon(peso)} kg</div>
-          <div class="li-desc">${itens.length} vol.</div>
+          <div class="li-desc">${itens.length} vol.${sel&&qtdSelGrupo?' · <b>'+qtdSelGrupo+' sel.</b>':''}</div>
         </div>
       </div>
       ${aberto ? itens.map(v=>{
@@ -2043,6 +2046,15 @@ function renderEstoque(){
     </div>`;
   }).join('');
 
+  list.querySelectorAll('.sel-grupo').forEach(cb=>{
+    cb.addEventListener('click', e=>{
+      e.stopPropagation();
+      const itensG = grupos[cb.dataset.grupo] || [];
+      const todos = itensG.length>0 && itensG.every(v=>state.selecionados.has(v.lote));
+      itensG.forEach(v=>{ if (todos) state.selecionados.delete(v.lote); else state.selecionados.add(v.lote); });
+      renderEstoque();
+    });
+  });
   list.querySelectorAll('.grupo-toggle').forEach(el=>{
     el.addEventListener('click', ()=>{
       const label = el.dataset.grupo;
@@ -2077,6 +2089,7 @@ function renderEstoque(){
 document.getElementById('btn-toggle-select').addEventListener('click', ()=>{
   state.selecting = true;
   state.selecionados = new Set();
+  state.estoqueExpandido = new Set();   // começa com todos os grupos recolhidos; toque num grupo para abrir
   document.getElementById('btn-toggle-select').style.display='none';
   renderEstoque();
 });
@@ -2143,6 +2156,7 @@ document.getElementById('sel-report').addEventListener('click', ()=>{
 document.getElementById('sel-status').addEventListener('click', ()=>{
   const lotes = [...state.selecionados];
   if (!lotes.length){ toast('Selecione ao menos um item (ou use "selecionar todos").'); return; }
+  const MATERIAL = Object.keys(STATUS).map(k=>({ valor:k, label:STATUS[k].label }));
   const OPCOES = [
     { valor:'contado', label:'Em estoque' },
     { valor:'aguardando', label:'Aguardando conferência' },
@@ -2150,11 +2164,41 @@ document.getElementById('sel-status').addEventListener('click', ()=>{
   ];
   openSheet(`
     <h2 class="section-title" style="margin-top:0;">Mudar status</h2>
-    <p class="hint">Definir o status de conferência de <b>${lotes.length}</b> item(ns) selecionado(s) para:</p>
+    <p class="hint">Status do material de <b>${lotes.length}</b> item(ns) selecionado(s):</p>
+    ${MATERIAL.map(o=>`<button class="btn ghost" data-mat-alvo="${o.valor}" style="border:1px solid var(--border);margin-bottom:8px;">${o.label}</button>`).join('')}
+    <p class="hint" style="margin-top:14px;">Ou só o status de conferência:</p>
     ${OPCOES.map(o=>`<button class="btn ghost" data-status-alvo="${o.valor}" style="border:1px solid var(--border);margin-bottom:8px;">${o.label}</button>`).join('')}
     <button class="btn ghost" id="cancel-status-btn" style="border:1px solid var(--border);">Cancelar</button>
   `);
   document.getElementById('cancel-status-btn').onclick = closeSheet;
+  document.querySelectorAll('[data-mat-alvo]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const alvo = btn.dataset.matAlvo;
+      const alvoLabel = STATUS[alvo].label;
+      closeSheet();
+      toast(`Alterando status de ${lotes.length} item(ns)…`, 6000);
+      let ok=0;
+      for (const lote of lotes){
+        const v = state.volumes.get(lote);
+        if (!v) continue;
+        try{
+          await db.collection('volumes').doc(lote).update({ status: alvo, atualizadoEm: new Date().toISOString() });
+          await db.collection('movimentos').doc('mov_'+uid()).set({
+            lote, produtoCodigo: v.produtoCodigo||null, produtoDescricao: v.produtoDescricao||'',
+            tipo: alvo, quantidade: v.quantidade||null, timestamp: new Date().toISOString(), exportado:false,
+            obs: 'Mudança de status em lote pelo Estoque',
+            usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
+          });
+          ok++;
+        }catch(e){ console.error('erro ao mudar status', lote, e); }
+      }
+      toast(`${ok} item(ns) agora "${alvoLabel}".`);
+      state.selecting = false;
+      state.selecionados = new Set();
+      document.getElementById('btn-toggle-select').style.display='';
+      renderEstoque();
+    };
+  });
   document.querySelectorAll('[data-status-alvo]').forEach(btn=>{
     btn.onclick = async ()=>{
       const alvo = btn.dataset.statusAlvo;
@@ -2797,8 +2841,6 @@ function renderRelatorioRegistrado(sess){
   });
   const rows = [];
   for (const [label, items] of Object.entries(grupos)){
-    // o Excel exportado não leva os "Não localizado" (eles continuam na tela do relatório)
-    if (label==='Não localizado') continue;
     items.forEach(v=>{
       // exporta só os itens do produto desta conferência — reforço extra, caso
       // algum item de outro produto tenha entrado na lista por algum motivo.
@@ -2819,9 +2861,12 @@ function renderRelatorioRegistrado(sess){
     ${pendentesBaixa.length ? `<button class="btn danger" id="inv-baixar-naolocalizados" data-role="supervisor" style="margin-top:14px;">Dar baixa nos ${pendentesBaixa.length} não localizado(s)</button>` : ''}
     <button class="btn primary" id="inv-export" style="margin-top:14px;">Exportar relatório (Excel)</button>
     <button class="btn ghost" id="inv-new" style="border:1px solid var(--border);margin-top:6px;">Voltar</button>
+    <button class="btn ghost" id="inv-reabrir" data-role="supervisor" style="border:1px solid var(--border);margin-top:6px;">Reabrir conferência</button>
     <button class="btn danger" id="inv-del" data-role="supervisor" style="margin-top:6px;">Excluir esta conferência</button>
   `;
   bindGruposToggle('#conf-grupos', ()=>renderRelatorioRegistrado(sess));
+  const reabrirBtn = document.getElementById('inv-reabrir');
+  if (reabrirBtn) reabrirBtn.onclick = ()=>confirmarReabrirConferencia(sess);
   applyRoleUI();
   document.getElementById('inv-export').onclick = ()=>{
     const dataConf = fmtDate(sess.finalizadoEm||sess.iniciadoEm);
@@ -2886,6 +2931,32 @@ async function reverterItensDaConferencia(sess){
     try{ await db.collection('volumes').doc(lote).update(patch); n++; }catch(e){ console.error(e); }
   }
   return n;
+}
+
+function confirmarReabrirConferencia(sess){
+  openSheet(`
+    <h2 class="section-title" style="margin-top:0;">Reabrir conferência</h2>
+    <p class="hint">${nomeConf(sess)?'<b>'+esc(nomeConf(sess))+'</b> — ':''}Ela volta para "em andamento" com os itens já bipados, e você pode continuar bipando. O relatório é refeito quando você finalizar de novo.</p>
+    <button class="btn primary" id="conf-reab-sim">Reabrir</button>
+    <button class="btn ghost" id="conf-reab-nao" style="border:1px solid var(--border);">Cancelar</button>
+  `);
+  document.getElementById('conf-reab-nao').onclick = closeSheet;
+  document.getElementById('conf-reab-sim').onclick = async ()=>{
+    closeSheet();
+    const antes = { ativo: sess.ativo, finalizadoEm: sess.finalizadoEm, resultado: sess.resultado };
+    sess.ativo = true; sess.finalizadoEm = null; sess.resultado = null;
+    try{ await db.collection('sessoes').doc(sess.id).set(sess); }
+    catch(e){
+      console.error(e);
+      sess.ativo = antes.ativo; sess.finalizadoEm = antes.finalizadoEm; sess.resultado = antes.resultado;
+      toast('Não consegui reabrir a conferência. Tente de novo.');
+      return;
+    }
+    state.session = sess; state.relatorioAberto = null; state.previewSessId = null; state.confBodySessId = null;
+    salvarSessaoSeguida(sess.id);
+    toast('Conferência reaberta — pode continuar bipando.');
+    renderInventario();
+  };
 }
 
 function confirmarExclusaoConferencia(sess){
@@ -3725,12 +3796,18 @@ function cegaLerEtiqueta(raw){
   if (!t) return null;
   const LOTE = /^[A-Za-z]{3}\d{5}$/;
   if (LOTE.test(t)) return { lote:t.toUpperCase(), curto:true, revisar:false, bruto };
-  if (t.length>=19 && LOTE.test(t.slice(0,8)) && /^[A-Za-z]{3}\d{3}$/.test(t.slice(8,14)) && /^\d{4}$/.test(t.slice(14,18))){
-    const base = { lote:t.slice(0,8).toUpperCase(), corrida:t.slice(8,14).toUpperCase(), pesoKg:Number(t.slice(14,18)), bruto };
-    const resto = t.slice(18);
-    const m = resto.match(/^(.+?B\d+\.\d{2})(\d+)$/i);
-    if (m) return Object.assign(base, { produto:m[1].toUpperCase(), pecas:Number(m[2]), revisar:false });
-    return Object.assign(base, { produto:resto.toUpperCase(), pecas:null, revisar:true, motivo:'Não separei o código do produto e a quantidade de peças' });
+  if (t.length>=19 && LOTE.test(t.slice(0,8))){
+    // depois do volume: corrida (4 a 8 caracteres, o tamanho varia) + peso (sempre 4 dígitos) + produto (começa com letras) + peças.
+    // O peso é o bloco de 4 dígitos logo antes do código do produto.
+    const m1 = t.slice(8).match(/^([A-Za-z0-9]{4,8}?)(\d{4})([A-Za-z]{2}.*)$/);
+    if (m1){
+      const base = { lote:t.slice(0,8).toUpperCase(), corrida:m1[1].toUpperCase(), pesoKg:Number(m1[2]), bruto };
+      const resto = m1[3];
+      // tela soldada: bitola com decimal (B4.20); barra: bitola com decimal (B8.00) ou inteira de 2 dígitos (B16)
+      const m = resto.match(/^(.+?B\d+\.\d{2})(\d*)$/i) || resto.match(/^(.+?B\d{2})(\d*)$/i);
+      if (m){ const pc = m[2]===''?null:Number(m[2]); return Object.assign(base, { produto:m[1].toUpperCase(), pecas:pc?pc:null, revisar:false }); }
+      return Object.assign(base, { produto:resto.toUpperCase(), pecas:null, revisar:true, motivo:'Não separei o código do produto e a quantidade de peças' });
+    }
   }
   if (t.length>=8 && LOTE.test(t.slice(0,8))) return { lote:t.slice(0,8).toUpperCase(), revisar:true, motivo:'Formato diferente do esperado', bruto };
   return { desconhecido:true, bruto };
@@ -3973,7 +4050,7 @@ function cegaBipar(raw){
     cegaAtualizarTela(); return;
   }
   const item = { lote:e.lote, corrida:e.corrida||null, pesoKg:e.pesoKg==null?null:e.pesoKg, produto:e.produto||null,
-                 pecas:e.pecas==null?null:e.pecas, revisar:!!e.revisar, motivo:e.motivo||null, em:new Date().toISOString() };
+                 pecas:e.pecas==null?null:e.pecas, revisar:!!e.revisar, motivo:e.motivo||null, bruto:e.bruto||null, em:new Date().toISOString() };
   c.itens.push(item);
   c.ultimo = { tipo:'ok', item };
   beepOk(); vibrate(60);
@@ -4028,6 +4105,7 @@ function cegaAtualizarTela(){
           <div class="li-main">
             <div class="li-code" style="font-size:14px;">${esc(i.lote)}${i.revisar?' <span style="color:var(--warn,#d99a00);">⚠</span>':''}</div>
             <div class="li-desc">${i.produto?esc(i.produto)+' · ':''}${i.corrida?'corrida '+esc(i.corrida):''}${i.pecas!=null?' · '+i.pecas+' pç':''}</div>
+            ${i.revisar&&i.bruto?`<div class="li-desc" style="word-break:break-all;color:var(--warn,#d99a00);">lido: ${esc(i.bruto)} (${String(i.bruto).length} caract.)</div>`:''}
           </div>
           <div class="li-side"><div class="li-weight">${i.pesoKg!=null?fmtKgNum(i.pesoKg):'—'}</div><div class="li-desc">kg</div></div>
           <button class="link-btn" data-cega-del="${esc(i.lote)}" style="margin-left:10px;color:var(--danger);">remover</button>
@@ -4193,11 +4271,13 @@ function cegaRenderRel(){
     ${cegaSecao('Conferem','var(--ok)', rel.conferem, x=>L1(x.lote, `${esc(x.produto)} · armazém ${esc(x.armazem)} · ${cegaKg(x.pesoPlanilha)}`), false)}
     <div class="btn-row" style="margin:14px 0 6px;">
       <button class="btn primary" id="cega-exp">Exportar planilha</button>
-      ${R.salvo ? '<button class="btn" id="cega-fechar">Fechar</button>'
+      ${R.salvo ? '<button class="btn" id="cega-fechar">Fechar</button><button class="btn" id="cega-reabrir" data-role="supervisor">Reabrir contagem</button>'
                 : '<button class="btn" id="cega-voltar">Voltar à contagem</button>'}
     </div>
     ${R.salvo ? '' : '<button class="btn" id="cega-encerrar" style="width:100%;">Encerrar e guardar este resultado</button>'}`;
   document.getElementById('cega-exp').onclick = ()=>cegaExportar(nome, rel);
+  const reab = document.getElementById('cega-reabrir'); if (reab) reab.onclick = cegaReabrir;
+  try{ applyRoleUI(); }catch(e){}
   const fechar = document.getElementById('cega-fechar'); if (fechar) fechar.onclick = ()=>{ state.cegaRel = null; renderInventario(); };
   const voltar = document.getElementById('cega-voltar'); if (voltar) voltar.onclick = ()=>{ state.cegaRel = null; renderInventario(); };
   const enc = document.getElementById('cega-encerrar'); if (enc) enc.onclick = cegaEncerrar;
@@ -4208,6 +4288,19 @@ function cegaRenderRel(){
       cegaCalcularRel(); cegaRenderRel();
     };
   });
+}
+async function cegaReabrir(){
+  const R = state.cegaRel; if (!R || !R.salvo) return;
+  const s = R.sess;
+  const c = { id:s.id, nome:s.nome||'', iniciadoEm:s.iniciadoEm, ativo:true, usuarioId:s.usuarioId||(state.user?state.user.id:null),
+              itens:Array.isArray(s.itens)?s.itens.slice():[], ignorados:[], ultimo:null, finalizadoEm:null, resultado:null, salvoUmaVez:false };
+  state.cega = c;
+  const ok = await cegaSalvarAgora();
+  if (!ok){ state.cega = null; toast('Não consegui reabrir a contagem. Verifique a conexão e tente de novo.', 3500); return; }
+  c.salvoUmaVez = true;
+  state.cegaRel = null; cegaLocalGuardar();
+  toast('Contagem reaberta — pode continuar bipando.');
+  renderInventario();
 }
 async function cegaEncerrar(){
   const R = state.cegaRel, c = R.sess;
