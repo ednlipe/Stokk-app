@@ -310,6 +310,7 @@ function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table))
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
 function escolherAreaTela(areas, nomeUsuario){
+  esconderTrocaArea();
   return new Promise(resolve=>{
     const el = document.createElement('div');
     el.id = 'area-picker';
@@ -326,6 +327,26 @@ function escolherAreaTela(areas, nomeUsuario){
       if (e.target.closest('#area-sair')){ await sb.auth.signOut(); location.reload(); }
     });
   });
+}
+/* Tela de "Aguarde, mudando de ambiente" — aparece ao trocar de área e continua na recarga da página
+   (um aviso fica guardado em sessionStorage) até o app novo abrir, sem mostrar a tela de login no meio. */
+function mostrarTrocaArea(nome){
+  let el = document.getElementById('troca-area-overlay');
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'troca-area-overlay';
+    el.innerHTML = '<div class="troca-box"><div class="troca-anel"></div><div class="troca-titulo">Aguarde…</div><div class="troca-sub" id="troca-area-sub"></div></div>';
+    document.body.appendChild(el);
+  }
+  const sub = document.getElementById('troca-area-sub');
+  if (sub) sub.textContent = nome ? ('Mudando de ambiente: ' + nome) : 'Mudando de ambiente';
+}
+function esconderTrocaArea(){
+  try{ sessionStorage.removeItem('stokk_troca_area'); }catch(e){}
+  const el = document.getElementById('troca-area-overlay');
+  if (!el) return;
+  el.classList.add('saindo');
+  setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 300);
 }
 function montarBotaoArea(){
   if (!state.areas || state.areas.length < 2 || document.getElementById('btn-area')) return;
@@ -345,8 +366,10 @@ function montarBotaoArea(){
     closeSheet();
     if (novo === state.area) return;
     salvarArea(state.user.id, novo);
-    toast('Trocando de área…', 1500);
-    setTimeout(()=>location.reload(), 350);
+    const nomeNovo = (state.areas.find(a=>a.id===novo)||{}).nome || '';
+    try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
+    mostrarTrocaArea(nomeNovo);
+    setTimeout(()=>location.reload(), 600);
   });
 }
 
@@ -469,6 +492,7 @@ function createBrowserDownloads(){
 
 /* ---------------- AUTENTICAÇÃO ---------------- */
 function showLogin(){
+  esconderTrocaArea();
   document.getElementById('login-screen').style.display='block';
   document.getElementById('app').style.display='none';
 }
@@ -558,8 +582,10 @@ async function registrarPush(userId){
 }
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
+  let trocando = null; try{ trocando = sessionStorage.getItem('stokk_troca_area'); }catch(e){}
+  if (trocando){ mostrarTrocaArea(trocando==='1' ? '' : trocando); setTimeout(esconderTrocaArea, 15000); }
   const {data:{session}} = await sb.auth.getSession();
-  if (session) await onAuthed(session.user);
+  if (session){ try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }
   else showLogin();
 }
 document.getElementById('login-btn').addEventListener('click', doLogin);
