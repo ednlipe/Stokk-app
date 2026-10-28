@@ -401,7 +401,9 @@ function createSupabaseDB(){
           async set(dataObj){
             const row = Object.assign(objToSnake(dataObj), {[camelToSnake(pk)]: id});
             const ar = areaDaTabela(table); if (ar) row.area = ar;
-            const {error} = await sb.from(table).upsert(row);
+            // movimentos é um histórico só de inserção (a RLS só tem select e insert): grava com
+            // INSERT puro, sem o "ON CONFLICT DO UPDATE" do upsert, que exigiria permissão de UPDATE.
+            const {error} = await (table==='movimentos' ? sb.from(table).insert(row) : sb.from(table).upsert(row));
             if (error){ toast('Erro ao salvar: '+error.message, 4000); throw error; }
           },
           async update(dataObj){
@@ -691,7 +693,7 @@ function armazemChipHTML(codigo){
   const info = armazemInfo(codigo);
   const dot = info.cor ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${info.cor};margin-right:5px;vertical-align:middle;"></span>` : '';
   const texto = info.label ? `Armazém ${esc(codigo)} — ${esc(info.label)}` : `Armazém ${esc(codigo)}`;
-  return `<span style="white-space:nowrap;">${dot}${texto}</span>`;
+  return `<span style="white-space:normal;overflow-wrap:anywhere;">${dot}${texto}</span>`;
 }
 
 /* ---------------- CATEGORIA / BITOLA / MODELO ----------------
@@ -711,7 +713,7 @@ function parseCategoria(descricao, codigo){
   // --- famílias identificadas pelo PREFIXO do código (mais confiável que a
   //     descrição em texto, que nem sempre vem preenchida) ---
   if (/^BOCA/.test(c)) return { categoria:'Bobina', modelo:null, bitola:bitolaCodigo };
-  if (/^FM1000/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };
+  if (/^FM\d{4}/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };   // FM1000…, FM1008… etc.
   if (/^VRCA50/.test(c)) return { categoria:'Rolo', modelo:null, bitola:bitolaCodigo };
   const mTcol = c.match(/^TCOL(.+)B(\d{1,2}[.,]\d{1,2})$/);
   if (mTcol) return { categoria:'Tela para Coluna', modelo: mTcol[1].toLowerCase(), bitola: mTcol[2].replace('.',',')+' mm' };
@@ -1208,7 +1210,7 @@ function renderArmazemBreakdown(emEstoque){
       return `
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
-          <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
+          <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;flex:1 1 0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
           <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} kg <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
         </div>
         <div style="background:var(--surface-3);border-radius:3px;height:${destaque?'11px':'7px'};overflow:hidden;">
