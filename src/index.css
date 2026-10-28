@@ -248,3 +248,12 @@ nav.bottom button.active svg{stroke:var(--accent);}
 .cega-stat span{font-size:11px;color:var(--text-muted);}
 details.cega-sec{margin:10px 0;}
 details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-size:14px;margin-bottom:6px;}
+
+/* troca de área */
+#troca-area-overlay{position:fixed;inset:0;z-index:2000;background:var(--bg);display:flex;align-items:center;justify-content:center;animation:trocaIn .2s ease;}
+#troca-area-overlay.saindo{opacity:0;transition:opacity .3s ease;pointer-events:none;}
+.troca-box{text-align:center;padding:24px;}
+.troca-anel{width:64px;height:64px;margin:0 auto 18px;border-radius:50%;border:5px solid var(--border);border-top-color:var(--accent);animation:spin .9s linear infinite;}
+.troca-titulo{font-family:var(--font-head);font-size:22px;text-transform:uppercase;letter-spacing:.5px;}
+.troca-sub{margin-top:6px;color:var(--text-muted);font-size:14px;}
+@keyframes trocaIn{from{opacity:0}to{opacity:1}}

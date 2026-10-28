@@ -310,6 +310,7 @@ function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table))
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
 function escolherAreaTela(areas, nomeUsuario){
+  esconderTrocaArea();
   return new Promise(resolve=>{
     const el = document.createElement('div');
     el.id = 'area-picker';
@@ -326,6 +327,26 @@ function escolherAreaTela(areas, nomeUsuario){
       if (e.target.closest('#area-sair')){ await sb.auth.signOut(); location.reload(); }
     });
   });
+}
+/* Tela de "Aguarde, mudando de ambiente" — aparece ao trocar de área e continua na recarga da página
+   (um aviso fica guardado em sessionStorage) até o app novo abrir, sem mostrar a tela de login no meio. */
+function mostrarTrocaArea(nome){
+  let el = document.getElementById('troca-area-overlay');
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'troca-area-overlay';
+    el.innerHTML = '<div class="troca-box"><div class="troca-anel"></div><div class="troca-titulo">Aguarde…</div><div class="troca-sub" id="troca-area-sub"></div></div>';
+    document.body.appendChild(el);
+  }
+  const sub = document.getElementById('troca-area-sub');
+  if (sub) sub.textContent = nome ? ('Mudando de ambiente: ' + nome) : 'Mudando de ambiente';
+}
+function esconderTrocaArea(){
+  try{ sessionStorage.removeItem('stokk_troca_area'); }catch(e){}
+  const el = document.getElementById('troca-area-overlay');
+  if (!el) return;
+  el.classList.add('saindo');
+  setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 300);
 }
 function montarBotaoArea(){
   if (!state.areas || state.areas.length < 2 || document.getElementById('btn-area')) return;
@@ -345,8 +366,10 @@ function montarBotaoArea(){
     closeSheet();
     if (novo === state.area) return;
     salvarArea(state.user.id, novo);
-    toast('Trocando de área…', 1500);
-    setTimeout(()=>location.reload(), 350);
+    const nomeNovo = (state.areas.find(a=>a.id===novo)||{}).nome || '';
+    try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
+    mostrarTrocaArea(nomeNovo);
+    setTimeout(()=>location.reload(), 600);
   });
 }
 
@@ -362,11 +385,26 @@ function createSupabaseDB(){
       .subscribe();
   }
   async function refetch(table, orderField, orderDir, limitN){
-    let q = sb.from(table).select('*');
-    const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
-    if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
-    if (limitN) q = q.limit(limitN);
-    const {data, error} = await q;
+    // O Supabase devolve no máximo 1000 linhas por pedido. Para não perder volumes quando o
+    // estoque passa disso, lemos em páginas de 1000 até acabar (ou até o limite pedido).
+    const PAGINA = 1000;
+    const pkCol = camelToSnake(PK[table] || 'id');
+    const ar = areaDaTabela(table);
+    const data = []; let error = null;
+    while (true){
+      let q = sb.from(table).select('*');
+      if (ar) q = q.eq('area', ar);
+      if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
+      q = q.order(pkCol, {ascending:true});          // desempate fixo, para a paginação não repetir nem pular linhas
+      const falta = limitN ? (limitN - data.length) : PAGINA;
+      const pedir = Math.min(PAGINA, falta);
+      q = q.range(data.length, data.length + pedir - 1);
+      const r = await q;
+      if (r.error){ error = r.error; break; }
+      const lote = r.data || [];
+      data.push(...lote);
+      if (lote.length < pedir || (limitN && data.length >= limitN)) break;
+    }
     if (error){
       console.error(table, error);
       // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
@@ -386,7 +424,9 @@ function createSupabaseDB(){
           async set(dataObj){
             const row = Object.assign(objToSnake(dataObj), {[camelToSnake(pk)]: id});
             const ar = areaDaTabela(table); if (ar) row.area = ar;
-            const {error} = await sb.from(table).upsert(row);
+            // movimentos é um histórico só de inserção (a RLS só tem select e insert): grava com
+            // INSERT puro, sem o "ON CONFLICT DO UPDATE" do upsert, que exigiria permissão de UPDATE.
+            const {error} = await (table==='movimentos' ? sb.from(table).insert(row) : sb.from(table).upsert(row));
             if (error){ toast('Erro ao salvar: '+error.message, 4000); throw error; }
           },
           async update(dataObj){
@@ -452,6 +492,7 @@ function createBrowserDownloads(){
 
 /* ---------------- AUTENTICAÇÃO ---------------- */
 function showLogin(){
+  esconderTrocaArea();
   document.getElementById('login-screen').style.display='block';
   document.getElementById('app').style.display='none';
 }
@@ -541,8 +582,10 @@ async function registrarPush(userId){
 }
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
+  let trocando = null; try{ trocando = sessionStorage.getItem('stokk_troca_area'); }catch(e){}
+  if (trocando){ mostrarTrocaArea(trocando==='1' ? '' : trocando); setTimeout(esconderTrocaArea, 15000); }
   const {data:{session}} = await sb.auth.getSession();
-  if (session) await onAuthed(session.user);
+  if (session){ try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }
   else showLogin();
 }
 document.getElementById('login-btn').addEventListener('click', doLogin);
@@ -617,6 +660,15 @@ function beepErro(){
     setTimeout(()=>ctx.close(), 400);
   }catch(e){}
 }
+// Peso para totais na tela: até 2.999 kg mostra em kg; a partir de 3.000 kg mostra em toneladas
+// (ex.: 1.103,6 t). Só muda a exibição; o banco e as exportações continuam em kg.
+function fmtPeso(kg){
+  if (kg==null || isNaN(kg)) return '—';
+  const n = Number(kg), a = Math.abs(n);
+  if (a < 3000) return n.toLocaleString('pt-BR',{maximumFractionDigits:1}) + ' kg';   // até 2.999 kg fica em kg
+  const t = n/1000;
+  return t.toLocaleString('pt-BR',{minimumFractionDigits:a<10000?2:1,maximumFractionDigits:a<10000?2:1}) + ' t';
+}
 function fmtTon(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:1}); } // peso em kg (nome antigo mantido)
 function fmtDate(iso){
   if(!iso) return '—';
@@ -676,7 +728,7 @@ function armazemChipHTML(codigo){
   const info = armazemInfo(codigo);
   const dot = info.cor ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${info.cor};margin-right:5px;vertical-align:middle;"></span>` : '';
   const texto = info.label ? `Armazém ${esc(codigo)} — ${esc(info.label)}` : `Armazém ${esc(codigo)}`;
-  return `<span style="white-space:nowrap;">${dot}${texto}</span>`;
+  return `<span style="white-space:normal;overflow-wrap:anywhere;">${dot}${texto}</span>`;
 }
 
 /* ---------------- CATEGORIA / BITOLA / MODELO ----------------
@@ -696,7 +748,7 @@ function parseCategoria(descricao, codigo){
   // --- famílias identificadas pelo PREFIXO do código (mais confiável que a
   //     descrição em texto, que nem sempre vem preenchida) ---
   if (/^BOCA/.test(c)) return { categoria:'Bobina', modelo:null, bitola:bitolaCodigo };
-  if (/^FM1000/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };
+  if (/^FM\d{4}/.test(c)) return { categoria:'Fio Máquina', modelo:null, bitola:bitolaCodigo };   // FM1000…, FM1008… etc.
   if (/^VRCA50/.test(c)) return { categoria:'Rolo', modelo:null, bitola:bitolaCodigo };
   const mTcol = c.match(/^TCOL(.+)B(\d{1,2}[.,]\d{1,2})$/);
   if (mTcol) return { categoria:'Tela para Coluna', modelo: mTcol[1].toLowerCase(), bitola: mTcol[2].replace('.',',')+' mm' };
@@ -1136,7 +1188,7 @@ function renderDashboard(){
         <div class="list-item" style="cursor:default;">
           <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
           <div class="li-side">
-            <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
+            <div class="li-weight">${fmtPeso(grupos[label].peso)}</div>
             <div class="li-desc">${grupos[label].vol} vol.</div>
           </div>
         </div>`).join('') + '</div>';
@@ -1193,8 +1245,8 @@ function renderArmazemBreakdown(emEstoque){
       return `
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
-          <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
-          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} kg <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
+          <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;flex:1 1 0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
+          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtPeso(g.peso)} <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
         </div>
         <div style="background:var(--surface-3);border-radius:3px;height:${destaque?'11px':'7px'};overflow:hidden;">
           <div style="width:${pct}%;height:100%;background:${barCor};"></div>
@@ -1220,7 +1272,7 @@ function renderConsumoInterno(emEstoque){
     <div class="list-item" style="cursor:default;">
       <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
       <div class="li-side">
-        <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
+        <div class="li-weight">${fmtPeso(grupos[label].peso)}</div>
         <div class="li-desc">${grupos[label].vol} vol.</div>
       </div>
     </div>`).join('') + '</div>';
@@ -1245,7 +1297,7 @@ function renderComparativoArmazens(emEstoque){
     <div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
         <div style="font-size:13.5px;font-weight:600;">${esc(d.label)} <span class="li-desc" style="display:inline;">(${d.cod})</span></div>
-        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtTon(d.peso)} kg <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
+        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtPeso(d.peso)} <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
       </div>
       <div style="background:var(--surface-3);border-radius:3px;height:10px;overflow:hidden;">
         <div style="width:${pct}%;height:100%;background:${d.cor};"></div>
@@ -1294,7 +1346,7 @@ function renderProdutosEmEstoque(emEstoque){
       <div class="list-item" style="cursor:default;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
+          <div class="li-weight">${fmtPeso(grupos[label].peso)}</div>
           <div class="li-desc">${grupos[label].vol} vol.</div>
         </div>
       </div>`).join('') + '</div>';
@@ -2042,7 +2094,7 @@ function renderEstoque(){
           <div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div>
         </div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(peso)} kg</div>
+          <div class="li-weight">${fmtPeso(peso)}</div>
           <div class="li-desc">${itens.length} vol.${sel&&qtdSelGrupo?' · <b>'+qtdSelGrupo+' sel.</b>':''}</div>
         </div>
       </div>
@@ -2757,7 +2809,7 @@ function renderGruposHTML(grupos, keyPrefix){
     return `<div class="card" style="padding:0;margin-top:10px;">
       <div class="list-item grupo-conf-toggle" data-key="${esc(key)}" style="cursor:pointer;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div></div>
-        <div class="li-side"><div class="li-weight">${fmtTon(peso)} kg</div><div class="li-desc">${items.length} vol.</div></div>
+        <div class="li-side"><div class="li-weight">${fmtPeso(peso)}</div><div class="li-desc">${items.length} vol.</div></div>
       </div>
       ${aberto ? items.map(v=>{
         const dias = ehNaoLocalizado ? diasSemVer(v) : null;
@@ -2925,7 +2977,7 @@ function renderRelatorioRegistrado(sess){
     const pesoTotal = pendentesBaixa.reduce((s,v)=>s+(v.quantidade||0),0);
     openSheet(`
       <h2 class="section-title" style="margin-top:0;color:var(--danger);">Dar baixa em ${pendentesBaixa.length} item(ns)?</h2>
-      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtTon(pesoTotal)} kg no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
+      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtPeso(pesoTotal)} no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
       <button class="btn danger" id="conf-baixa-sim">Confirmar baixa</button>
       <button class="btn ghost" id="conf-baixa-nao" style="border:1px solid var(--border);">Cancelar</button>
     `);
@@ -4115,7 +4167,7 @@ function cegaAtualizarTela(){
     const rev = c.itens.filter(i=>i.revisar).length;
     resumo.innerHTML = `<div class="cega-grid">
       <div class="cega-stat"><b>${c.itens.length}</b><span>volumes contados</span></div>
-      <div class="cega-stat"><b>${fmtKgNum(kg)}</b><span>kg somados</span></div>
+      <div class="cega-stat"><b>${fmtPeso(kg)}</b><span>somados</span></div>
       ${rev ? `<div class="cega-stat" style="grid-column:1 / -1;"><b style="color:var(--warn,#d99a00);">${rev}</b><span>para revisar</span></div>`:''}
     </div>`;
   }
@@ -4296,14 +4348,14 @@ function cegaRenderRel(){
       <div class="filter-row" id="cega-arms">${arms.map(a=>`<button class="filter-chip ${R.armazens.has(a)?'active':''}" data-cega-arm="${esc(a)}">Armazém ${esc(a)}</button>`).join('')}</div>`
       : (rs.armazens&&rs.armazens.length?`<p class="hint">Armazéns considerados: ${rs.armazens.map(esc).join(', ')}</p>`:'')}
     <div class="cega-grid">
-      <div class="cega-stat"><b>${rs.contados}</b><span>contados · ${fmtKgNum(rs.kgContado)} kg</span></div>
-      <div class="cega-stat"><b>${rs.naPlanilha}</b><span>na planilha · ${fmtKgNum(rs.kgPlanilha)} kg</span></div>
+      <div class="cega-stat"><b>${rs.contados}</b><span>contados · ${fmtPeso(rs.kgContado)}</span></div>
+      <div class="cega-stat"><b>${rs.naPlanilha}</b><span>na planilha · ${fmtPeso(rs.kgPlanilha)}</span></div>
       <div class="cega-stat"><b style="color:var(--ok);">${rs.conferem}</b><span>conferem</span></div>
       <div class="cega-stat"><b style="color:var(--danger);">${rs.faltando}</b><span>faltando (não bipados)</span></div>
       <div class="cega-stat"><b style="color:var(--danger);">${rs.sobrando}</b><span>sobrando (fora da planilha)</span></div>
       <div class="cega-stat"><b style="color:var(--warn,#d99a00);">${rs.pesoDiferente}</b><span>peso diferente</span></div>
     </div>
-    <p class="hint">Diferença total: <b>${dif>0?'+':''}${fmtKgNum(dif)} kg</b> (contado − planilha)${rs.outroArmazem?` · ${rs.outroArmazem} em outro armazém`:''}${rs.revisar?` · ${rs.revisar} para revisar`:''}.</p>
+    <p class="hint">Diferença total: <b>${dif>0?'+':''}${fmtPeso(dif)}</b> (contado − planilha)${rs.outroArmazem?` · ${rs.outroArmazem} em outro armazém`:''}${rs.revisar?` · ${rs.revisar} para revisar`:''}.</p>
     ${cegaSecao('Faltando — estão na planilha e não foram bipados','var(--danger)', rel.faltando, x=>L1(x.lote, `${esc(x.produto)} · armazém ${esc(x.armazem)} · ${cegaKg(x.pesoPlanilha)}`), true)}
     ${cegaSecao('Sobrando — bipados e fora da planilha','var(--danger)', rel.sobrando, x=>L1(x.lote, `${x.produto?esc(x.produto)+' · ':''}${cegaKg(x.pesoEtiqueta)}${x.pecas!=null?' · '+x.pecas+' pç':''}`), true)}
     ${cegaSecao('Peso diferente','var(--warn,#d99a00)', rel.pesoDiferente, x=>L1(x.lote, `${esc(x.produto)} · etiqueta ${cegaKg(x.pesoEtiqueta)} · planilha ${cegaKg(x.pesoPlanilha)} · <b>${x.diferenca>0?'+':''}${fmtKgNum(x.diferenca)} kg</b>`), true)}

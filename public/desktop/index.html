@@ -957,7 +957,7 @@ async function onAuthed(user){
   subscribeData();
   setView('dashboard');
 }
-const APP_VERSAO = '1.4.1 · 26/10';
+const APP_VERSAO = '1.4.2 · 27/10';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -1035,6 +1035,15 @@ function beepErro(){
     tocar(320, 0); tocar(240, 160);
     setTimeout(()=>ctx.close(), 400);
   }catch(e){}
+}
+// Peso para totais na tela: até 2.999 kg mostra em kg; a partir de 3.000 kg mostra em toneladas
+// (ex.: 1.103,6 t). Só muda a exibição; o banco e as exportações continuam em kg.
+function fmtPeso(kg){
+  if (kg==null || isNaN(kg)) return '—';
+  const n = Number(kg), a = Math.abs(n);
+  if (a < 3000) return n.toLocaleString('pt-BR',{maximumFractionDigits:1}) + ' kg';   // até 2.999 kg fica em kg
+  const t = n/1000;
+  return t.toLocaleString('pt-BR',{minimumFractionDigits:a<10000?2:1,maximumFractionDigits:a<10000?2:1}) + ' t';
 }
 function fmtTon(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:1}); } // peso em kg (nome antigo mantido)
 function fmtDate(iso){
@@ -1644,7 +1653,7 @@ function renderProdutosDonut(emEstoque){
               <span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(f.label)}</span>
             </div>
             <div style="text-align:right;flex-shrink:0;">
-              <div style="font-family:var(--font-mono);font-size:12.5px;">${fmtTon(f.peso)} kg</div>
+              <div style="font-family:var(--font-mono);font-size:12.5px;">${fmtPeso(f.peso)}</div>
               <div class="li-desc" style="display:inline;">${(f.peso/total*100).toFixed(1)}%</div>
             </div>
           </div>`).join('')}
@@ -1706,7 +1715,7 @@ function renderDashInsight(emEstoque, okParaCarregar){
       <div>
         <div style="font-family:var(--font-head);font-size:14.5px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Resumo do pátio</div>
         <div style="font-size:13.5px;color:var(--text-muted);max-width:560px;">
-          ${fmtTon(pesoTotal)} kg em estoque no total — ${pct}% (${fmtTon(pesoOk)} kg) já liberadas pra carregar (armazém 93), o restante aguardando conferência ou análise.
+          ${fmtPeso(pesoTotal)} em estoque no total — ${pct}% (${fmtPeso(pesoOk)}) já liberadas pra carregar (armazém 93), o restante aguardando conferência ou análise.
         </div>
       </div>
     </div>`;
@@ -1777,7 +1786,7 @@ function renderArmazemBreakdown(emEstoque){
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
           <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
-          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} kg <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
+          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtPeso(g.peso)} <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
         </div>
         <div style="background:var(--surface-3);border-radius:3px;height:${destaque?'11px':'7px'};overflow:hidden;">
           <div style="width:${pct}%;height:100%;background:${barCor};"></div>
@@ -1803,7 +1812,7 @@ function renderConsumoInterno(emEstoque){
     <div class="list-item" style="cursor:default;">
       <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
       <div class="li-side">
-        <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
+        <div class="li-weight">${fmtPeso(grupos[label].peso)}</div>
         <div class="li-desc">${grupos[label].vol} vol.</div>
       </div>
     </div>`).join('') + '</div>';
@@ -1828,7 +1837,7 @@ function renderComparativoArmazens(emEstoque){
     <div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
         <div style="font-size:13.5px;font-weight:600;">${esc(d.label)} <span class="li-desc" style="display:inline;">(${d.cod})</span></div>
-        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtTon(d.peso)} kg <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
+        <div style="font-family:var(--font-mono);font-size:13px;white-space:nowrap;">${fmtPeso(d.peso)} <span class="li-desc" style="display:inline;">(${d.vol})</span></div>
       </div>
       <div style="background:var(--surface-3);border-radius:3px;height:10px;overflow:hidden;">
         <div style="width:${pct}%;height:100%;background:${d.cor};"></div>
@@ -1877,7 +1886,7 @@ function renderProdutosEmEstoque(emEstoque){
       <div class="list-item" style="cursor:default;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${esc(label)}</div></div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(grupos[label].peso)} kg</div>
+          <div class="li-weight">${fmtPeso(grupos[label].peso)}</div>
           <div class="li-desc">${grupos[label].vol} vol.</div>
         </div>
       </div>`).join('') + '</div>';
@@ -2508,7 +2517,7 @@ function renderEstoque(){
           <div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div>
         </div>
         <div class="li-side">
-          <div class="li-weight">${fmtTon(peso)} kg</div>
+          <div class="li-weight">${fmtPeso(peso)}</div>
           <div class="li-desc">${itens.length} vol.</div>
         </div>
       </div>
@@ -3024,7 +3033,7 @@ function renderGruposHTML(grupos, keyPrefix){
     return `<div class="card" style="padding:0;margin-top:10px;">
       <div class="list-item grupo-conf-toggle" data-key="${esc(key)}" style="cursor:pointer;">
         <div class="li-main"><div class="li-code" style="font-size:14.5px;">${aberto?'▾':'▸'} ${esc(label)}</div></div>
-        <div class="li-side"><div class="li-weight">${fmtTon(peso)} kg</div><div class="li-desc">${items.length} vol.</div></div>
+        <div class="li-side"><div class="li-weight">${fmtPeso(peso)}</div><div class="li-desc">${items.length} vol.</div></div>
       </div>
       ${aberto ? items.map(v=>{
         const dias = ehNaoLocalizado ? diasSemVer(v) : null;
@@ -3179,7 +3188,7 @@ function renderRelatorioRegistrado(sess){
     const pesoTotal = pendentesBaixa.reduce((s,v)=>s+(v.quantidade||0),0);
     openSheet(`
       <h2 class="section-title" style="margin-top:0;color:var(--danger);">Dar baixa em ${pendentesBaixa.length} item(ns)?</h2>
-      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtTon(pesoTotal)} kg no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
+      <p class="hint" style="margin:0 0 14px;">Esses itens (${fmtPeso(pesoTotal)} no total) não foram encontrados nesta conferência. Ao confirmar, eles são marcados como <b>Baixado</b> — assumindo que já foram consumidos ou carregados desde a última vez que alguém bipou. Se algum reaparecer fisicamente depois, dá pra corrigir o status dele manualmente na tela de Estoque.</p>
       <button class="btn danger" id="conf-baixa-sim">Confirmar baixa</button>
       <button class="btn ghost" id="conf-baixa-nao" style="border:1px solid var(--border);">Cancelar</button>
     `);
