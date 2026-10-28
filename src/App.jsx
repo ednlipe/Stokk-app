@@ -1246,7 +1246,11 @@ function renderArmazemBreakdown(emEstoque){
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px;">
           <div style="font-size:${destaque?'14.5px':'13px'};font-weight:${destaque?'600':'400'};min-width:0;flex:1 1 0;">${cod==='—'?'Sem armazém':armazemChipHTML(cod)}</div>
+<<<<<<< HEAD
           <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtPeso(g.peso)} <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
+=======
+          <div style="font-family:var(--font-mono);font-size:${destaque?'14.5px':'12.5px'};white-space:nowrap;flex-shrink:0;">${fmtTon(g.peso)} kg <span class="li-desc" style="display:inline;">(${g.vol})</span></div>
+>>>>>>> 8eb119ca629959dd2173023ef5dd378d3fac353e
         </div>
         <div style="background:var(--surface-3);border-radius:3px;height:${destaque?'11px':'7px'};overflow:hidden;">
           <div style="width:${pct}%;height:100%;background:${barCor};"></div>
