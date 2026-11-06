@@ -11,6 +11,10 @@
   Por isso o conteúdo de colunas jsonb mantém as chaves como foram gravadas (ex.: `resultado.consumidoKg`).
 - **Tempo real:** cada coleção assinada abre um canal `postgres_changes` e relê a tabela inteira a cada evento (`refetch`).
   O botão **Atualizar** do dashboard força `db.refetchAll()`.
+- **Leitura com limite e casos antigos (v1.5.4):** quando uma leitura com `.limit(n)` volta cheia, `completarAntigos` (no adaptador,
+  cópia idêntica no desktop) busca à parte o que ainda vale e ficou de fora: em `ocorrencias`, as em aberto (`liberada_em is null`,
+  não anuladas); em `equipamento_locais`, o último local válido de cada equipamento que não apareceu na leitura. Sem isso, uma
+  manutenção aberta há muito tempo apareceria como "Operando". Só roda quando o limite é atingido; teste em `tests/completar_antigos.test.cjs`.
 - **Chave primária por coleção:** `PK = { volumes:'lote', produtos:'codigo', movimentos:'id', sessoes:'id' }`; as demais usam `id`.
 - **Estado global:** objeto `state` (volumes e produtos em `Map`, listas de movimentos, sessões e produções, view atual, usuário, filtros).
 - **Escritas de produção** passam por uma fila (`state.producaoFila`) para que uma gravação atrasada não sobrescreva outra.

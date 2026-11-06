@@ -3,7 +3,7 @@
 //   - "parada/manutenção aberta ou liberada" (montarOcorrencia): quem recebe, o texto, e as travas.
 // Rodar:  node tests/diesel_aviso.test.cjs      (Node 22.13+: tira os tipos do TypeScript; banco simulado)
 const fs = require('fs'), path = require('path'), assert = require('assert'), { stripTypeScriptTypes } = require('node:module');
-const src = fs.readFileSync(path.join(__dirname, '..', '..', 'supabase', 'functions', 'avisar-conferencias', 'index.ts'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'avisar-conferencias', 'index.ts'), 'utf8');
 const ini = src.indexOf('const MS_DIA'), fim = src.indexOf('Deno.serve(');
 assert(ini > 0 && fim > ini, 'bloco da Gestão não encontrado na Edge Function');
 const js = stripTypeScriptTypes(src.slice(ini, fim));

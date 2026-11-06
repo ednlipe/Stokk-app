@@ -427,6 +427,35 @@ function createSupabaseDB(){
       .on('postgres_changes', {event:'*', schema:'public', table}, ()=>{ refetch(table); })
       .subscribe();
   }
+  // Tabelas lidas com limite trazem só as linhas mais recentes. Quando o limite é atingido, o que ainda
+  // vale mas é antigo ficaria de fora: uma ocorrência em aberto antiga sumiria (o equipamento apareceria
+  // "Operando") e um equipamento sem local recente apareceria "sem local". Busca esses casos à parte.
+  // Mesmo código no desktop (public/desktop/index.html).
+  async function completarAntigos(table, data, ar, pkCol){
+    try{
+      const tem = new Set(data.map(r=>r[pkCol]));
+      const juntar = rows => (rows||[]).forEach(r=>{ if (!tem.has(r[pkCol])){ tem.add(r[pkCol]); data.push(r); } });
+      if (table==='ocorrencias'){
+        let q = sb.from('ocorrencias').select('*').is('liberada_em', null).eq('anulado', false);
+        if (ar) q = q.eq('area', ar);
+        const r = await q; if (r.error) throw r.error;
+        juntar(r.data);
+      } else if (table==='equipamento_locais'){
+        let qe = sb.from('equipamentos').select('id');
+        const are = areaDaTabela('equipamentos'); if (are) qe = qe.eq('area', are);
+        const re = await qe; if (re.error) throw re.error;
+        const comLocal = new Set(data.filter(l=>!l.anulado).map(l=>l.equipamento_id));
+        const faltam = (re.data||[]).map(e=>e.id).filter(id=>!comLocal.has(id));
+        const rs = await Promise.all(faltam.map(id=>{
+          let q = sb.from('equipamento_locais').select('*').eq('equipamento_id', id).eq('anulado', false)
+            .order('data_hora', {ascending:false}).order('timestamp', {ascending:false}).limit(1);
+          if (ar) q = q.eq('area', ar);
+          return q;
+        }));
+        rs.forEach(r=>{ if (r.error) throw r.error; juntar(r.data); });
+      }
+    }catch(err){ console.error('completarAntigos', table, err); }
+  }
   async function refetch(table, orderField, orderDir, limitN){
     // O Supabase devolve no máximo 1000 linhas por pedido. Para não perder volumes quando o
     // estoque passa disso, lemos em páginas de 1000 até acabar (ou até o limite pedido).
@@ -457,6 +486,7 @@ function createSupabaseDB(){
       if (table==='producoes'){ state.producoesErro = error.message || 'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
+    if (limitN && data.length >= limitN) await completarAntigos(table, data, ar, pkCol);
     if (table==='producoes') state.producoesErro = null;
     if (table==='ocorrencias') state.paradasErr = null;
     if (table==='equipamento_locais') state.locaisErr = null;

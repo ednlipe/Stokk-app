@@ -25,6 +25,10 @@
 ## 13.2 Pendências de Localização e lançamentos no desktop (v1.5.2 — nada testado em produção)
 
 - **v1.5.3 (desktop):** testar o "Modo parede" em tela cheia na TV/monitor real (tamanho das letras, quantidade de cartões que cabem sem rolar). Se houver muitos equipamentos, avaliar rolagem automática.
+- **Painel de parede (revisão do 1.5.3, ainda abertos):** não mostra quando foi a última leitura com sucesso (sem internet, a tela parece atualizada com dados velhos); sem Wake Lock (a TV pode dormir); a tela cheia se perde ao recarregar a página (falta `?parede=1`/modo quiosque); relógio e período usam o fuso do aparelho, não Brasília; o redesenho a cada 30 s reinicia a rolagem das tabelas fora do modo parede; parados ordenados por código, não por tempo parado.
+- **v1.5.4:** testar com o Supabase real que o painel e o app continuam mostrando ocorrências e locais (a busca extra `completarAntigos` só entra quando a leitura atinge o limite: 3.000 ocorrências / 5.000 locais).
+- **Tempo real relê a tabela inteira:** o evento do realtime chama `refetch(table)` sem o limite e a ordem da assinatura (app e desktop, `ensureChannel`). Cada abastecimento novo faz todo mundo reler a tabela `abastecimentos` inteira, e depois do primeiro evento o limite deixa de valer. Avaliar usar `fetchParams[table]` no evento (muda o comportamento de todas as áreas: testar com cuidado).
+- `tests/diesel_aviso.test.cjs` precisa de **Node 22.13+** (`stripTypeScriptTypes`). Com Node 20: `npx node@22 tests/diesel_aviso.test.cjs`.
 
 - Rodar `update_017_localizacao.sql` (depois do 016) e testar no uso real: o operador informa o local no celular, o supervisor vê no desktop e no app; correção de ocorrência em aberto; lançar abastecimento e cadastrar pelo desktop.
 - **Local é texto livre:** os nomes vão variar. Se a empresa preferir uma lista fixa de locais (pátio, frente, oficina…), é uma melhoria pequena (tabela de locais cadastrados pelo supervisor).

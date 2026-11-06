@@ -887,6 +887,42 @@ function createSupabaseDB(){
       .on('postgres_changes', {event:'*', schema:'public', table}, ()=>{ refetch(table); })
       .subscribe();
   }
+  // Tabelas lidas com limite trazem só as linhas mais recentes. Quando o limite é atingido, o que ainda
+  // vale mas é antigo ficaria de fora: uma ocorrência em aberto antiga sumiria (o equipamento apareceria
+  // "Operando") e um equipamento sem local recente apareceria "sem local". Busca esses casos à parte.
+  // Mesmo código no app (src/App.jsx).
+  async function completarAntigos(table, data, ar, pkCol){
+    try{
+      const tem = new Set(data.map(r=>r[pkCol]));
+      const juntar = rows => (rows||[]).forEach(r=>{ if (!tem.has(r[pkCol])){ tem.add(r[pkCol]); data.push(r); } });
+      if (table==='ocorrencias'){
+        let q = sb.from('ocorrencias').select('*').is('liberada_em', null).eq('anulado', false);
+        if (ar) q = q.eq('area', ar);
+        const r = await q; if (r.error) throw r.error;
+        juntar(r.data);
+      } else if (table==='equipamento_locais'){
+        let qe = sb.from('equipamentos').select('id');
+        const are = areaDaTabela('equipamentos'); if (are) qe = qe.eq('area', are);
+        const re = await qe; if (re.error) throw re.error;
+        const comLocal = new Set(data.filter(l=>!l.anulado).map(l=>l.equipamento_id));
+        const faltam = (re.data||[]).map(e=>e.id).filter(id=>!comLocal.has(id));
+        const rs = await Promise.all(faltam.map(id=>{
+          let q = sb.from('equipamento_locais').select('*').eq('equipamento_id', id).eq('anulado', false)
+            .order('data_hora', {ascending:false}).order('timestamp', {ascending:false}).limit(1);
+          if (ar) q = q.eq('area', ar);
+          return q;
+        }));
+        rs.forEach(r=>{ if (r.error) throw r.error; juntar(r.data); });
+      }
+    }catch(err){ console.error('completarAntigos', table, err); }
+  }
+  // relê só as tabelas pedidas (usado pelo painel de parede, que não precisa reler tudo a cada minuto)
+  async function refetchTabelas(nomes){
+    await Promise.all(nomes.filter(t=>fetchParams[t]).map(t=>{
+      const p = fetchParams[t];
+      return refetch(t, p.orderField, p.orderDir, p.limitN);
+    }));
+  }
   async function refetch(table, orderField, orderDir, limitN){
     // O Supabase devolve no máximo 1000 linhas por pedido: lemos em páginas até acabar (ou até o limite pedido).
     const PAGINA = 1000;
@@ -914,6 +950,7 @@ function createSupabaseDB(){
       if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
+    if (limitN && data.length >= limitN) await completarAntigos(table, data, ar, pkCol);
     if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
     if (table==='ocorrencias') state.paradasErr = null;
     if (table==='equipamento_locais') state.locaisErr = null;
@@ -978,7 +1015,7 @@ function createSupabaseDB(){
       return refetch(t, p.orderField, p.orderDir, p.limitN);
     }));
   }
-  return { collection, refetchAll };
+  return { collection, refetchAll, refetchTabelas };
 }
 function createBrowserDownloads(){
   return {
@@ -1057,7 +1094,7 @@ async function onAuthed(user){
   subscribeData();
   setView(state.area === 'gestao' ? 'diesel' : 'dashboard');
 }
-const APP_VERSAO = '1.5.3 · 06/11';
+const APP_VERSAO = '1.5.4 · 06/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -2421,9 +2458,10 @@ function locExportar(){
     }
   });
   document.addEventListener('fullscreenchange', ()=>{ state.locHtml = ''; renderLocais(); });
-  // relógio e "há quanto tempo" andam sozinhos; no painel aberto, relê o banco a cada minuto
+  // relógio e "há quanto tempo" andam sozinhos; no painel aberto, relê a cada minuto só o que o painel mostra
+  // (ocorrências e locais), em vez do banco todo (abastecimentos etc.), para não pesar no Supabase numa TV ligada o dia todo
   setInterval(()=>{ if (state.view==='locais') renderLocais(); }, 30000);
-  setInterval(async ()=>{ if (state.view==='locais' && db && db.refetchAll) { try{ await db.refetchAll(); }catch(e){} } }, 60000);
+  setInterval(async ()=>{ if (state.view==='locais' && db && db.refetchTabelas) { try{ await db.refetchTabelas(['ocorrencias','equipamento_locais']); }catch(e){} } }, 60000);
 })();
 function renderDiesel(){
   const body = document.getElementById('dsl-body'); if (!body) return;
