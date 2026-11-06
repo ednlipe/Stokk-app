@@ -35,6 +35,13 @@ com o mesmo adaptador de dados e as mesmas políticas RLS. Visual de menu latera
 "Iniciar conferência" abre o popup Padrão/Cega; o nome opcional da cega é digitado no próprio popup (`#cega-nome-popup`).
 Mesma regra do app (`regras-de-negocio.md` §9.3.1). No desktop o leitor (USB ou Bluetooth em modo teclado) digita no campo `#cega-input` da própria tela de Conferência; a lista fica abaixo. **Status:** testado em navegador com API simulada.
 
+### Abastecimento e Localização (desktop, v1.5.3)
+Na área **Veículos Móveis** (`gestao`) o desktop tem **duas abas**: **Abastecimento** (antes "Diesel": filtros, totais, gráficos, tanques, compras, alertas, últimos abastecimentos, botões + Abastecimento / + Tanque / + Equipamento, Excel de abastecimento) e **Localização** (`renderLocais`, `view-locais`).
+- **Localização:** cabeçalho com contadores (Operando, Parados, Em manutenção, Sem local) e relógio; um cartão grande por equipamento ativo (local atual, desde quando e quem informou, motivo e tempo da parada; aviso se o local está sem atualização há mais de 24 h); ordenação: manutenção, parado, operando. Atualiza a tela a cada 30 s e relê o banco a cada 60 s (além do realtime).
+- **Modo parede:** botão "Modo parede (tela cheia)" põe a aba em tela cheia (`requestFullscreen`), com letras maiores e sem botões/tabelas (Esc sai) — feito para TV/monitor.
+- Fora do modo parede a aba traz os botões **+ Ocorrência** / **Atualizar local** / **+ Equipamento**, o bloco de paradas e manutenção (liberar, corrigir, detalhes) e a tabela "Equipamentos e onde estão", com período próprio (`state.locPer/locMes/locAno`, independente do da aba Abastecimento) e Excel próprio (abas Paradas e Local atual).
+- Funções: `renderLocais`, `dslCartaoParede`, `dslSituacaoEquip`, `locPeriodo`, `locExportar`. **Status:** testado no navegador com dados simulados (abas, cartões, salvar local, exportar); **a tela cheia real (TV) não foi testada** (navegador de teste não abre tela cheia).
+
 ### Painel de Diesel (desktop, v1.5.0)
 Aba **Diesel**, só na área **Gestão** (as outras áreas não a mostram; na Gestão ela é a única aba). **Só leitura:** os lançamentos são feitos no app. Mesmo núcleo de cálculo do app (bloco "DIESEL — núcleo", cópia idêntica; `tests/diesel_core.test.cjs` falha se divergirem).
 - **Filtros:** período (Mês com setas, 30 dias, Ano), equipamento e tipo.

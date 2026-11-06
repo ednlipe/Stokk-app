@@ -24,6 +24,8 @@
 
 ## 13.2 Pendências de Localização e lançamentos no desktop (v1.5.2 — nada testado em produção)
 
+- **v1.5.3 (desktop):** testar o "Modo parede" em tela cheia na TV/monitor real (tamanho das letras, quantidade de cartões que cabem sem rolar). Se houver muitos equipamentos, avaliar rolagem automática.
+
 - Rodar `update_017_localizacao.sql` (depois do 016) e testar no uso real: o operador informa o local no celular, o supervisor vê no desktop e no app; correção de ocorrência em aberto; lançar abastecimento e cadastrar pelo desktop.
 - **Local é texto livre:** os nomes vão variar. Se a empresa preferir uma lista fixa de locais (pátio, frente, oficina…), é uma melhoria pequena (tabela de locais cadastrados pelo supervisor).
 - A localização é informada à mão e pode ficar desatualizada; o app mostra "há quanto tempo" para ajudar. Rastreio automático (celular corporativo/GPS) continua só como ideia.
