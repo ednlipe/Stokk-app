@@ -83,6 +83,27 @@ Lista dos movimentos (até 200 na tela, 300 carregados) com filtro por tipo e ex
 
 ---
 
+### 7.8 Gestão · Diesel (ambiente `gestao`, v1.5.0)
+Aparece só para quem tem a área **Gestão** (`usuario_areas`). Nessa área o menu de baixo troca para **Resumo · Abastecer · Tanque · Equipamentos** (`esconderAbasPorArea`, `ABAS_GESTAO`); as outras áreas não veem essas abas. Telas `#view-gdash`, `#view-gabast`, `#view-gtanque`, `#view-gequip`; em `subscribeData` a área Gestão assina só as 5 tabelas do diesel (`subscribeDiesel`). Regras de cálculo: `regras-de-negocio.md` §9.5; tabelas: `banco.md` §4.3.1.
+- **Resumo:** saldo, custo médio e "dura cerca de N dias" por tanque; equipamentos sem abastecer; litros/abastecimentos/gasto/custo médio do mês; últimos abastecimentos; exportar (supervisor).
+- **Abastecer:** equipamento, tanque, horímetro ou km (o rótulo muda), litros, data/hora, "troca de medidor", observação. Mostra o último valor, o consumo desde o último (L/h ou km/L) comparado com a média, e o custo estimado. Bloqueia medidor menor que o anterior; pergunta antes de registrar se o medidor andou demais ou se os litros passam do saldo do tanque. Histórico com filtro; supervisor **anula** (com motivo).
+- **Tanque:** saldo, capacidade, mínimo, entradas/saídas. Supervisor: nova compra (preço por litro **ou** valor total), conferir com a régua, novo/editar tanque, anular, exportar compras.
+- **Equipamentos:** lista com último abastecimento e consumo médio; toque abre o detalhe (30 dias, gasto, últimos abastecimentos). Supervisor: cadastrar/editar (código, nome, tipo, unidade h/km, áreas de uso, aviso após N dias, só dias úteis, aviso ligado/desligado, ativo). A unidade não muda depois que há abastecimento.
+- **Gravação:** as tabelas do diesel só aceitam INSERT (sem "upsert", que exigiria UPDATE em todas as colunas); correção = anular e lançar de novo. Se o `update_015` não foi rodado, as telas mostram o aviso em vez de erros.
+- Funções (prefixo `dsl`/`gabast`/`g`): núcleo `dslTanque`, `dslConsumo`, `dslSemAbastecer`, `dslResumo`…; telas `renderGDash`, `gabastMontar`/`gabastRegistrar`, `renderGTanque`, `renderGEquip`, `gCompraSheet`, `gReguaSheet`, `gTanqueForm`, `gEquipForm`, `gAnularSheet`.
+- **Status:** testado no navegador com Supabase simulado e nos testes automáticos; **não testado em produção nem no APK**.
+
+### 7.9 Gestão · Paradas e manutenção (v1.5.1)
+Quinta aba da Gestão (**Paradas**, `#view-gmanut`, `ABAS_GESTAO` inclui `gmanut`). Regras: `regras-de-negocio.md` §9.6; tabela: `banco.md` §4.3.2.
+- **Em aberto:** cartões vermelhos com equipamento, categoria, motivo, descrição, quem abriu e há quanto tempo está parado. Supervisor vê **Liberar equipamento**; os demais veem "Quem libera é o supervisor".
+- **+ Abrir ocorrência:** equipamento (só os que não têm ocorrência aberta), *Manutenção* ou *Parada*, motivo (a lista muda com a categoria; `MANUT_MOTIVOS`), descrição e data/hora. Salva e avisa os supervisores (`gManutAvisar`, chama a Edge Function tipo `ocorrencia`; se falhar, só registra no console).
+- **Liberar (supervisor):** por que foi liberado (`MANUT_LIBERACAO`), o que foi feito, quem pegou, data/hora (não antes da abertura nem no futuro). Depois de gravar o app confere se a liberação valeu; senão avisa que falta permissão.
+- **Mês** (ocorrências, horas paradas, tempo médio), **Histórico** (liberadas e anuladas; toque abre o detalhe completo, com **Anular** para o supervisor) e **Exportar paradas (Excel)**.
+- **Em outras telas:** Resumo mostra o cartão **Parados agora**; Equipamentos mostra a etiqueta "em manutenção"/"parado"; Abastecer avisa se o equipamento está com ocorrência aberta.
+- Se o `update_016` não foi rodado, só esta aba mostra o aviso (`state.paradasErr`); o diesel continua funcionando.
+- Funções: `renderGManut`, `gManutCard`, `gManutLinha`, `gManutAbrirSheet`, `gManutLiberarSheet`, `gManutDetalhe`, `gManutExportar`, `gManutAvisar`. Tabela assinada em `subscribeDiesel` (`ocorrencias`, por `abertaEm`).
+- **Status:** testado no navegador com Supabase simulado (supervisor e operador) e nos testes automáticos; **não testado em produção, no APK nem com push real**.
+
 ## 8. Leitura de etiquetas e leitores
 
 ### 8.1 Formato da etiqueta

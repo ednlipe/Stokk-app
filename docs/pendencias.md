@@ -3,6 +3,25 @@
 > 
 > Índice geral: [`docs/README.md`](README.md). Regra: mudou algo desta área, atualize ESTE arquivo e uma linha em [`historico.md`](historico.md).
 
+## 13. Pendências do Diesel (v1.5.0 — nada disso foi testado em produção)
+
+- **Antes de tudo:** o 1.5.0 ainda não foi aplicado; aplique 015 e 016 juntos (ordem em `deploy.md`).
+- Rodar `update_015_diesel.sql`, liberar a área Gestão em `usuario_areas`, publicar a Edge Function e criar o cron do tipo `diesel` (ordem em `deploy.md`).
+- Testar no uso real: cadastro de tanque/equipamentos, compra, abastecimento (máquina e caminhão), anulação, conferência da régua, painel do desktop e o push de "sem abastecer".
+- Confirmar com a empresa: quantos tanques e equipamentos; quem lança abastecimento e compra; se o horímetro do caminhão também importa; prazo de guarda dos registros; se a empresa quer cópia dos dados em outro lugar (Excel online/Power Automate, ver conversa de 01/11).
+- Limite conhecido: o consumo assume que cada abastecimento enche o equipamento; abastecimento parcial distorce o L/h e o km/L daquele intervalo.
+- Compra lançada com data antiga não recalcula o custo dos abastecimentos já gravados (de propósito).
+- `schema_atual.sql` (foto do banco) ainda não inclui as tabelas do diesel: regenerar depois de rodar o `update_015` em produção.
+- Backup: plano gratuito sem backup automático; registros de diesel/segurança merecem backup semanal manual.
+
+## 13.1 Pendências de Paradas e manutenção (v1.5.1 — nada testado em produção)
+
+- Rodar `update_016_paradas.sql` (depois do 015), publicar a Edge Function (tipo `ocorrencia`) e testar o aviso real no celular: abrir como operador → supervisor recebe; liberar → supervisor e quem abriu recebem.
+- Confirmar com a empresa: a lista de motivos (`MANUT_MOTIVOS` e `MANUT_LIBERACAO` em `src/App.jsx`) e se o **operador/responsável** também deve poder liberar (hoje só o supervisor libera; mudar exige alterar a política `ocorrencias_update` e as colunas liberadas).
+- Quem libera digita à mão "quem pegou o equipamento" (texto livre). Se quiser escolher da lista de pessoas, é uma melhoria futura.
+- Se o app ficar sem internet ao abrir/liberar, a ocorrência não é gravada (o app mostra o erro); o aviso push falho não é reenviado.
+- Sem foto/anexo na ocorrência e sem ligação com o checklist de segurança (ideia futura).
+
 ## 14. Limitações conhecidas
 
 1. **Limite de 1000 linhas** por consulta do Supabase: `volumes` e `produtos` são lidos sem paginação (hoje ~200 volumes; vai quebrar ao passar de 1000). Produções são lidas com `limit(1000)`.

@@ -40,6 +40,26 @@
 
 Itens de `consumidos`/`produzidos` (chaves em camelCase): `lote`, `corrida`, `pesoKg`, `produtoCodigo`, `produtoDescricao`, `manual`, `divergente`, `em`.
 
+### 4.3.1 Tabelas do Diesel (`update_015`)
+
+| Tabela | Conteúdo |
+|---|---|
+| `equipamentos` | `codigo` (único por área, sem diferenciar maiúscula), `nome`, `tipo` (`maquina`/`caminhao`/`outro`), `medidor` (`h` horímetro ou `km` odômetro), `area_uso` (text[]: `trefila`, `planta1`), `dias_alerta` (1–60, padrão 2), `alerta_dias_uteis`, `alerta_ativo`, `ativo`, `criado_em`. Nunca se apaga: desativa com `ativo = false`. |
+| `tanques` | `nome`, `capacidade_l`, `minimo_l`, `ativo`. |
+| `tanque_entradas` | Compras/descargas: `tanque_id`, `data_hora`, `litros`, `preco_litro`, `valor_total`, `fornecedor`, `nota`, `obs`. |
+| `abastecimentos` | Saídas: `equipamento_id`, `equipamento_codigo` (cópia), `tanque_id`, `data_hora`, `medidor` (leitura do painel), `litros`, `custo_litro` e `custo_total` (custo médio do tanque no momento; nulos se ainda não havia compra), `troca_medidor`, `obs`. |
+| `tanque_medicoes` | Conferência com a régua: `litros_medidos`, `saldo_app` (o que o app calculava), `diferenca`, `ajustar` (se a diferença passa a valer no saldo), `obs`. |
+
+As três tabelas de lançamento (`tanque_entradas`, `abastecimentos`, `tanque_medicoes`) têm `anulado`, `anulado_motivo`, `anulado_por`, `anulado_em`. Ninguém apaga nem edita: o supervisor **anula** (o gatilho `diesel_proteger_anulacao` exige o motivo, grava quem/quando e não deixa desfazer). O **saldo do tanque e o custo médio não são gravados**: o app calcula (ver `regras-de-negocio.md` §9.5).
+
+### 4.3.2 Paradas e manutenção (`update_016`)
+
+| Tabela | Conteúdo |
+|---|---|
+| `ocorrencias` | Uma linha por parada/manutenção. **Abertura** (qualquer conta ativa da Gestão): `equipamento_id`, `equipamento_codigo` (cópia), `categoria` (`manutencao`/`parada`), `motivo`, `descricao`, `aberta_em`, `aberta_por`, `aberta_por_nome`. **Liberação** (só supervisor, na mesma linha): `liberada_em`, `motivo_liberacao`, `servico_realizado` (o que foi feito), `recebido_por` (quem pegou o equipamento), `liberada_por_nome`; o gatilho grava `liberada_por` e `liberada_registro_em`. Avisos push: `aviso_abertura_em`, `aviso_liberacao_em` (só a Edge Function grava). Anulação: `anulado`, `anulado_motivo`, `anulado_por`, `anulado_em`. Em aberto = `liberada_em is null and not anulado`. |
+
+Travas no banco: **uma ocorrência em aberto por equipamento** (índice único parcial `ocorrencias_uma_aberta_uk`); a abertura nasce em aberto, em nome de quem abre, com data não futura; a liberação não pode ser antes da abertura nem no futuro e exige serviço, quem pegou e motivo; depois de liberada ou anulada a linha não muda mais (gatilho `ocorrencia_proteger`; única exceção: a marca de aviso enviado). Ninguém apaga: supervisor anula com motivo (a ocorrência anulada libera o equipamento para nova abertura). Leitura por área (RLS); `anon` sem acesso. View `bi.manutencao_ocorrencias` (horas paradas, situação).
+
 ### 4.4 Migrações (rodar no SQL Editor, nesta ordem)
 | Arquivo | O que faz |
 |---|---|
@@ -57,6 +77,8 @@ Itens de `consumidos`/`produzidos` (chaves em camelCase): `lote`, `corrida`, `pe
 | `update_012_areas.sql` | **Áreas (ambientes):** tabela `areas` (`trefila` = Trefilaria, `planta1` = Planta 1 (laminação)); `profiles.area`; coluna `area` (NOT NULL, padrão `area_padrao()`) em `volumes`, `movimentos`, `sessoes` e `producoes`; funções `area_do_usuario()` e `area_padrao()`; RLS refeita filtrando por área; `proteger_profiles()` bloqueia mudar `area` pelo app; tabela `armazens_area`; views `bi.*` ganham `area` e `area_nome` no fim, mais `bi.areas` e `bi.armazens_area`. Idempotente; testada em Postgres local. |
 | `update_013_multiarea.sql` | **Várias áreas por usuário:** tabela `usuario_areas(user_id, area)` (RLS: só lê as próprias linhas; sem escrita pelo app), função `areas_do_usuario()` (text[]), políticas de `volumes`/`movimentos`/`sessoes`/`producoes`/`armazens_area` recriadas com `area = any ((select public.areas_do_usuario())::text[])` (o cast `::text[]` é obrigatório) e gatilho `proteger_area_registro` (`trg_proteger_area`) que impede mudar a `area` de um registro pelo app. Rodar depois do 012. **Status:** testado só em Postgres local. |
 | `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
+| `update_016_paradas.sql` | **Gestão / Paradas e manutenção:** tabela `ocorrencias` (RLS por área, abertura por qualquer conta da Gestão, liberação e anulação só do supervisor), uma em aberto por equipamento, gatilho `ocorrencia_proteger`, Realtime, view `bi.manutencao_ocorrencias`. Rodar depois do 015. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |
+| `update_015_diesel.sql` | **Gestão / Diesel:** área `gestao`; tabelas `equipamentos`, `tanques`, `tanque_entradas`, `abastecimentos`, `tanque_medicoes` (todas com `area` e RLS por área), gatilhos (medidor não diminui; anulação só com motivo), views `bi.diesel_abastecimentos`, `bi.diesel_entradas`, `bi.diesel_equipamentos`. Rodar depois do 014. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas); não rodado em produção.** |
 | `update_011_push.sql` | Push: `push_tokens`, `push_avisos`, função `registrar_push_token()`; bloco comentado com o agendamento `pg_cron`. Usada pela Edge Function `supabase/functions/avisar-conferencias`. |
 
 Todas são idempotentes (podem rodar mais de uma vez), exceto `schema.sql` na primeira execução.

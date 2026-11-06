@@ -43,3 +43,27 @@ Conferência ao contrário: **primeiro bipa tudo, depois compara com a planilha 
 - **Áreas (desde 2026-10-20, `update_012`):** o app tem ambientes separados por área: **Trefilaria** (`trefila`, tudo que existia antes) e **Planta 1 (laminação)** (`planta1`). Cada usuário pertence a uma só área e só vê e grava dados dela; supervisor e operador valem dentro da própria área. Os armazéns são por área (`armazens_area`; os da Planta 1 ainda serão cadastrados). O número do lote é único no banco inteiro. Produtos são compartilhados. Quem precisa ver todas as áreas usa o Power BI.
 
 ---
+
+### 9.5 Diesel (ambiente Gestão, v1.5.0)
+Núcleo em `src/App.jsx` (bloco "DIESEL — núcleo", cópia idêntica em `public/desktop/index.html`) e testes em `tests/diesel_core.test.cjs` (o teste falha se as duas cópias divergirem) e `tests/diesel_aviso.test.cjs` (aviso da Edge Function).
+- **Lançamento anulado nunca entra em conta nenhuma.**
+- **Saldo do tanque** = entradas − abastecimentos + ajustes da régua (só conferência com `ajustar = true`).
+- **Custo médio ponderado:** a cada compra, novo custo = (saldo × custo + litros × preço) ÷ (saldo + litros). Saída e ajuste não mudam o custo. Saldo negativo conta como zero na média. Sem nenhuma compra, o custo é nulo ("sem custo").
+- **Cada abastecimento guarda o custo médio do momento** (`custo_litro`, `custo_total`): o gasto histórico não muda quando o preço do diesel muda, e uma compra lançada com data antiga **não** recalcula abastecimentos já gravados.
+- **Medidor:** horímetro/km não pode diminuir (app e gatilho no banco), salvo "troca de medidor", que também não gera consumo. Aviso (não bloqueia) se for igual ao anterior ou se saltar mais de 400 h / 3.000 km.
+- **Consumo:** cada abastecimento repõe o que o equipamento gastou desde o anterior (assume tanque do equipamento cheio nos dois). Máquinas em **L/h** = litros ÷ horas; caminhão em **km/L** = km ÷ litros. A média do período é **soma dos litros ÷ soma das horas** (nunca média de médias). O 1º abastecimento do equipamento não gera consumo.
+- **Consumo fora do normal:** o último intervalo é marcado se for mais de 50% pior que a média dos anteriores (precisa de pelo menos 3 intervalos antes).
+- **Sem abastecer:** conta dias de Brasília entre o último abastecimento válido (ou o cadastro, se nunca abasteceu) e hoje; alerta quando **passa** de `dias_alerta` (padrão 2: avisa no 3º dia). Com `alerta_dias_uteis` conta só segunda a sexta. Equipamento inativo ou com `alerta_ativo = false` não entra.
+- **Dias que o diesel dura** = saldo ÷ média diária de litros dos últimos 14 dias (acima de 1 ano mostra "mais de 1 ano").
+- **Quem pode:** qualquer pessoa ativa da área Gestão registra abastecimento; só **supervisor** cadastra equipamentos/tanques, registra compra e conferência da régua e anula lançamentos.
+- **Conferência da régua:** guarda litros medidos × saldo do app. Sem marcar "ajustar", é só registro; marcando, a diferença passa a valer no saldo.
+
+### 9.6 Paradas e manutenção (ambiente Gestão, v1.5.1)
+Núcleo `dslOcorrenciaAberta`, `dslOcorrenciaHoras`, `dslParadasResumo` (mesmo bloco "DIESEL — núcleo", cópia no desktop) e testes em `tests/diesel_core.test.cjs`.
+- **Ciclo:** qualquer pessoa da Gestão **abre** a ocorrência (equipamento, categoria *Manutenção* ou *Parada*, motivo da lista, descrição, data/hora que parou); ela fica **em aberto**. Só o **supervisor libera**, na mesma ocorrência: motivo da liberação, o que foi feito, quem pegou o equipamento e data/hora (a conta que liberou fica registrada). Os três textos são obrigatórios.
+- **Um equipamento tem no máximo uma ocorrência em aberto.** Não dá para abrir outra enquanto não liberar ou anular.
+- **Nada se apaga nem se edita:** liberada ou anulada, a ocorrência fica como está; para corrigir, o supervisor **anula** (com motivo) e abre de novo. Ocorrência anulada não entra em nenhuma conta.
+- **Horas paradas** = liberação − abertura (se ainda aberta, até agora). No painel, o período filtra pela data de **abertura**; tempo médio = só das liberadas.
+- **Equipamento com ocorrência em aberto não gera "sem abastecer"** (app, desktop e aviso push); o app avisa na tela de Abastecer que ele está parado, mas não bloqueia o lançamento.
+- **Aviso push:** ao abrir, os supervisores da área recebem na hora (menos quem abriu); ao liberar, os supervisores e quem abriu (menos quem liberou), com o que foi feito, quem pegou e o tempo parado. Se o aviso falhar, a ocorrência já está salva. Cada aviso sai uma vez só.
+

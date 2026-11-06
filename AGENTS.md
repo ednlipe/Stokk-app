@@ -9,10 +9,10 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 ## Mapa do projeto
 | Parte | Onde |
 |---|---|
-| App (telas e regras) | `src/App.jsx` |
-| Site desktop (mesmas regras do app) | `public/desktop/index.html` |
-| Android / Capacitor | `android/` (versão em `build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…014_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
+| App (telas e regras) | `stokk-vite/src/App.jsx` |
+| Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
+| Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
+| Banco | `schema.sql` + `update_001…016_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 
@@ -23,6 +23,8 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Não enfraqueça a segurança (RLS).** Contas novas nascem bloqueadas (`profiles.ativo=false`); `role` e `ativo` só mudam pelo painel do Supabase. Veja `update_008_seguranca.sql` e `docs/seguranca.md`.
 - **Áreas (update_012 + 013):** `trefila` e `planta1`. Uma pessoa pode ter várias áreas (`usuario_areas` + `profiles.area` principal); `volumes`, `movimentos`, `sessoes` e `producoes` têm `area` e a RLS filtra com `area = any ((select public.areas_do_usuario())::text[])` (o cast é obrigatório). Não reescreva políticas sem esse filtro. `volumes.lote` é único entre áreas; `role` vale para todas as áreas; `produtos` é compartilhado. O Power BI vê todas as áreas.
 - **Contagem cega (update_014):** a etiqueta é lida por **posição** (volume 8 + corrida 6 + peso 4 + código do produto terminado na bitola + peças); o Volume da etiqueta = Lote do Protheus; a planilha vem em toneladas. Núcleo e testes em `src/App.jsx` / `tests/cega_core.test.cjs`; mesma cópia no desktop. Veja `docs/regras-de-negocio.md` §9.3.1.
+- **Gestão / Diesel (update_015):** área `gestao` com abas próprias (equipamentos, tanque, abastecimentos). Tabelas só com INSERT (nada se apaga ou edita: supervisor **anula** com motivo); saldo e custo médio são calculados no app, não gravados. Núcleo `dsl*` em `src/App.jsx` e cópia idêntica no desktop; `tests/diesel_core.test.cjs` confere as duas. Veja `docs/regras-de-negocio.md` §9.5.
+- **Paradas e manutenção (update_016):** tabela `ocorrencias`; qualquer conta da Gestão abre, só o supervisor libera/anula; uma em aberto por equipamento; nada se apaga. Núcleo `dslOcorrencia*`/`dslParadasResumo` (mesmo bloco do diesel). Veja `docs/regras-de-negocio.md` §9.6.
 - **Todo peso está em kg** (`volumes.quantidade`, `movimentos.quantidade`, produção). O Power BI tem `quantidade_kg` e `quantidade_ton`.
 - **Rendimento metálico = soma produzida ÷ soma consumida** (nunca média de percentuais). Cor pelo valor com 1 casa decimal: ≥ 99 verde, ≥ 98 amarelo, abaixo vermelho.
 - **Turnos:** 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20.
@@ -31,10 +33,10 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 
 ## Versão do app
 - Rótulo na tela vem de `package.json` (`version`) + carimbo da build. No desktop, a constante `APP_VERSAO` em `index.html`.
-- Cada APK novo precisa subir `versionCode` e `versionName` em `android/app/build.gradle`.
+- Cada APK novo precisa subir `versionCode` e `versionName` em `stokk-vite/android/app/build.gradle`.
 
 ## Notificações push (resumo)
-- Uma Edge Function atende 3 tipos pelo corpo `{"tipo": "conferencia" | "inventario" | "rendimento"}`, cada um com seu cron. Detalhes e horários em `docs/deploy.md`.
+- Uma Edge Function atende, pelo corpo `{"tipo": ...}`, 4 tipos com cron (`conferencia`, `inventario`, `rendimento`, `diesel`) e o tipo `ocorrencia`, que **não** usa cron: o app chama com o login do usuário ao abrir/liberar uma parada. Detalhes e horários em `docs/deploy.md`.
 - O segredo `CRON_SECRET` da função tem que ser idêntico ao `x-cron-secret` escrito nos crons; se diferir, a resposta é 403 "proibido" (veja `net._http_response`).
 
 ## Antes de entregar

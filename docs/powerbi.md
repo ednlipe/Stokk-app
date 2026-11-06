@@ -77,3 +77,9 @@ Teste em 2026-10-09: 202 volumes e 2.358,263 t no estoque (~11,7 t/volume). Conf
 
 ### Áreas (2026-10-20, update_012)
 As views `bi.estoque`, `bi.movimentos`, `bi.conferencias`, `bi.producoes`, `bi.producao_itens` e `bi.rendimento_turno` ganharam as colunas `area` (id: `trefila`/`planta1`) e `area_nome` no fim; `bi.rendimento_turno` agora também agrupa por área. Novas: `bi.areas` e `bi.armazens_area`. O `powerbi_leitor` vê **todas** as áreas, então os relatórios atuais passam a somar Trefilaria + Planta 1 até filtrarem por `area_nome`. **Ação no Power BI:** atualizar o modelo/consulta das tabelas, criar uma segmentação por `area_nome` (sincronizada entre as 3 páginas) e, se quiser, uma dimensão a partir de `bi.areas`/`bi.armazens_area` (os armazéns da Planta 1 ainda serão cadastrados em `armazens_area`). Salvar com Ctrl+S. **Status:** não aplicado no `.pbix`.
+
+### Diesel (2026-11-05, update_015)
+Views novas em `bi.*` (só lançamentos válidos, horário de Brasília): `diesel_abastecimentos` (data, equipamento, tipo, unidade, leitura do medidor, litros, `custo_litro`, `custo_total`, tanque, usuário), `diesel_entradas` (compras: litros, preço, total, fornecedor, nota) e `diesel_equipamentos`. O saldo do tanque **não** é gravado (é calculado no app); no Power BI some entradas − abastecimentos. Consumo (L/h, km/L) e o aviso de dias sem abastecer também são calculados no app, não nas views. **Status:** não testado no Power BI.
+
+### Paradas e manutenção (2026-11-05, update_016)
+View `bi.manutencao_ocorrencias` (só ocorrências não anuladas, horário de Brasília): equipamento, nome, tipo, categoria, motivo, descrição, abertura (data/hora e quem), liberação (data/hora, motivo, o que foi feito, quem pegou, quem registrou), `situacao` (Em aberto/Liberada) e `horas_parado` (se aberta, até agora). **Status:** não testado no Power BI.

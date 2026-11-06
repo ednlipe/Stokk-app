@@ -1,6 +1,7 @@
 // Edge Function de notificações push. Cada TIPO tem o seu próprio agendamento (pg_cron) e chama
-// a função com o corpo {"tipo":"conferencia"|"inventario"|"rendimento"}. O horário vem do cron
-// (Brasília = UTC-3). Ver docs/deploy.md.
+// a função com o corpo {"tipo":"conferencia"|"inventario"|"rendimento"|"diesel"}. O horário vem do cron
+// (Brasília = UTC-3). O tipo "ocorrencia" é diferente: quem chama é o próprio app (login do usuário, sem cron),
+// logo depois de abrir ou liberar uma parada/manutenção. Ver docs/deploy.md.
 // Segredos necessários (Edge Functions › Secrets):
 //   FCM_SERVICE_ACCOUNT  = conteúdo do JSON da conta de serviço do Firebase
 //   CRON_SECRET          = texto qualquer, igual ao usado no agendamento
@@ -159,21 +160,123 @@ async function montarRendimento(): Promise<{ msgs: Map<string, Msg>; total: numb
   return { msgs, total: baixas.length };
 }
 
-Deno.serve(async (req) => {
-  if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('proibido', { status: 403 });
+// ---- tipo 4: equipamentos sem abastecer há mais dias que o prazo (supervisores da área Gestão) ----
+// Mesma regra do app (dslSemAbastecer em src/App.jsx): conta dias de Brasília entre o último abastecimento válido
+// (ou o cadastro, se nunca abasteceu) e hoje; avisa quando passa do prazo do equipamento (dias_alerta);
+// com alerta_dias_uteis só conta segunda a sexta. Equipamento inativo ou com alerta desligado não entra.
+const MS_DIA = 86400000;
+const diaSP = (t: number) => new Date(t - 3 * 3600000).toISOString().slice(0, 10);
+function diasEntre(deT: number, ateT: number, uteis: boolean): number {
+  const a = Date.parse(diaSP(deT) + 'T00:00:00Z'), b = Date.parse(diaSP(ateT) + 'T00:00:00Z');
+  if (b <= a) return 0;
+  if (!uteis) return Math.round((b - a) / MS_DIA);
+  let n = 0;
+  for (let t = a + MS_DIA; t <= b; t += MS_DIA) { const w = new Date(t).getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+async function montarDiesel(): Promise<{ msgs: Map<string, Msg>; total: number }> {
+  const { data: eqs, error } = await sb.from('equipamentos')
+    .select('id, codigo, nome, dias_alerta, alerta_dias_uteis, criado_em, area').eq('ativo', true).eq('alerta_ativo', true);
+  if (error) throw new Error(error.message);
+  const msgs = new Map<string, Msg>();
+  if (!(eqs ?? []).length) return { msgs, total: 0 };
+  const desde = new Date(Date.now() - 70 * MS_DIA).toISOString(); // o prazo máximo é 60 dias
+  const { data: abs, error: e2 } = await sb.from('abastecimentos').select('equipamento_id, data_hora')
+    .eq('anulado', false).gte('data_hora', desde).order('data_hora', { ascending: false }).limit(20000);
+  if (e2) throw new Error(e2.message);
+  const ult = new Map<string, number>();
+  for (const a of abs ?? []) if (!ult.has(a.equipamento_id)) ult.set(a.equipamento_id, new Date(a.data_hora).getTime());
+  const agora = Date.now();
+  // equipamento parado/em manutenção (ocorrência em aberto) não é "falta de abastecimento". Se o update_016 ainda não
+  // foi rodado, a consulta dá erro e nada é ignorado.
+  const { data: abertas } = await sb.from('ocorrencias').select('equipamento_id').is('liberada_em', null).eq('anulado', false);
+  const emOcorrencia = new Set<string>((abertas ?? []).map((o: any) => o.equipamento_id));
+  const paradas: { e: any; dias: number }[] = [];
+  for (const e of eqs ?? []) {
+    if (emOcorrencia.has(e.id)) continue;
+    const base = ult.get(e.id) ?? new Date(e.criado_em).getTime();
+    const dias = diasEntre(base, agora, !!e.alerta_dias_uteis);
+    if (dias > (Number(e.dias_alerta) || 2)) paradas.push({ e, dias });
+  }
+  if (!paradas.length) return { msgs, total: 0 };
+  paradas.sort((a, b) => b.dias - a.dias);
+  const { sups } = await areasEsupervisores();
+  const porUsuario = new Map<string, typeof paradas>();
+  for (const p of paradas) for (const u of sups.get(p.e.area) ?? []) porUsuario.set(u, [...(porUsuario.get(u) ?? []), p]);
+  for (const [u, lista] of porUsuario) {
+    msgs.set(u, {
+      titulo: lista.length === 1 ? '⛽ Equipamento sem abastecer' : `⛽ ${lista.length} equipamentos sem abastecer`,
+      texto: lista.slice(0, 4).map((x) => `${x.e.codigo} (${x.dias} dias)`).join(', ') + (lista.length > 4 ? ` e mais ${lista.length - 4}` : '') + '.',
+    });
+  }
+  return { msgs, total: paradas.length };
+}
 
-  let tipo = 'conferencia'; // sem corpo = comportamento antigo
-  try { const b = await req.json(); if (b?.tipo) tipo = String(b.tipo); } catch { /* corpo vazio */ }
-  const montar = { conferencia: montarConferencia, inventario: montarInventario, rendimento: montarRendimento }[tipo];
-  if (!montar) return new Response('tipo desconhecido: ' + tipo, { status: 400 });
+// ---- tipo 5: parada/manutenção aberta ou liberada (aviso na hora, chamado pelo app) ----
+// A mensagem sai do banco, não do que o app mandar. Só quem abriu (ou quem liberou) dispara o aviso, até 15 min depois;
+// cada aviso sai uma vez só (a coluna aviso_*_em é "reservada" antes do envio, de forma atômica).
+const fmtHoras = (h: number) => h < 1 ? `${Math.max(1, Math.round(h * 60))} min`
+  : h < 48 ? `${Math.floor(h)} h${Math.round((h - Math.floor(h)) * 60) ? ' ' + Math.round((h - Math.floor(h)) * 60) + ' min' : ''}`
+  : `${Math.floor(h / 24)} dias`;
+const corta = (t: any, n: number) => { const x = String(t ?? '').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+async function areasDoUsuario(uid: string): Promise<Set<string>> {
+  const { data: p } = await sb.from('profiles').select('area, ativo').eq('id', uid).maybeSingle();
+  if (!p || !p.ativo) return new Set();
+  const { data: uas } = await sb.from('usuario_areas').select('area').eq('user_id', uid);
+  return new Set<string>([...(p.area ? [p.area] : []), ...(uas ?? []).map((u: any) => u.area)]);
+}
+async function montarOcorrencia(uid: string, id: string, evento: string): Promise<{ msgs: Map<string, Msg>; total: number }> {
+  const vazio = { msgs: new Map<string, Msg>(), total: 0 };
+  if (evento !== 'abertura' && evento !== 'liberacao') throw { status: 400, msg: 'evento desconhecido' };
+  const { data: o, error } = await sb.from('ocorrencias').select('*').eq('id', id).maybeSingle();
+  if (error) throw { status: 500, msg: error.message };
+  if (!o || o.anulado) throw { status: 404, msg: 'ocorrência não encontrada' };
+  if (!(await areasDoUsuario(uid)).has(o.area)) throw { status: 403, msg: 'proibido' };
+  const agora = Date.now(), JANELA = 15 * 60000;
+  const campo = evento === 'abertura' ? 'aviso_abertura_em' : 'aviso_liberacao_em';
+  if (evento === 'abertura') {
+    if (o.aberta_por !== uid) throw { status: 403, msg: 'só quem abriu avisa' };
+    if (agora - new Date(o.criado_em).getTime() > JANELA) throw { status: 409, msg: 'tarde demais para avisar' };
+  } else {
+    if (!o.liberada_em || o.liberada_por !== uid) throw { status: 403, msg: 'só quem liberou avisa' };
+    if (!o.liberada_registro_em || agora - new Date(o.liberada_registro_em).getTime() > JANELA) throw { status: 409, msg: 'tarde demais para avisar' };
+  }
+  if (o[campo]) return vazio;   // já avisado
+  const { data: reservou, error: e2 } = await sb.from('ocorrencias').update({ [campo]: new Date().toISOString() }).eq('id', id).is(campo, null).select('id');
+  if (e2) throw { status: 500, msg: e2.message };
+  if (!reservou?.length) return vazio;   // outra chamada reservou primeiro
+  const { data: eq } = await sb.from('equipamentos').select('codigo, nome').eq('id', o.equipamento_id).maybeSingle();
+  const cod = eq?.codigo ?? o.equipamento_codigo ?? 'Equipamento';
+  const { sups } = await areasEsupervisores();
+  const dest = new Set<string>(sups.get(o.area) ?? []);
+  let m: Msg;
+  if (evento === 'abertura') {
+    m = { titulo: o.categoria === 'manutencao' ? `🔧 ${cod} em manutenção` : `⏸ ${cod} parado`,
+          texto: `${o.motivo}: ${corta(o.descricao, 120)}${o.aberta_por_nome ? ` (aberto por ${o.aberta_por_nome})` : ''}.` };
+  } else {
+    if (o.aberta_por) dest.add(o.aberta_por);   // quem abriu também sabe que voltou
+    const h = (new Date(o.liberada_em).getTime() - new Date(o.aberta_em).getTime()) / 3600000;
+    m = { titulo: `✅ ${cod} liberado`,
+          texto: `${o.motivo_liberacao} — ${corta(o.servico_realizado, 100)}. Pegou: ${corta(o.recebido_por, 40)}. Ficou parado ${fmtHoras(Math.max(h, 0))}.` };
+  }
+  dest.delete(uid);   // quem fez a ação não precisa do aviso
+  const msgs = new Map<string, Msg>();
+  for (const u of dest) msgs.set(u, m);
+  return { msgs, total: 1 };
+}
 
-  let resultado;
-  try { resultado = await montar(); } catch (e) { return new Response(String((e as Error).message ?? e), { status: 500 }); }
-  if (!resultado.msgs.size) return Response.json({ tipo, itens: resultado.total, enviados: 0 });
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+const resp = (corpo: string | null, status = 200) => new Response(corpo, { status, headers: CORS });
 
+async function disparar(tipo: string, resultado: { msgs: Map<string, Msg>; total: number }): Promise<Response> {
+  if (!resultado.msgs.size) return Response.json({ tipo, itens: resultado.total, enviados: 0 }, { headers: CORS });
   let sa: any;
   try { sa = JSON.parse(Deno.env.get('FCM_SERVICE_ACCOUNT') ?? ''); }
-  catch { return new Response('Segredo FCM_SERVICE_ACCOUNT inválido: cole o conteúdo inteiro do .json da chave (começa com { e termina com }).', { status: 500 }); }
+  catch { return resp('Segredo FCM_SERVICE_ACCOUNT inválido: cole o conteúdo inteiro do .json da chave (começa com { e termina com }).', 500); }
   const acesso = await tokenGoogle(sa);
 
   let enviados = 0;
@@ -185,5 +288,32 @@ Deno.serve(async (req) => {
       if (res === 'invalido') await sb.from('push_tokens').delete().eq('token', token);
     }
   }
-  return Response.json({ tipo, itens: resultado.total, enviados });
+  return Response.json({ tipo, itens: resultado.total, enviados }, { headers: CORS });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+
+  let corpo: any = {};
+  try { corpo = await req.json(); } catch { /* corpo vazio */ }
+  const tipo = corpo?.tipo ? String(corpo.tipo) : 'conferencia'; // sem corpo = comportamento antigo
+
+  // Aviso de ocorrência: chamado pelo app, com o login do usuário (não usa o segredo do cron)
+  if (tipo === 'ocorrencia') {
+    const jwt = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const { data: u, error: eu } = jwt ? await sb.auth.getUser(jwt) : { data: null, error: new Error('sem login') };
+    if (eu || !u?.user) return resp('proibido', 403);
+    let resultado;
+    try { resultado = await montarOcorrencia(u.user.id, String(corpo.id ?? ''), String(corpo.evento ?? '')); }
+    catch (e: any) { return resp(e?.msg ?? String(e?.message ?? e), e?.status ?? 500); }
+    return disparar(tipo, resultado);
+  }
+
+  if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return resp('proibido', 403);
+  const montar = { conferencia: montarConferencia, inventario: montarInventario, rendimento: montarRendimento, diesel: montarDiesel }[tipo];
+  if (!montar) return resp('tipo desconhecido: ' + tipo, 400);
+
+  let resultado;
+  try { resultado = await montar(); } catch (e) { return resp(String((e as Error).message ?? e), 500); }
+  return disparar(tipo, resultado);
 });

@@ -191,9 +191,35 @@ const APP_HTML = `
       <button class="btn ghost" id="btn-export-hist" style="border:1px solid var(--border);">Exportar histórico (Excel)</button>
       <div id="hist-list"></div>
     </section>
+    <!-- GESTÃO · DIESEL -->
+    <section class="view" id="view-gdash"><div id="gdash-body"></div></section>
+    <section class="view" id="view-gabast"><div id="gabast-body"></div></section>
+    <section class="view" id="view-gtanque"><div id="gtanque-body"></div></section>
+    <section class="view" id="view-gmanut"><div id="gmanut-body"></div></section>
+    <section class="view" id="view-gequip"><div id="gequip-body"></div></section>
   </main>
 
   <nav class="bottom">
+    <button data-nav="gdash" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
+      Resumo
+    </button>
+    <button data-nav="gabast" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M5 21V5a1 1 0 011-1h7a1 1 0 011 1v16M4 21h11M14 9h2.5a1.5 1.5 0 011.5 1.5V16a1.5 1.5 0 003 0V8l-3-3M7 8h4"/></svg>
+      Abastecer
+    </button>
+    <button data-nav="gmanut" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+      Paradas
+    </button>
+    <button data-nav="gtanque" style="display:none;">
+      <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>
+      Tanque
+    </button>
+    <button data-nav="gequip" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M3 17h2a2 2 0 004 0h6a2 2 0 004 0h1v-5l-3-4h-5v5H3zM9 8V5h4"/></svg>
+      Equipamentos
+    </button>
     <button data-nav="dashboard" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
       Início
@@ -277,7 +303,10 @@ const state = {
   sessoes: [],
   confExpandido: new Set(),
   pendingReport: null,
-  armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || ''
+  armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || '',
+  equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [],   // ambiente Gestão (diesel)
+  ocorrencias: [], paradasErr: null,   // paradas e manutenção (update_016)
+  dieselErr: {}
 };
 
 let db = null, downloads = null;
@@ -299,13 +328,21 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
    A proteção real está no banco (RLS); aqui é só a escolha. state.area vazio = banco ainda sem update_012. */
 // abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
 const ABAS_OCULTAS_POR_AREA = { planta1: ['producao'] };
+// ambiente Gestão (update_015): só mostra as abas de diesel; as outras áreas não mostram essas abas
+const ABAS_GESTAO = ['gdash','gabast','gmanut','gtanque','gequip'];
 function esconderAbasPorArea(){
+  const gestao = state.area === 'gestao';
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
   document.querySelectorAll('[data-nav]').forEach(el=>{
-    if (ocultas.includes(el.getAttribute('data-nav'))) el.style.display = 'none';
+    const n = el.getAttribute('data-nav'), daGestao = ABAS_GESTAO.includes(n);
+    if (gestao ? !daGestao : (daGestao || ocultas.includes(n))) el.style.display = 'none';
+    else if (gestao) el.style.display = '';
   });
 }
-const AREA_TABLES = ['volumes','movimentos','sessoes','producoes'];
+const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias'].concat(DIESEL_TABLES);
+// tabelas gravadas só com INSERT (o histórico não aceita "upsert": isso exigiria permissão de UPDATE em todas as colunas)
+const SOMENTE_INSERIR = ['movimentos','ocorrencias'].concat(DIESEL_TABLES);
 function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
@@ -408,10 +445,14 @@ function createSupabaseDB(){
     if (error){
       console.error(table, error);
       // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
+      if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      if (table==='ocorrencias'){ state.paradasErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='producoes'){ state.producoesErro = error.message || 'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
     if (table==='producoes') state.producoesErro = null;
+    if (table==='ocorrencias') state.paradasErr = null;
+    if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
   }
@@ -426,7 +467,7 @@ function createSupabaseDB(){
             const ar = areaDaTabela(table); if (ar) row.area = ar;
             // movimentos é um histórico só de inserção (a RLS só tem select e insert): grava com
             // INSERT puro, sem o "ON CONFLICT DO UPDATE" do upsert, que exigiria permissão de UPDATE.
-            const {error} = await (table==='movimentos' ? sb.from(table).insert(row) : sb.from(table).upsert(row));
+            const {error} = await (SOMENTE_INSERIR.includes(table) ? sb.from(table).insert(row) : sb.from(table).upsert(row));
             if (error){ toast('Erro ao salvar: '+error.message, 4000); throw error; }
           },
           async update(dataObj){
@@ -553,7 +594,7 @@ async function onAuthed(user){
   state.ready.db = true; state.ready.downloads = true;
   document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
-  setView('dashboard');
+  setView(state.area === 'gestao' ? 'gdash' : 'dashboard');
   registrarPush(user.id);
 }
 
@@ -1037,6 +1078,7 @@ function salvarSessaoSeguida(id){
   }catch(e){}
 }
 function subscribeData(){
+  if (state.area === 'gestao'){ subscribeDiesel(); return; }   // ambiente Gestão: só as tabelas de diesel
   db.collection('volumes').onSnapshot(snap=>{
     state.volumes.clear();
     snap.docs.forEach(d=>state.volumes.set(d.id, d.data()));
@@ -1134,6 +1176,11 @@ function renderView(name){
   }
   else if (name==='producao') renderProducao();
   else if (name==='historico') renderHistorico();
+  else if (name==='gdash') renderGDash();
+  else if (name==='gabast') gabastMontar();
+  else if (name==='gtanque') renderGTanque();
+  else if (name==='gmanut') renderGManut();
+  else if (name==='gequip') renderGEquip();
 }
 
 /* ================= DASHBOARD ================= */
@@ -4434,12 +4481,740 @@ function cegaExportar(nome, rel){
   }catch(e){ console.error(e); toast('Não foi possível exportar o arquivo.'); }
 }
 
+/* ================= DIESEL — núcleo (saldo do tanque, custo médio, consumo, alertas) =================
+   Funções puras (sem tela, sem banco): recebem listas e devolvem números. Mesma cópia no app e no desktop;
+   testadas em tests/diesel_core.test.cjs (que lê este trecho direto do código).
+   Regras: ver docs/regras-de-negocio.md (Diesel).
+   - Lançamento anulado (anulado = true) nunca entra em conta nenhuma.
+   - Saldo do tanque = entradas − abastecimentos + ajustes de régua (medição com ajustar = true).
+   - Custo médio ponderado: a cada compra, novo custo = (saldo×custo + litros×preço) ÷ (saldo + litros);
+     saída e ajuste não mudam o custo médio. Saldo negativo conta como zero na média.
+   - Cada abastecimento guarda o custo médio do momento (custoLitro); o gasto histórico não muda depois.
+   - Consumo: cada abastecimento repõe o que o equipamento gastou desde o abastecimento anterior
+     (tanque do equipamento cheio nos dois). Consumo = litros ÷ horas (L/h) ou km ÷ litros (km/L). */
+const DSL_MS_DIA = 86400000;
+function dslNum(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function dslT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
+function dslValidos(lista){ return (lista||[]).filter(x=>x && !x.anulado); }
+
+// Percorre o tanque no tempo e devolve saldo, custo médio e totais. "ate" (opcional) corta no tempo.
+function dslTanque(tanqueId, entradas, abastecimentos, medicoes, ate){
+  const lim = ate ? dslT(ate) : Infinity;
+  const ev = [];
+  dslValidos(entradas).filter(x=>x.tanqueId===tanqueId).forEach(x=>ev.push({k:0, t:dslT(x.dataHora), x}));
+  dslValidos(medicoes).filter(x=>x.tanqueId===tanqueId && x.ajustar).forEach(x=>ev.push({k:1, t:dslT(x.dataHora), x}));
+  dslValidos(abastecimentos).filter(x=>x.tanqueId===tanqueId).forEach(x=>ev.push({k:2, t:dslT(x.dataHora), x}));
+  ev.sort((a,b)=> a.t-b.t || a.k-b.k);
+  let saldo = 0, custo = 0, entL = 0, entV = 0, saiL = 0, ajuL = 0;
+  for (const e of ev){
+    if (e.t > lim) break;
+    if (e.k===0){
+      const l = dslNum(e.x.litros), p = dslNum(e.x.precoLitro);
+      const base = Math.max(saldo, 0);
+      custo = (base + l) > 0 ? (base*custo + l*p) / (base + l) : p;
+      saldo += l; entL += l; entV += dslNum(e.x.valorTotal);
+    } else if (e.k===1){ const d = dslNum(e.x.diferenca); saldo += d; ajuL += d; }
+    else { const l = dslNum(e.x.litros); saldo -= l; saiL += l; }
+  }
+  return { saldo, custoMedio: custo > 0 ? custo : null, entradasL: entL, entradasValor: entV, saidasL: saiL, ajustesL: ajuL };
+}
+// Custo (R$/L) que um abastecimento feito AGORA deve guardar: o custo médio do tanque; nulo se não há compra.
+function dslCustoParaAbastecer(tanqueId, entradas, abastecimentos, medicoes){
+  const r = dslTanque(tanqueId, entradas, abastecimentos, medicoes);
+  return r.custoMedio;
+}
+
+// Lê o medidor mais recente do equipamento (para validar e sugerir o próximo).
+function dslUltimoAbastecimento(equipId, abastecimentos){
+  const l = dslValidos(abastecimentos).filter(a=>a.equipamentoId===equipId);
+  l.sort((a,b)=> dslT(b.dataHora)-dslT(a.dataHora) || dslT(b.timestamp)-dslT(a.timestamp));
+  return l[0] || null;
+}
+// Confere o medidor digitado. Devolve {erro} (bloqueia) ou {aviso} (só avisa) ou {}.
+function dslValidarMedidor(equip, ultimo, valor, troca){
+  const v = (valor===''||valor==null) ? NaN : Number(valor);
+  if (!Number.isFinite(v) || v < 0) return { erro: 'Informe o ' + (equip && equip.medidor==='km' ? 'km' : 'horímetro') + ' do equipamento.' };
+  if (troca || !ultimo) return {};
+  const ant = dslNum(ultimo.medidor), un = equip && equip.medidor==='km' ? 'km' : 'h';
+  if (v < ant) return { erro: 'O valor (' + v + ' ' + un + ') é menor que o do último abastecimento (' + ant + ' ' + un + '). Confira, ou marque "troca de medidor".' };
+  if (v === ant) return { aviso: 'O valor é igual ao do último abastecimento. Confira se o equipamento realmente não rodou.' };
+  const salto = v - ant, limite = un==='km' ? 3000 : 400;
+  if (salto > limite) return { aviso: 'O equipamento andou ' + Math.round(salto) + ' ' + un + ' desde o último abastecimento. Confira o valor digitado.' };
+  return {};
+}
+
+// Consumo de um equipamento. Cada abastecimento (menos o 1º e os de troca de medidor) forma um intervalo.
+function dslConsumo(equip, abastecimentos){
+  const km = equip && equip.medidor==='km';
+  const l = dslValidos(abastecimentos).filter(a=>a.equipamentoId===equip.id)
+    .sort((a,b)=> dslT(a.dataHora)-dslT(b.dataHora) || dslT(a.timestamp)-dslT(b.timestamp));
+  const intervalos = []; let somaL = 0, somaD = 0;
+  for (let i=1; i<l.length; i++){
+    if (l[i].trocaMedidor) continue;
+    const d = dslNum(l[i].medidor) - dslNum(l[i-1].medidor), lit = dslNum(l[i].litros);
+    if (!(d > 0) || !(lit > 0)) continue;
+    const valor = km ? d/lit : lit/d;   // km/L ou L/h
+    intervalos.push({ id:l[i].id, dataHora:l[i].dataHora, delta:d, litros:lit, valor });
+    somaL += lit; somaD += d;
+  }
+  const media = somaD > 0 ? (km ? somaD/somaL : somaL/somaD) : null;
+  return { unidade: km ? 'km/L' : 'L/h', media, intervalos, somaLitros: somaL, somaDelta: somaD };
+}
+// Marca o último intervalo como fora do normal: >50% pior que a média dos intervalos anteriores (precisa de 3+ antes).
+function dslAnomalia(consumo){
+  const iv = consumo.intervalos; if (iv.length < 4) return null;
+  const ult = iv[iv.length-1], ant = iv.slice(0, -1);
+  const km = consumo.unidade==='km/L';
+  const mediaAnt = km ? ant.reduce((s,x)=>s+x.delta,0)/ant.reduce((s,x)=>s+x.litros,0) : ant.reduce((s,x)=>s+x.litros,0)/ant.reduce((s,x)=>s+x.delta,0);
+  const pior = km ? ult.valor < mediaAnt/1.5 : ult.valor > mediaAnt*1.5;
+  return pior ? { valor: ult.valor, mediaAnterior: mediaAnt } : null;
+}
+
+// Dias parados: quantos dias se passaram entre "de" e "ate" (datas em Brasília), contando só seg–sex se uteis.
+function dslDiaSP(t){ return new Date(t - 3*3600000).toISOString().slice(0,10); }   // AAAA-MM-DD em Brasília
+function dslDiasEntre(deT, ateT, uteis){
+  let a = Date.parse(dslDiaSP(deT)+'T00:00:00Z'), b = Date.parse(dslDiaSP(ateT)+'T00:00:00Z');
+  if (b <= a) return 0;
+  if (!uteis) return Math.round((b-a)/DSL_MS_DIA);
+  let n = 0;
+  for (let t = a + DSL_MS_DIA; t <= b; t += DSL_MS_DIA){ const w = new Date(t).getUTCDay(); if (w!==0 && w!==6) n++; }
+  return n;
+}
+// Equipamentos ativos, com alerta ligado, que passaram do prazo sem abastecer (menos os que estão com ocorrência em aberto).
+// Sem nenhum abastecimento, conta a partir do cadastro (criadoEm).
+function dslSemAbastecer(equipamentos, abastecimentos, agoraT, ocorrencias){
+  const agora = agoraT || Date.now();
+  const ult = {};
+  dslValidos(abastecimentos).forEach(a=>{ const t = dslT(a.dataHora); if (!ult[a.equipamentoId] || t > ult[a.equipamentoId]) ult[a.equipamentoId] = t; });
+  const out = [];
+  for (const e of (equipamentos||[])){
+    if (!e || e.ativo===false || e.alertaAtivo===false) continue;
+    if (ocorrencias && dslOcorrenciaAberta(e.id, ocorrencias)) continue;   // parado/em manutenção: não é falta de abastecimento
+    const prazo = dslNum(e.diasAlerta) || 2;
+    const base = ult[e.id] || dslT(e.criadoEm);
+    if (!base) continue;
+    const dias = dslDiasEntre(base, agora, !!e.alertaDiasUteis);
+    if (dias > prazo) out.push({ equipamento:e, dias, prazo, ultimo: ult[e.id] || null });
+  }
+  return out.sort((a,b)=> b.dias-a.dias);
+}
+
+// Resumo de um período (de/ate = timestamps; "de" inclusive, "ate" exclusive) para o painel.
+function dslResumo(equipamentos, abastecimentos, entradas, de, ate, filtroEquipId){
+  const ab = dslValidos(abastecimentos).filter(a=>{ const t = dslT(a.dataHora); return t>=de && t<ate && (!filtroEquipId || a.equipamentoId===filtroEquipId); });
+  const en = dslValidos(entradas).filter(x=>{ const t = dslT(x.dataHora); return t>=de && t<ate; });
+  let litros = 0, gasto = 0, litrosComCusto = 0;
+  const porEquip = {};
+  ab.forEach(a=>{
+    const l = dslNum(a.litros); litros += l;
+    const o = porEquip[a.equipamentoId] = porEquip[a.equipamentoId] || { id:a.equipamentoId, litros:0, gasto:0, litrosComCusto:0, n:0 };
+    o.litros += l; o.n++;
+    if (a.custoTotal!=null && a.custoLitro!=null){ gasto += dslNum(a.custoTotal); litrosComCusto += l; o.gasto += dslNum(a.custoTotal); o.litrosComCusto += l; }
+  });
+  let compL = 0, compV = 0;
+  en.forEach(x=>{ compL += dslNum(x.litros); compV += dslNum(x.valorTotal); });
+  return {
+    abastecimentos: ab.length, litros, litrosPorAbastecimento: ab.length ? litros/ab.length : null,
+    gasto, litrosComCusto, custoMedioLitro: litrosComCusto>0 ? gasto/litrosComCusto : null, semCusto: litros - litrosComCusto,
+    compras: en.length, compradoL: compL, compradoValor: compV, precoMedioCompra: compL>0 ? compV/compL : null,
+    porEquip
+  };
+}
+// Dias de diesel que o saldo atual aguenta, pelo consumo médio diário dos últimos "dias" dias.
+function dslDiasRestantes(saldo, tanqueId, abastecimentos, agoraT, dias){
+  const agora = agoraT || Date.now(), d = dias || 14, de = agora - d*DSL_MS_DIA;
+  const usado = dslValidos(abastecimentos).filter(a=>a.tanqueId===tanqueId && dslT(a.dataHora)>=de && dslT(a.dataHora)<=agora).reduce((s,a)=>s+dslNum(a.litros),0);
+  const porDia = usado / d;
+  return porDia > 0 ? Math.max(saldo,0) / porDia : null;
+}
+
+// ---- Paradas e manutenção (ocorrências) ----
+// Em aberto = sem liberadaEm e não anulada. Uma ocorrência em aberto por equipamento (o banco garante).
+function dslOcorrenciaAberta(equipId, ocorrencias){
+  return dslValidos(ocorrencias).find(o=>o.equipamentoId===equipId && !o.liberadaEm) || null;
+}
+// Horas entre a abertura e a liberação (ou até agora, se ainda aberta).
+function dslOcorrenciaHoras(o, agoraT){
+  const fim = o.liberadaEm ? dslT(o.liberadaEm) : (agoraT || Date.now());
+  const h = (fim - dslT(o.abertaEm)) / 3600000;
+  return h > 0 ? h : 0;
+}
+// Resumo por data de abertura (de inclusive, ate exclusive). Abertas contam as horas até agora.
+function dslParadasResumo(ocorrencias, de, ate, agoraT, filtroEquipId){
+  const agora = agoraT || Date.now();
+  const l = dslValidos(ocorrencias).filter(o=>{ const t = dslT(o.abertaEm); return t>=de && t<ate && (!filtroEquipId || o.equipamentoId===filtroEquipId); });
+  const porMotivo = {}, porEquip = {};
+  let horas = 0, abertas = 0, liberadas = 0, horasLib = 0;
+  l.forEach(o=>{
+    const h = dslOcorrenciaHoras(o, agora); horas += h;
+    if (o.liberadaEm){ liberadas++; horasLib += h; } else abertas++;
+    const m = porMotivo[o.motivo] = porMotivo[o.motivo] || { motivo:o.motivo, n:0, horas:0 }; m.n++; m.horas += h;
+    const e = porEquip[o.equipamentoId] = porEquip[o.equipamentoId] || { id:o.equipamentoId, n:0, horas:0 }; e.n++; e.horas += h;
+  });
+  return { total:l.length, abertas, liberadas, horas, tempoMedioH: liberadas ? horasLib/liberadas : null, porMotivo, porEquip };
+}
+
+/* ================= DIESEL — telas (ambiente Gestão) ================= */
+/* Telas: Resumo (gdash), Abastecer (gabast), Tanque (gtanque) e Equipamentos (gequip).
+   Só existem na área "Gestão". Os lançamentos nunca são apagados nem editados: o supervisor ANULA (com motivo). */
+const DSL_AREAS_USO = [['trefila','Trefila'],['planta1','Planta 1']];
+const DSL_TIPOS = { maquina:'Máquina', caminhao:'Caminhão', outro:'Outro' };
+const dslFmtL = n => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{maximumFractionDigits:1})+' L';
+const dslFmtR = n => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const dslFmtRL = n => (n==null||isNaN(n)) ? '—' : 'R$ '+Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:3})+'/L';
+const dslFmtN = (n,d) => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{maximumFractionDigits:d==null?1:d});
+// duração estimada do diesel: acima de 1 ano não faz sentido mostrar número exato
+function dslFmtDias(d){ if (d==null) return ''; if (d>365) return 'mais de 1 ano'; const n = Math.floor(d); return n<1 ? 'menos de 1 dia' : 'cerca de '+n+(n===1?' dia':' dias'); }
+function dslFmtMed(n, un){ return dslFmtN(n,1)+' '+(un==='km'?'km':'h'); }
+function dslDataCurta(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+function dslLocalInput(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); }
+function dslNumIn(id){ const el = document.getElementById(id); if(!el) return NaN; const v = String(el.value||'').replace(',','.').trim(); return v==='' ? NaN : Number(v); }
+function dslEhSup(){ return !!(state.user && state.user.role==='supervisor'); }
+function dslSemBanco(){ return !!(state.dieselErr && Object.keys(state.dieselErr).length); }
+function dslAvisoBanco(){
+  return '<div class="card left-danger"><b>O módulo de Diesel ainda não está no banco.</b>'
+    + '<p class="hint" style="margin:6px 0 0;">Rode o arquivo <b>update_015_diesel.sql</b> no SQL Editor do Supabase e atualize a página.</p></div>';
+}
+function dslEquipPorId(id){ return state.equipamentos.find(e=>e.id===id) || null; }
+function dslEquipNome(id, cod){ const e = dslEquipPorId(id); return e ? e.codigo : (cod||'?'); }
+function dslNomeTanque(id){ const t = state.tanques.find(x=>x.id===id); return t ? t.nome : '?'; }
+function dslChip(txt, cls){ return '<span class="badge '+(cls||'')+'">'+esc(txt)+'</span>'; }
+function dslLinha(a){
+  const e = dslEquipPorId(a.equipamentoId), un = e && e.medidor==='km' ? 'km' : 'h';
+  return '<div class="list-item" style="'+(a.anulado?'opacity:.55;':'')+'"><div class="li-main">'
+    + '<div class="li-code" style="font-size:14px;'+(a.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(a.equipamentoId,a.equipamentoCodigo))+' · '+dslFmtL(a.litros)+(a.trocaMedidor?' '+dslChip('troca de medidor','info'):'')+(a.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(a.dataHora)+' · '+dslFmtMed(a.medidor,un)+(a.usuarioNome?' · '+esc(a.usuarioNome):'')+(a.obs?' · '+esc(a.obs):'')+(a.anulado&&a.anuladoMotivo?' · motivo: '+esc(a.anuladoMotivo):'')+'</div></div>'
+    + '<div class="li-side"><div class="li-weight" style="font-size:13px;">'+(a.custoTotal!=null?dslFmtR(a.custoTotal):'sem custo')+'</div>'
+    + (dslEhSup()&&!a.anulado?'<button class="link-btn" data-g-act="anular" data-t="abastecimentos" data-id="'+esc(a.id)+'">anular</button>':'')+'</div></div>';
+}
+
+/* ---- Resumo ---- */
+function renderGDash(){
+  const body = document.getElementById('gdash-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  const ab = state.abastecimentos, en = state.entradas, me = state.medicoes;
+  const hoje = new Date();
+  const de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).getTime(), ate = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1).getTime();
+  const R = dslResumo(state.equipamentos, ab, en, de, ate);
+  const mes = hoje.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  const tanques = state.tanques.filter(t=>t.ativo!==false);
+  const cards = tanques.map(t=>{
+    const x = dslTanque(t.id,en,ab,me), dias = dslDiasRestantes(x.saldo,t.id,ab);
+    const baixo = t.minimoL!=null && x.saldo < Number(t.minimoL);
+    const pct = t.capacidadeL ? Math.max(0,Math.min(100,x.saldo/Number(t.capacidadeL)*100)) : null;
+    return '<div class="card '+(baixo||x.saldo<0?'left-danger':'left-info')+'"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><b>'+esc(t.nome)+'</b>'
+      + (baixo?dslChip('saldo baixo','danger'):'')+(x.saldo<0?dslChip('saldo negativo: confira','danger'):'')+'</div>'
+      + '<div style="font-family:var(--font-head);font-size:30px;line-height:1.1;margin:6px 0 4px;">'+dslFmtL(x.saldo)+'</div>'
+      + (pct!=null?'<div class="g-bar"><i style="width:'+pct+'%;"></i></div>':'')
+      + '<div class="hint" style="margin:6px 0 0;">Custo médio '+dslFmtRL(x.custoMedio)+(dias!=null?' · dura '+dslFmtDias(dias):'')+'</div></div>';
+  }).join('') || '<div class="card"><p class="hint" style="margin:0;">Nenhum tanque cadastrado. '+(dslEhSup()?'Cadastre na aba Tanque.':'Peça ao supervisor para cadastrar.')+'</p></div>';
+  const parados = dslSemAbastecer(state.equipamentos, ab, null, state.ocorrencias);
+  const alertas = parados.length
+    ? '<div class="card left-danger"><b>Sem abastecer</b>'+parados.map(p=>'<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">'+esc(p.equipamento.codigo)+' — '+esc(p.equipamento.nome)+'</div><div class="li-desc">'+(p.ultimo?'último em '+dslDataCurta(p.ultimo):'nunca abasteceu')+' · prazo '+p.prazo+' dia'+(p.prazo===1?'':'s')+'</div></div><div class="li-side"><div class="li-weight" style="color:var(--danger);">'+p.dias+' dias</div></div></div>').join('')+'</div>'
+    : '';
+  const emAberto = state.paradasErr ? [] : dslValidos(state.ocorrencias).filter(o=>!o.liberadaEm).sort((a,b)=>dslT(a.abertaEm)-dslT(b.abertaEm));
+  const paradosAgora = emAberto.length
+    ? '<div class="card left-danger"><b>Parados agora</b>'+emAberto.map(o=>'<div class="list-item" data-g-act="manut-ver" data-id="'+esc(o.id)+'" style="cursor:pointer;"><div class="li-main"><div class="li-code" style="font-size:14px;">'+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+' · '+esc(o.motivo)+'</div><div class="li-desc">desde '+dslDataCurta(o.abertaEm)+' · '+esc(MANUT_CAT[o.categoria]||o.categoria)+'</div></div><div class="li-side"><div class="li-weight" style="color:var(--danger);">'+dslFmtHoras(dslOcorrenciaHoras(o))+'</div></div></div>').join('')+'</div>'
+    : '';
+  const recentes = ab.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,8).map(dslLinha).join('');
+  body.innerHTML =
+    '<div class="btn-row" style="margin-bottom:12px;"><button class="btn primary" data-g-act="ir" data-v="gabast">+ Registrar abastecimento</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
+    + paradosAgora
+    + '<h2 class="section-title" style="margin-top:6px;">Tanque</h2>'+cards+alertas
+    + '<h2 class="section-title">'+esc(mes.charAt(0).toUpperCase()+mes.slice(1))+'</h2>'
+    + '<div class="stats">'
+    + '<div class="stat accent"><div class="n">'+dslFmtN(R.litros,0)+' L</div><div class="l">Diesel consumido</div></div>'
+    + '<div class="stat"><div class="n">'+R.abastecimentos+'</div><div class="l">Abastecimentos'+(R.litrosPorAbastecimento?' · média '+dslFmtN(R.litrosPorAbastecimento,0)+' L':'')+'</div></div>'
+    + '<div class="stat"><div class="n">'+dslFmtR(R.gasto)+'</div><div class="l">Gasto'+(R.semCusto>0?' (sem custo: '+dslFmtN(R.semCusto,0)+' L)':'')+'</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+dslFmtRL(R.custoMedioLitro)+'</div><div class="l">Custo médio no mês</div></div></div>'
+    + '<h2 class="section-title">Últimos abastecimentos</h2><div class="card" style="padding:0 14px;">'+(recentes||'<p class="hint">Nenhum abastecimento ainda.</p>')+'</div>'
+    + (dslEhSup()?'<button class="btn ghost" data-g-act="exportar" style="border:1px solid var(--border);">Exportar abastecimentos (Excel)</button>':'');
+}
+
+/* ---- Abastecer ---- */
+function gabastMontar(){
+  const body = document.getElementById('gabast-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  if (!document.getElementById('gab-form')){
+    body.innerHTML =
+      '<div class="card" id="gab-form">'
+      + '<label class="field-label">Equipamento</label><select id="gab-equip"></select>'
+      + '<label class="field-label">Tanque</label><select id="gab-tanque"></select>'
+      + '<label class="field-label" id="gab-medidor-lab">Horímetro / Km</label><input type="number" id="gab-medidor" inputmode="decimal" step="any" min="0" placeholder="Leitura do painel">'
+      + '<div class="hint" id="gab-dica" style="margin:-4px 0 10px;"></div>'
+      + '<label class="field-label">Litros abastecidos</label><input type="number" id="gab-litros" inputmode="decimal" step="any" min="0" placeholder="0">'
+      + '<label class="field-label">Data e hora</label><input type="datetime-local" id="gab-data">'
+      + '<label class="g-chk"><input type="checkbox" id="gab-troca"> Troca de medidor (o painel foi trocado ou zerado)</label>'
+      + '<label class="field-label">Observação (opcional)</label><input type="text" id="gab-obs" maxlength="200">'
+      + '<div id="gab-prev" class="hint" style="margin:0 0 10px;"></div>'
+      + '<button class="btn primary" id="gab-registrar">Registrar abastecimento</button></div>'
+      + '<h2 class="section-title">Histórico</h2><select id="gab-filtro"></select><div class="card" id="gab-lista" style="padding:0 14px;"></div>';
+    document.getElementById('gab-data').value = dslLocalInput(new Date());
+    ['gab-equip','gab-medidor','gab-litros','gab-troca','gab-tanque'].forEach(id=>document.getElementById(id).addEventListener('input', gabastDica));
+    document.getElementById('gab-filtro').addEventListener('change', gabastLista);
+    document.getElementById('gab-registrar').addEventListener('click', gabastRegistrar);
+  }
+  gabastOpcoes(); gabastDica(); gabastLista();
+}
+function gabastOpcoes(){
+  const eq = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  const tq = state.tanques.filter(t=>t.ativo!==false);
+  const sel = (id, itens, vazio)=>{
+    const el = document.getElementById(id); if (!el) return;
+    const sig = itens.map(i=>i[0]+'|'+i[1]).join(';');
+    if (el.dataset.sig === sig) return;
+    const atual = el.value; el.dataset.sig = sig;
+    el.innerHTML = (vazio?'<option value="">'+esc(vazio)+'</option>':'') + itens.map(i=>'<option value="'+esc(i[0])+'">'+esc(i[1])+'</option>').join('');
+    if (itens.some(i=>i[0]===atual)) el.value = atual; else if (!vazio && itens.length===1) el.value = itens[0][0];
+  };
+  sel('gab-equip', eq.map(e=>[e.id, e.codigo+' — '+e.nome+(e.medidor==='km'?' (km)':' (h)')]), eq.length?'Escolha o equipamento…':'Nenhum equipamento cadastrado');
+  sel('gab-tanque', tq.map(t=>[t.id, t.nome]), tq.length?'':'Nenhum tanque cadastrado');
+  const todos = state.equipamentos.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  sel('gab-filtro', todos.map(e=>[e.id, e.codigo+' — '+e.nome]), 'Todos os equipamentos');
+}
+function gabastDica(){
+  const eq = dslEquipPorId((document.getElementById('gab-equip')||{}).value);
+  const dica = document.getElementById('gab-dica'), prev = document.getElementById('gab-prev'), lab = document.getElementById('gab-medidor-lab');
+  if (!dica) return;
+  if (!eq){ dica.textContent = ''; prev.innerHTML = ''; lab.textContent = 'Horímetro / Km'; return; }
+  const km = eq.medidor==='km', un = km?'km':'h';
+  lab.textContent = km ? 'Quilometragem atual (km)' : 'Horímetro atual (h)';
+  const ult = dslUltimoAbastecimento(eq.id, state.abastecimentos);
+  dica.textContent = ult ? 'Último abastecimento: '+dslFmtMed(ult.medidor,un)+' · '+dslFmtL(ult.litros)+' · '+dslDataCurta(ult.dataHora) : 'Primeiro abastecimento deste equipamento (ainda não há consumo para comparar).';
+  const m = dslNumIn('gab-medidor'), l = dslNumIn('gab-litros'), troca = document.getElementById('gab-troca').checked;
+  const partes = [];
+  if (ult && !troca && m>dslNum(ult.medidor) && l>0){
+    const d = m-dslNum(ult.medidor), v = km ? d/l : l/d, c = dslConsumo(eq, state.abastecimentos);
+    partes.push('Consumo desde o último: <b>'+dslFmtN(v,2)+' '+c.unidade+'</b>'+(c.media!=null?' (média do equipamento: '+dslFmtN(c.media,2)+' '+c.unidade+')':''));
+    if (c.media!=null && (km ? v < c.media/1.5 : v > c.media*1.5)) partes.push('<span style="color:var(--danger);">⚠ Consumo bem pior que o normal. Confira os números.</span>');
+  }
+  const oa = dslOcorrenciaAberta(eq.id, state.ocorrencias);
+  if (oa) partes.push('<span style="color:var(--danger);">⚠ Este equipamento está com ocorrência em aberto ('+esc(oa.motivo)+', desde '+dslDataCurta(oa.abertaEm)+').</span>');
+  const custo = dslCustoParaAbastecer((document.getElementById('gab-tanque')||{}).value, state.entradas, state.abastecimentos, state.medicoes);
+  if (l>0 && custo!=null) partes.push('Custo estimado: <b>'+dslFmtR(l*custo)+'</b> ('+dslFmtRL(custo)+')');
+  prev.innerHTML = partes.join('<br>');
+}
+function gabastLista(){
+  const box = document.getElementById('gab-lista'); if (!box) return;
+  const f = (document.getElementById('gab-filtro')||{}).value;
+  const l = state.abastecimentos.filter(a=>!f || a.equipamentoId===f).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,40);
+  box.innerHTML = l.map(dslLinha).join('') || '<p class="hint">Nenhum abastecimento.</p>';
+}
+async function gabastRegistrar(){
+  const btn = document.getElementById('gab-registrar'); if (btn.disabled) return;
+  const eq = dslEquipPorId(document.getElementById('gab-equip').value), tid = document.getElementById('gab-tanque').value;
+  const litros = dslNumIn('gab-litros'), medidor = dslNumIn('gab-medidor'), troca = document.getElementById('gab-troca').checked;
+  const data = new Date(document.getElementById('gab-data').value);
+  if (!eq){ toast('Escolha o equipamento.'); return; }
+  if (!tid){ toast('Escolha o tanque.'); return; }
+  if (!(litros>0)){ toast('Informe os litros.'); return; }
+  if (isNaN(data.getTime())){ toast('Informe a data e a hora.'); return; }
+  if (data.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+  const v = dslValidarMedidor(eq, dslUltimoAbastecimento(eq.id, state.abastecimentos), medidor, troca);
+  if (v.erro){ toast(v.erro, 4500); return; }
+  if (v.aviso && !confirm(v.aviso+'\n\nRegistrar mesmo assim?')) return;
+  const saldo = dslTanque(tid, state.entradas, state.abastecimentos, state.medicoes).saldo;
+  if (litros > saldo && !confirm('O saldo do tanque no app é '+dslFmtL(saldo)+', menor que '+dslFmtL(litros)+'.\nExiste compra ou ajuste sem lançar?\n\nRegistrar mesmo assim?')) return;
+  const custo = dslCustoParaAbastecer(tid, state.entradas, state.abastecimentos, state.medicoes);
+  const id = 'ab_'+uid();
+  btn.disabled = true; btn.textContent = 'Registrando…';
+  try{
+    await db.collection('abastecimentos').doc(id).set({
+      id, equipamentoId: eq.id, equipamentoCodigo: eq.codigo, tanqueId: tid, dataHora: data.toISOString(),
+      medidor, litros, custoLitro: custo, custoTotal: custo!=null ? Math.round(litros*custo*100)/100 : null,
+      trocaMedidor: troca, obs: (document.getElementById('gab-obs').value||'').trim() || null,
+      usuarioId: state.user.id, usuarioNome: state.user.nome, timestamp: new Date().toISOString()
+    });
+    toast('Abastecimento registrado: '+eq.codigo+' · '+dslFmtL(litros));
+    ['gab-medidor','gab-litros','gab-obs'].forEach(i=>{ document.getElementById(i).value = ''; });
+    document.getElementById('gab-troca').checked = false;
+    document.getElementById('gab-data').value = dslLocalInput(new Date());
+    if (db.refetchAll) await db.refetchAll();
+    gabastDica();
+  }catch(e){ console.error(e); }
+  finally{ btn.disabled = false; btn.textContent = 'Registrar abastecimento'; }
+}
+
+/* ---- Tanque ---- */
+function renderGTanque(){
+  const body = document.getElementById('gtanque-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  const sup = dslEhSup(), ab = state.abastecimentos, en = state.entradas, me = state.medicoes;
+  const cards = state.tanques.map(t=>{
+    const x = dslTanque(t.id,en,ab,me), dias = dslDiasRestantes(x.saldo,t.id,ab);
+    const baixo = t.minimoL!=null && x.saldo < Number(t.minimoL);
+    const pct = t.capacidadeL ? Math.max(0,Math.min(100,x.saldo/Number(t.capacidadeL)*100)) : null;
+    return '<div class="card '+(t.ativo===false?'':(baixo?'left-danger':'left-info'))+'" style="'+(t.ativo===false?'opacity:.6;':'')+'">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><b>'+esc(t.nome)+(t.ativo===false?' (inativo)':'')+'</b>'+(baixo?dslChip('saldo baixo','danger'):'')+'</div>'
+      + '<div style="font-family:var(--font-head);font-size:30px;line-height:1.1;margin:6px 0 4px;">'+dslFmtL(x.saldo)+'</div>'
+      + (pct!=null?'<div class="g-bar"><i style="width:'+pct+'%;"></i></div>':'')
+      + '<div class="hint" style="margin:6px 0 0;">'+(t.capacidadeL?'Capacidade '+dslFmtL(t.capacidadeL)+' · ':'')+(t.minimoL!=null?'mínimo '+dslFmtL(t.minimoL)+' · ':'')+'custo médio '+dslFmtRL(x.custoMedio)+(dias!=null?' · dura '+dslFmtDias(dias):'')+'</div>'
+      + '<div class="hint" style="margin:2px 0 0;">Entrou '+dslFmtL(x.entradasL)+' · saiu '+dslFmtL(x.saidasL)+(x.ajustesL?' · ajustes '+dslFmtL(x.ajustesL):'')+'</div>'
+      + (sup?'<div class="btn-row" style="margin-top:10px;"><button class="btn small" data-g-act="compra" data-id="'+esc(t.id)+'">+ Compra</button><button class="btn small" data-g-act="regua" data-id="'+esc(t.id)+'">Conferir régua</button><button class="btn small ghost" style="border:1px solid var(--border);" data-g-act="tanque-edit" data-id="'+esc(t.id)+'">Editar</button></div>':'')
+      + '</div>';
+  }).join('') || '<div class="card"><p class="hint" style="margin:0;">Nenhum tanque cadastrado.</p></div>';
+  const compras = en.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,15).map(c=>
+    '<div class="list-item" style="'+(c.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(c.anulado?'text-decoration:line-through;':'')+'">'+dslFmtL(c.litros)+' · '+dslFmtRL(c.precoLitro)+(c.anulado?' '+dslChip('anulada','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(c.dataHora)+' · '+esc(dslNomeTanque(c.tanqueId))+(c.fornecedor?' · '+esc(c.fornecedor):'')+(c.nota?' · NF '+esc(c.nota):'')+(c.anulado&&c.anuladoMotivo?' · motivo: '+esc(c.anuladoMotivo):'')+'</div></div>'
+    + '<div class="li-side"><div class="li-weight" style="font-size:13px;">'+dslFmtR(c.valorTotal)+'</div>'+(sup&&!c.anulado?'<button class="link-btn" data-g-act="anular" data-t="tanque_entradas" data-id="'+esc(c.id)+'">anular</button>':'')+'</div></div>').join('');
+  const meds = me.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,10).map(m=>
+    '<div class="list-item" style="'+(m.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;">Régua: '+dslFmtL(m.litrosMedidos)+(m.anulado?' '+dslChip('anulada','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(m.dataHora)+' · '+esc(dslNomeTanque(m.tanqueId))+' · app tinha '+dslFmtL(m.saldoApp)+(m.ajustar?' · saldo ajustado':' · só conferência')+(m.obs?' · '+esc(m.obs):'')+'</div></div>'
+    + '<div class="li-side"><div class="li-weight" style="font-size:13px;color:'+(Math.abs(m.diferenca)<1?'var(--ok)':'var(--danger)')+';">'+(m.diferenca>0?'+':'')+dslFmtL(m.diferenca)+'</div>'+(sup&&!m.anulado?'<button class="link-btn" data-g-act="anular" data-t="tanque_medicoes" data-id="'+esc(m.id)+'">anular</button>':'')+'</div></div>').join('');
+  body.innerHTML = (sup?'<button class="btn" data-g-act="tanque-novo">+ Novo tanque</button>':'') + cards
+    + '<h2 class="section-title">Compras / descargas</h2><div class="card" style="padding:0 14px;">'+(compras||'<p class="hint">Nenhuma compra registrada. O custo do diesel só aparece depois da primeira compra.</p>')+'</div>'
+    + '<h2 class="section-title">Conferências com a régua</h2><div class="card" style="padding:0 14px;">'+(meds||'<p class="hint">Nenhuma conferência ainda.</p>')+'</div>'
+    + (sup?'<button class="btn ghost" data-g-act="exportar-compras" style="border:1px solid var(--border);">Exportar compras (Excel)</button>':'');
+}
+function gCompraSheet(tid){
+  const t = state.tanques.find(x=>x.id===tid); if (!t) return;
+  const ult = state.entradas.filter(x=>!x.anulado && x.tanqueId===tid).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora))[0];
+  openSheet('<h2 class="section-title" style="margin-top:0;">Compra / descarga · '+esc(t.nome)+'</h2>'
+    + '<label class="field-label">Data e hora</label><input type="datetime-local" id="gc-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label">Litros</label><input type="number" id="gc-litros" inputmode="decimal" step="any" min="0">'
+    + '<label class="field-label">Preço por litro (R$)</label><input type="number" id="gc-preco" inputmode="decimal" step="any" min="0" placeholder="'+(ult?String(ult.precoLitro).replace('.',','):'0,00')+'">'
+    + '<label class="field-label">Valor total (R$)</label><input type="number" id="gc-total" inputmode="decimal" step="any" min="0">'
+    + '<div class="hint" style="margin:-4px 0 10px;">Preencha o preço por litro ou o valor total: o outro é calculado.</div>'
+    + '<label class="field-label">Fornecedor</label><input type="text" id="gc-forn" maxlength="80">'
+    + '<label class="field-label">Nota fiscal</label><input type="text" id="gc-nota" maxlength="40">'
+    + '<label class="field-label">Observação</label><input type="text" id="gc-obs" maxlength="200">'
+    + '<button class="btn primary" id="gc-ok">Registrar compra</button>');
+  const L = document.getElementById('gc-litros'), P = document.getElementById('gc-preco'), T = document.getElementById('gc-total');
+  const arred = (n,d)=>String(Math.round(n*Math.pow(10,d))/Math.pow(10,d));
+  P.addEventListener('input', ()=>{ const l = dslNumIn('gc-litros'), p = dslNumIn('gc-preco'); if (l>0 && p>=0) T.value = arred(l*p,2); });
+  T.addEventListener('input', ()=>{ const l = dslNumIn('gc-litros'), v = dslNumIn('gc-total'); if (l>0 && v>=0) P.value = arred(v/l,4); });
+  L.addEventListener('input', ()=>{ const l = dslNumIn('gc-litros'), p = dslNumIn('gc-preco'); if (l>0 && p>=0) T.value = arred(l*p,2); });
+  document.getElementById('gc-ok').onclick = async ()=>{
+    const litros = dslNumIn('gc-litros'); let preco = dslNumIn('gc-preco'), total = dslNumIn('gc-total');
+    const data = new Date(document.getElementById('gc-data').value);
+    if (!(litros>0)){ toast('Informe os litros.'); return; }
+    if (isNaN(data.getTime()) || data.getTime()>Date.now()+3600000){ toast('Confira a data (não pode ser futura).'); return; }
+    if (isNaN(preco) && isNaN(total)){ toast('Informe o preço por litro ou o valor total.'); return; }
+    if (isNaN(preco)) preco = total/litros;
+    if (isNaN(total)) total = Math.round(litros*preco*100)/100;
+    if (!(preco>0)){ toast('O preço deve ser maior que zero.'); return; }
+    if (t.capacidadeL) {
+      const saldo = dslTanque(tid, state.entradas, state.abastecimentos, state.medicoes).saldo;
+      if (saldo+litros > Number(t.capacidadeL)*1.05 && !confirm('Com esta compra o tanque passa da capacidade ('+dslFmtL(t.capacidadeL)+'): ficaria com '+dslFmtL(saldo+litros)+'.\n\nRegistrar mesmo assim?')) return;
+    }
+    const b = document.getElementById('gc-ok'); b.disabled = true;
+    try{
+      const id = 'en_'+uid();
+      await db.collection('tanque_entradas').doc(id).set({ id, tanqueId: tid, dataHora: data.toISOString(), litros, precoLitro: preco, valorTotal: total,
+        fornecedor: (document.getElementById('gc-forn').value||'').trim()||null, nota: (document.getElementById('gc-nota').value||'').trim()||null,
+        obs: (document.getElementById('gc-obs').value||'').trim()||null, usuarioId: state.user.id, usuarioNome: state.user.nome, timestamp: new Date().toISOString() });
+      closeSheet(); toast('Compra registrada.'); if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gReguaSheet(tid){
+  const t = state.tanques.find(x=>x.id===tid); if (!t) return;
+  const saldo = dslTanque(tid, state.entradas, state.abastecimentos, state.medicoes).saldo;
+  openSheet('<h2 class="section-title" style="margin-top:0;">Conferir com a régua · '+esc(t.nome)+'</h2>'
+    + '<p class="hint">Saldo que o app calcula agora: <b>'+dslFmtL(saldo)+'</b>. Meça o tanque e informe quantos litros ele realmente tem.</p>'
+    + '<label class="field-label">Litros medidos</label><input type="number" id="gr-med" inputmode="decimal" step="any" min="0">'
+    + '<div id="gr-dif" class="hint" style="margin:-4px 0 10px;"></div>'
+    + '<label class="g-chk"><input type="checkbox" id="gr-ajustar"> Ajustar o saldo do app para este valor</label>'
+    + '<div class="hint" style="margin:-4px 0 10px;">Sem marcar, só fica registrada a diferença (conferência). Marcando, o saldo passa a valer o medido.</div>'
+    + '<label class="field-label">Observação</label><input type="text" id="gr-obs" maxlength="200" placeholder="Ex.: régua lida às 7h, tanque frio">'
+    + '<button class="btn primary" id="gr-ok">Registrar conferência</button>');
+  document.getElementById('gr-med').addEventListener('input', ()=>{
+    const m = dslNumIn('gr-med'), el = document.getElementById('gr-dif');
+    if (isNaN(m)){ el.textContent = ''; return; }
+    const d = m - saldo; el.innerHTML = 'Diferença: <b style="color:'+(Math.abs(d)<1?'var(--ok)':'var(--danger)')+';">'+(d>0?'+':'')+dslFmtL(d)+'</b>'+(d<-1?' (faltou diesel no tanque)':d>1?' (tem mais do que o app calcula)':' (confere)');
+  });
+  document.getElementById('gr-ok').onclick = async ()=>{
+    const m = dslNumIn('gr-med'); if (isNaN(m) || m<0){ toast('Informe os litros medidos.'); return; }
+    const b = document.getElementById('gr-ok'); b.disabled = true;
+    try{
+      const id = 'me_'+uid();
+      await db.collection('tanque_medicoes').doc(id).set({ id, tanqueId: tid, dataHora: new Date().toISOString(), litrosMedidos: m, saldoApp: saldo, diferenca: m-saldo,
+        ajustar: document.getElementById('gr-ajustar').checked, obs: (document.getElementById('gr-obs').value||'').trim()||null,
+        usuarioId: state.user.id, usuarioNome: state.user.nome, timestamp: new Date().toISOString() });
+      closeSheet(); toast('Conferência registrada.'); if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gTanqueForm(tid){
+  const t = tid ? state.tanques.find(x=>x.id===tid) : null;
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+(t?'Editar tanque':'Novo tanque')+'</h2>'
+    + '<label class="field-label">Nome</label><input type="text" id="gt-nome" maxlength="60" value="'+esc(t?t.nome:'')+'" placeholder="Ex.: Tanque principal">'
+    + '<label class="field-label">Capacidade (litros)</label><input type="number" id="gt-cap" inputmode="decimal" step="any" min="0" value="'+(t&&t.capacidadeL!=null?t.capacidadeL:'')+'">'
+    + '<label class="field-label">Saldo mínimo (litros) — destaca quando ficar abaixo</label><input type="number" id="gt-min" inputmode="decimal" step="any" min="0" value="'+(t&&t.minimoL!=null?t.minimoL:'')+'">'
+    + (t?'<label class="g-chk"><input type="checkbox" id="gt-ativo" '+(t.ativo!==false?'checked':'')+'> Tanque ativo</label>':'')
+    + '<button class="btn primary" id="gt-ok">Salvar</button>');
+  document.getElementById('gt-ok').onclick = async ()=>{
+    const nome = (document.getElementById('gt-nome').value||'').trim(); if (!nome){ toast('Informe o nome.'); return; }
+    const cap = dslNumIn('gt-cap'), min = dslNumIn('gt-min');
+    const dados = { nome, capacidadeL: isNaN(cap)?null:cap, minimoL: isNaN(min)?null:min };
+    const b = document.getElementById('gt-ok'); b.disabled = true;
+    try{
+      if (t) await db.collection('tanques').doc(t.id).update(Object.assign(dados, { ativo: document.getElementById('gt-ativo').checked }));
+      else { const id = 'tq_'+uid(); await db.collection('tanques').doc(id).set(Object.assign({ id, ativo:true, criadoEm:new Date().toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome }, dados)); }
+      closeSheet(); toast('Tanque salvo.'); if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+
+/* ---- Paradas e manutenção (update_016) ----
+   Qualquer pessoa da Gestão abre uma ocorrência (equipamento + motivo); ela fica EM ABERTO. O supervisor libera na
+   mesma ocorrência (o que foi feito, quem pegou, data e hora). Nada é apagado: o supervisor anula com motivo. */
+const MANUT_MOTIVOS = { manutencao:['Quebra / defeito','Manutenção preventiva','Troca de peça','Pneu / esteira','Hidráulico','Elétrica','Outro'],
+                        parada:['Falta de operador','Sem diesel','Sem serviço','Aguardando peça','Clima','Outro'] };
+const MANUT_LIBERACAO = ['Reparo concluído','Peça trocada','Liberado sem reparo','Voltou a operar','Outro'];
+const MANUT_CAT = { manutencao:'Manutenção', parada:'Parada' };
+function dslFmtHoras(h){
+  if (h==null || isNaN(h)) return '—';
+  if (h < 1) return Math.max(1, Math.round(h*60))+' min';
+  if (h < 48){ const hh = Math.floor(h), mm = Math.round((h-hh)*60); return hh+' h'+(mm?' '+mm+' min':''); }
+  const d = Math.floor(h/24), hh = Math.round(h-d*24); return d+' dia'+(d===1?'':'s')+(hh?' '+hh+' h':'');
+}
+function gManutAvisoBanco(){
+  return '<div class="card left-danger"><b>Paradas e manutenção ainda não estão no banco.</b>'
+    + '<p class="hint" style="margin:6px 0 0;">Rode o arquivo <b>update_016_paradas.sql</b> no SQL Editor do Supabase e atualize a página.</p></div>';
+}
+async function gManutAvisar(id, evento){   // aviso push ao supervisor; se falhar, a ocorrência já está salva
+  try{ await sb.functions.invoke('avisar-conferencias', { body:{ tipo:'ocorrencia', id, evento } }); }
+  catch(e){ console.warn('aviso push', e); }
+}
+function gManutCard(o){
+  const e = dslEquipPorId(o.equipamentoId);
+  return '<div class="card left-danger"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><b>'+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+(e?' — '+esc(e.nome):'')+'</b>'
+    + dslChip(MANUT_CAT[o.categoria]||o.categoria,'danger')+'</div>'
+    + '<div style="margin:6px 0 2px;"><b>'+esc(o.motivo)+'</b></div><div>'+esc(o.descricao)+'</div>'
+    + '<div class="hint" style="margin:6px 0 8px;">Aberta em '+dslDataCurta(o.abertaEm)+(o.abertaPorNome?' por '+esc(o.abertaPorNome):'')+' · parado há <b>'+dslFmtHoras(dslOcorrenciaHoras(o))+'</b></div>'
+    + (dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button>':'<div class="hint" style="margin:0;">Quem libera é o supervisor.</div>')+'</div>';
+}
+function gManutLinha(o){
+  const h = dslOcorrenciaHoras(o);
+  return '<div class="list-item" data-g-act="manut-ver" data-id="'+esc(o.id)+'" style="cursor:pointer;'+(o.anulado?'opacity:.55;':'')+'"><div class="li-main">'
+    + '<div class="li-code" style="font-size:14px;'+(o.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+' · '+esc(o.motivo)+(o.anulado?' '+dslChip('anulada','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(o.abertaEm)+(o.liberadaEm?' → '+dslDataCurta(o.liberadaEm):' → em aberto')+(o.servicoRealizado?' · '+esc(o.servicoRealizado):'')+'</div></div>'
+    + '<div class="li-side"><div class="li-weight" style="font-size:13px;">'+dslFmtHoras(h)+'</div></div></div>';
+}
+function renderGManut(){
+  const body = document.getElementById('gmanut-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  if (state.paradasErr){ body.innerHTML = gManutAvisoBanco(); return; }
+  const todas = state.ocorrencias.slice().sort((a,b)=>dslT(b.abertaEm)-dslT(a.abertaEm));
+  const abertas = todas.filter(o=>!o.anulado && !o.liberadaEm).sort((a,b)=>dslT(a.abertaEm)-dslT(b.abertaEm));
+  const hist = todas.filter(o=>o.anulado || o.liberadaEm).slice(0,40);
+  const hoje = new Date(), de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).getTime(), ate = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1).getTime();
+  const R = dslParadasResumo(state.ocorrencias, de, ate);
+  body.innerHTML =
+    '<div class="btn-row" style="margin-bottom:12px;"><button class="btn primary" data-g-act="manut-nova">+ Abrir ocorrência</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
+    + '<h2 class="section-title" style="margin-top:6px;">Em aberto ('+abertas.length+')</h2>'
+    + (abertas.map(gManutCard).join('') || '<div class="card"><p class="hint" style="margin:0;">Nenhum equipamento parado agora.</p></div>')
+    + '<h2 class="section-title">Mês</h2><div class="stats">'
+    + '<div class="stat"><div class="n">'+R.total+'</div><div class="l">Ocorrências</div></div>'
+    + '<div class="stat accent"><div class="n">'+dslFmtN(R.horas,0)+' h</div><div class="l">Horas paradas</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+(R.tempoMedioH!=null?dslFmtHoras(R.tempoMedioH):'—')+'</div><div class="l">Tempo médio até liberar</div></div></div>'
+    + '<h2 class="section-title">Histórico</h2><div class="card" style="padding:0 14px;">'+(hist.map(gManutLinha).join('')||'<p class="hint">Nenhuma ocorrência encerrada ainda.</p>')+'</div>'
+    + (dslEhSup()?'<button class="btn ghost" data-g-act="manut-exportar" style="border:1px solid var(--border);">Exportar paradas (Excel)</button>':'');
+}
+function gManutAbrirSheet(equipId){
+  const livres = state.equipamentos.filter(e=>e.ativo!==false && !dslOcorrenciaAberta(e.id, state.ocorrencias)).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  if (!livres.length){ toast('Todos os equipamentos já têm ocorrência em aberto (ou não há equipamento cadastrado).', 3500); return; }
+  const motivos = cat => MANUT_MOTIVOS[cat].map(m=>'<option>'+esc(m)+'</option>').join('');
+  openSheet('<h2 class="section-title" style="margin-top:0;">Abrir ocorrência</h2>'
+    + '<label class="field-label">Equipamento</label><select id="mo-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+livres.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
+    + '<label class="field-label">O que é</label><select id="mo-cat"><option value="manutencao">Manutenção (quebra, reparo, revisão)</option><option value="parada">Parada (sem operador, sem diesel…)</option></select>'
+    + '<label class="field-label">Motivo</label><select id="mo-motivo">'+motivos('manutencao')+'</select>'
+    + '<label class="field-label">Descreva o que está acontecendo</label><input type="text" id="mo-desc" maxlength="300" placeholder="Ex.: vazando óleo na mangueira do braço">'
+    + '<label class="field-label">Data e hora que parou</label><input type="datetime-local" id="mo-data" value="'+dslLocalInput(new Date())+'">'
+    + '<button class="btn primary" id="mo-ok">Abrir ocorrência</button>');
+  document.getElementById('mo-cat').onchange = ()=>{ document.getElementById('mo-motivo').innerHTML = motivos(document.getElementById('mo-cat').value); };
+  document.getElementById('mo-ok').onclick = async ()=>{
+    const eid = document.getElementById('mo-equip').value, eq = dslEquipPorId(eid);
+    const desc = (document.getElementById('mo-desc').value||'').trim(), quando = new Date(document.getElementById('mo-data').value);
+    if (!eq){ toast('Escolha o equipamento.'); return; }
+    if (!desc){ toast('Descreva o que está acontecendo.'); return; }
+    if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
+    if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const id = 'oc_'+uid(), b = document.getElementById('mo-ok'); b.disabled = true;
+    try{
+      await db.collection('ocorrencias').doc(id).set({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, categoria:document.getElementById('mo-cat').value,
+        motivo:document.getElementById('mo-motivo').value, descricao:desc, abertaEm:quando.toISOString(), abertaPor:state.user.id, abertaPorNome:state.user.nome });
+      closeSheet(); toast('Ocorrência aberta.'); gManutAvisar(id, 'abertura');
+      if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gManutLiberarSheet(id){
+  const o = state.ocorrencias.find(x=>x.id===id); if (!o || o.liberadaEm || o.anulado) return;
+  if (!dslEhSup()){ toast('Só o supervisor libera o equipamento.'); return; }
+  openSheet('<h2 class="section-title" style="margin-top:0;">Liberar '+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+'</h2>'
+    + '<p class="hint">Aberta em '+dslDataCurta(o.abertaEm)+' · '+esc(o.motivo)+': '+esc(o.descricao)+'</p>'
+    + '<label class="field-label">Por que foi liberado</label><select id="ml-motivo">'+MANUT_LIBERACAO.map(m=>'<option>'+esc(m)+'</option>').join('')+'</select>'
+    + '<label class="field-label">O que foi feito no equipamento</label><input type="text" id="ml-serv" maxlength="300" placeholder="Ex.: trocou a mangueira e completou o óleo">'
+    + '<label class="field-label">Quem pegou o equipamento</label><input type="text" id="ml-quem" maxlength="80" placeholder="Nome de quem recebeu">'
+    + '<label class="field-label">Data e hora da liberação</label><input type="datetime-local" id="ml-data" value="'+dslLocalInput(new Date())+'">'
+    + '<button class="btn primary" id="ml-ok">Liberar equipamento</button>');
+  document.getElementById('ml-ok').onclick = async ()=>{
+    const serv = (document.getElementById('ml-serv').value||'').trim(), quem = (document.getElementById('ml-quem').value||'').trim(), quando = new Date(document.getElementById('ml-data').value);
+    if (!serv){ toast('Informe o que foi feito no equipamento.'); return; }
+    if (!quem){ toast('Informe quem pegou o equipamento.'); return; }
+    if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
+    if (quando.getTime() < dslT(o.abertaEm)){ toast('A liberação não pode ser antes da abertura ('+dslDataCurta(o.abertaEm)+').', 3500); return; }
+    if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const b = document.getElementById('ml-ok'); b.disabled = true;
+    try{
+      await db.collection('ocorrencias').doc(id).update({ liberadaEm:quando.toISOString(), liberadaPorNome:state.user.nome, motivoLiberacao:document.getElementById('ml-motivo').value, servicoRealizado:serv, recebidoPor:quem });
+      if (db.refetchAll) await db.refetchAll();
+      const novo = state.ocorrencias.find(x=>x.id===id);
+      if (novo && novo.liberadaEm){ closeSheet(); toast('Equipamento liberado.'); gManutAvisar(id, 'liberacao'); }
+      else { toast('Não foi possível liberar. Confira se você é supervisor da Gestão.', 4000); b.disabled = false; }
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gManutDetalhe(id){
+  const o = state.ocorrencias.find(x=>x.id===id); if (!o) return;
+  const l = (t,v)=> v ? '<div class="li-desc" style="margin:4px 0;"><b>'+t+':</b> '+esc(v)+'</div>' : '';
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+' · '+esc(MANUT_CAT[o.categoria]||o.categoria)+(o.anulado?' '+dslChip('anulada','danger'):'')+'</h2>'
+    + l('Motivo',o.motivo)+l('Descrição',o.descricao)+l('Aberta em',dslDataCurta(o.abertaEm)+(o.abertaPorNome?' por '+o.abertaPorNome:''))
+    + (o.liberadaEm ? l('Liberada em',dslDataCurta(o.liberadaEm)+(o.liberadaPorNome?' por '+o.liberadaPorNome:''))+l('Por que foi liberado',o.motivoLiberacao)+l('O que foi feito',o.servicoRealizado)+l('Quem pegou o equipamento',o.recebidoPor) : '<div class="li-desc" style="margin:4px 0;"><b>Situação:</b> em aberto</div>')
+    + l('Tempo parado',dslFmtHoras(dslOcorrenciaHoras(o))) + (o.anulado?l('Motivo da anulação',o.anuladoMotivo):'')
+    + (!o.liberadaEm&&!o.anulado&&dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button>':'')
+    + (dslEhSup()&&!o.anulado?'<button class="btn ghost" data-g-act="anular" data-t="ocorrencias" data-id="'+esc(o.id)+'" style="border:1px solid var(--border);">Anular ocorrência</button>':''));
+}
+function gManutExportar(){
+  const fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
+  const rows = state.ocorrencias.slice().sort((a,b)=>dslT(b.abertaEm)-dslT(a.abertaEm)).map(o=>({ equipamento:dslEquipNome(o.equipamentoId,o.equipamentoCodigo), categoria:MANUT_CAT[o.categoria]||o.categoria, motivo:o.motivo, descricao:o.descricao,
+    abertaEm:fmt(o.abertaEm), abertaPor:o.abertaPorNome||'', liberadaEm:fmt(o.liberadaEm), motivoLiberacao:o.motivoLiberacao||'', servico:o.servicoRealizado||'', recebidoPor:o.recebidoPor||'',
+    horas:Math.round(dslOcorrenciaHoras(o)*100)/100, situacao:o.anulado?'ANULADA: '+(o.anuladoMotivo||''):(o.liberadaEm?'liberada':'em aberto') }));
+  exportXlsx(rows, 'paradas_manutencao_'+todayStr()+'.xlsx', ['equipamento','categoria','motivo','descricao','abertaEm','abertaPor','liberadaEm','motivoLiberacao','servico','recebidoPor','horas','situacao'], 'Paradas e manutenção');
+}
+
+/* ---- Equipamentos ---- */
+function renderGEquip(){
+  const body = document.getElementById('gequip-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  const parados = {}; dslSemAbastecer(state.equipamentos, state.abastecimentos, null, state.ocorrencias).forEach(p=>{ parados[p.equipamento.id] = p; });
+  const lista = state.equipamentos.slice().sort((a,b)=>(b.ativo!==false)-(a.ativo!==false) || String(a.codigo).localeCompare(String(b.codigo))).map(e=>{
+    const c = dslConsumo(e, state.abastecimentos), ult = dslUltimoAbastecimento(e.id, state.abastecimentos), p = parados[e.id], oa = dslOcorrenciaAberta(e.id, state.ocorrencias), un = e.medidor==='km'?'km':'h';
+    return '<div class="list-item" data-g-act="equip" data-id="'+esc(e.id)+'" style="cursor:pointer;'+(e.ativo===false?'opacity:.55;':'')+'"><div class="li-main">'
+      + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+'</div>'
+      + '<div class="li-desc">'+esc(DSL_TIPOS[e.tipo]||e.tipo)+' · mede em '+(un==='km'?'km':'horas')+(ult?' · último: '+dslDataCurta(ult.dataHora)+' ('+dslFmtMed(ult.medidor,un)+')':' · nunca abasteceu')+'</div>'
+      + '<div style="margin-top:4px;">'+(e.ativo===false?dslChip('inativo'):'')+(e.ativo!==false&&e.alertaAtivo===false?dslChip('alerta desligado','info'):'')+(oa?dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger'):'')+(p?dslChip('sem abastecer há '+p.dias+' dias','danger'):'')+'</div></div>'
+      + '<div class="li-side"><div class="li-weight" style="font-size:14px;">'+(c.media!=null?dslFmtN(c.media,2)+' '+c.unidade:'—')+'</div></div></div>';
+  }).join('');
+  body.innerHTML = (dslEhSup()?'<button class="btn" data-g-act="equip-novo">+ Novo equipamento</button>':'')
+    + '<div class="card" style="padding:0 14px;">'+(lista||'<p class="hint">Nenhum equipamento cadastrado.'+(dslEhSup()?'':' Peça ao supervisor.')+'</p>')+'</div>'
+    + '<p class="hint">À direita: consumo médio (L/h nas máquinas, km/L no caminhão), calculado entre abastecimentos seguidos.</p>';
+}
+function gEquipDetalhe(id){
+  const e = dslEquipPorId(id); if (!e) return;
+  const un = e.medidor==='km'?'km':'h', c = dslConsumo(e, state.abastecimentos), an = dslAnomalia(c);
+  const hist = state.abastecimentos.filter(a=>a.equipamentoId===id).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,12).map(dslLinha).join('');
+  const res = dslResumo(state.equipamentos, state.abastecimentos, state.entradas, Date.now()-30*86400000, Date.now()+60000, id);
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(e.codigo)+' — '+esc(e.nome)+'</h2>'
+    + '<div class="stats"><div class="stat"><div class="n" style="font-size:22px;">'+(c.media!=null?dslFmtN(c.media,2)+' '+c.unidade:'—')+'</div><div class="l">Consumo médio</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+dslFmtN(res.litros,0)+' L</div><div class="l">Últimos 30 dias ('+res.abastecimentos+' abast.)</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+dslFmtR(res.gasto)+'</div><div class="l">Gasto em 30 dias</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+esc((e.areaUso&&e.areaUso.length)?e.areaUso.map(a=>(DSL_AREAS_USO.find(x=>x[0]===a)||[a,a])[1]).join(', '):'—')+'</div><div class="l">Área de uso</div></div></div>'
+    + (an?'<p class="hint" style="color:var(--danger);">⚠ O último abastecimento teve consumo de '+dslFmtN(an.valor,2)+' '+c.unidade+', bem pior que a média anterior ('+dslFmtN(an.mediaAnterior,2)+').</p>':'')
+    + '<h2 class="section-title">Últimos abastecimentos</h2><div class="card" style="padding:0 14px;">'+(hist||'<p class="hint">Nenhum ainda.</p>')+'</div>'
+    + (dslEhSup()?'<button class="btn" data-g-act="equip-edit" data-id="'+esc(e.id)+'">Editar equipamento</button>':''));
+}
+function gEquipForm(id){
+  const e = id ? dslEquipPorId(id) : null;
+  const tem = e ? state.abastecimentos.some(a=>a.equipamentoId===e.id) : false;
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+(e?'Editar equipamento':'Novo equipamento')+'</h2>'
+    + '<label class="field-label">Código</label><input type="text" id="ge-cod" maxlength="20" value="'+esc(e?e.codigo:'')+'" placeholder="Ex.: PC01, CAM01">'
+    + '<label class="field-label">Nome</label><input type="text" id="ge-nome" maxlength="60" value="'+esc(e?e.nome:'')+'" placeholder="Ex.: Pá carregadeira">'
+    + '<label class="field-label">Tipo</label><select id="ge-tipo">'+Object.keys(DSL_TIPOS).map(k=>'<option value="'+k+'" '+(e&&e.tipo===k?'selected':'')+'>'+DSL_TIPOS[k]+'</option>').join('')+'</select>'
+    + '<label class="field-label">Mede em</label><select id="ge-med" '+(tem?'disabled':'')+'><option value="h" '+(e&&e.medidor==='h'?'selected':'')+'>Horímetro (horas)</option><option value="km" '+(e&&e.medidor==='km'?'selected':'')+'>Odômetro (km)</option></select>'
+    + (tem?'<div class="hint" style="margin:-4px 0 10px;">Não dá para trocar a unidade de quem já tem abastecimentos.</div>':'')
+    + '<label class="field-label">Área de uso</label><div id="ge-areas" style="margin-bottom:10px;">'+DSL_AREAS_USO.map(a=>'<label class="g-chk"><input type="checkbox" data-area-uso="'+a[0]+'" '+(e&&(e.areaUso||[]).includes(a[0])?'checked':'')+'> '+a[1]+'</label>').join('')+'</div>'
+    + '<label class="g-chk"><input type="checkbox" id="ge-alerta" '+(!e||e.alertaAtivo!==false?'checked':'')+'> Avisar se ficar sem abastecer</label>'
+    + '<label class="field-label">Avisar depois de quantos dias</label><input type="number" id="ge-dias" min="1" max="60" step="1" value="'+(e?e.diasAlerta:2)+'">'
+    + '<label class="g-chk"><input type="checkbox" id="ge-uteis" '+(e&&e.alertaDiasUteis?'checked':'')+'> Contar só segunda a sexta</label>'
+    + (e?'<label class="g-chk"><input type="checkbox" id="ge-ativo" '+(e.ativo!==false?'checked':'')+'> Equipamento ativo</label>':'')
+    + '<button class="btn primary" id="ge-ok">Salvar</button>');
+  document.getElementById('ge-ok').onclick = async ()=>{
+    const codigo = (document.getElementById('ge-cod').value||'').trim().toUpperCase(), nome = (document.getElementById('ge-nome').value||'').trim();
+    if (!codigo || !nome){ toast('Informe o código e o nome.'); return; }
+    if (state.equipamentos.some(x=>x.id!==(e&&e.id) && String(x.codigo).toUpperCase()===codigo)){ toast('Já existe um equipamento com o código '+codigo+'.'); return; }
+    const dias = Math.round(dslNumIn('ge-dias')); if (!(dias>=1 && dias<=60)){ toast('Dias do aviso: de 1 a 60.'); return; }
+    const dados = { codigo, nome, tipo: document.getElementById('ge-tipo').value, medidor: document.getElementById('ge-med').value,
+      areaUso: [...document.querySelectorAll('[data-area-uso]')].filter(c=>c.checked).map(c=>c.getAttribute('data-area-uso')),
+      diasAlerta: dias, alertaDiasUteis: document.getElementById('ge-uteis').checked, alertaAtivo: document.getElementById('ge-alerta').checked };
+    const b = document.getElementById('ge-ok'); b.disabled = true;
+    try{
+      if (e){ dados.ativo = document.getElementById('ge-ativo').checked; await db.collection('equipamentos').doc(e.id).update(dados); }
+      else { const nid = 'eq_'+uid(); await db.collection('equipamentos').doc(nid).set(Object.assign({ id:nid, ativo:true, criadoEm:new Date().toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome }, dados)); }
+      closeSheet(); toast('Equipamento salvo.'); if (db.refetchAll) await db.refetchAll();
+    }catch(err){ console.error(err); b.disabled = false; }
+  };
+}
+
+/* ---- anular, exportar e cliques ---- */
+function gAnularSheet(tabela, id){
+  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência' };
+  openSheet('<h2 class="section-title" style="margin-top:0;">Anular '+(nomes[tabela]||'lançamento')+'</h2>'
+    + '<p class="hint">O lançamento não é apagado: fica marcado como anulado, com o motivo, e deixa de entrar nas contas. Para corrigir, anule e lance de novo.</p>'
+    + '<label class="field-label">Motivo (obrigatório)</label><input type="text" id="anu-motivo" maxlength="200" placeholder="Ex.: digitei errado">'
+    + '<button class="btn danger" id="anu-ok">Anular</button>');
+  document.getElementById('anu-ok').onclick = async ()=>{
+    const motivo = (document.getElementById('anu-motivo').value||'').trim(); if (!motivo){ toast('Informe o motivo.'); return; }
+    const b = document.getElementById('anu-ok'); b.disabled = true;
+    try{ await db.collection(tabela).doc(id).update({ anulado:true, anuladoMotivo:motivo }); closeSheet(); toast('Lançamento anulado.'); if (db.refetchAll) await db.refetchAll(); }
+    catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gExportar(tipo){
+  const fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
+  if (tipo==='compras'){
+    const rows = state.entradas.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).map(c=>({ data:fmt(c.dataHora), tanque:dslNomeTanque(c.tanqueId), litros:c.litros, precoLitro:c.precoLitro, valorTotal:c.valorTotal, fornecedor:c.fornecedor||'', nota:c.nota||'', usuario:c.usuarioNome||'', situacao:c.anulado?'ANULADA: '+(c.anuladoMotivo||''):'válida' }));
+    exportXlsx(rows, 'diesel_compras_'+todayStr()+'.xlsx', ['data','tanque','litros','precoLitro','valorTotal','fornecedor','nota','usuario','situacao'], 'Diesel — compras'); return;
+  }
+  const rows = state.abastecimentos.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).map(a=>{ const e = dslEquipPorId(a.equipamentoId); return { data:fmt(a.dataHora), equipamento:dslEquipNome(a.equipamentoId,a.equipamentoCodigo), unidade:e&&e.medidor==='km'?'km':'h', leitura:a.medidor, litros:a.litros, custoLitro:a.custoLitro==null?'':a.custoLitro, custoTotal:a.custoTotal==null?'':a.custoTotal, tanque:dslNomeTanque(a.tanqueId), usuario:a.usuarioNome||'', obs:a.obs||'', situacao:a.anulado?'ANULADO: '+(a.anuladoMotivo||''):'válido' }; });
+  exportXlsx(rows, 'diesel_abastecimentos_'+todayStr()+'.xlsx', ['data','equipamento','unidade','leitura','litros','custoLitro','custoTotal','tanque','usuario','obs','situacao'], 'Diesel — abastecimentos');
+}
+async function gClique(e){
+    const b = e.target.closest('[data-g-act]'); if (!b) return;
+    const a = b.dataset.gAct, id = b.dataset.id;
+    if (a==='ir') setView(b.dataset.v);
+    else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
+    else if (a==='exportar') gExportar('abastecimentos');
+    else if (a==='exportar-compras') gExportar('compras');
+    else if (a==='manut-exportar') gManutExportar();
+    else if (a==='anular') gAnularSheet(b.dataset.t, id);
+    else if (a==='compra') gCompraSheet(id);
+    else if (a==='regua') gReguaSheet(id);
+    else if (a==='tanque-novo') gTanqueForm(null);
+    else if (a==='tanque-edit') gTanqueForm(id);
+    else if (a==='manut-nova') gManutAbrirSheet(b.dataset.e||'');
+    else if (a==='manut-liberar') gManutLiberarSheet(id);
+    else if (a==='manut-ver') gManutDetalhe(id);
+    else if (a==='equip') gEquipDetalhe(id);
+    else if (a==='equip-novo') gEquipForm(null);
+    else if (a==='equip-edit') gEquipForm(id);
+}
+['gdash','gabast','gmanut','gtanque','gequip'].forEach(v=>document.getElementById('view-'+v).addEventListener('click', gClique));
+document.getElementById('sheet-content').addEventListener('click', gClique);   // botões dentro das janelas (anular, editar…)
+function subscribeDiesel(){
+  const ass = (tabela, chave, campo, lim)=>{
+    const c = db.collection(tabela); if (campo) c.orderBy(campo,'desc'); if (lim) c.limit(lim);
+    c.onSnapshot(snap=>{ state[chave] = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
+  };
+  ass('equipamentos','equipamentos'); ass('tanques','tanques');
+  ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000);
+}
+
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {
   situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (kg)',
   data:'Data', tipo:'Status', quantidade:'Quantidade', obs:'Observação',
   lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)',
-  dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo'
+  dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo',
+  equipamento:'Equipamento', unidade:'Unidade', leitura:'Horímetro / km', litros:'Litros', custoLitro:'Custo (R$/L)', custoTotal:'Custo total (R$)',
+  categoria:'Categoria', motivo:'Motivo', descricao:'Descrição', abertaEm:'Aberta em', abertaPor:'Aberta por', liberadaEm:'Liberada em', motivoLiberacao:'Motivo da liberação', servico:'O que foi feito', recebidoPor:'Quem pegou', horas:'Horas parado',
+  tanque:'Tanque', usuario:'Usuário', situacao:'Situação', precoLitro:'Preço (R$/L)', valorTotal:'Valor total (R$)', fornecedor:'Fornecedor', nota:'Nota fiscal'
 };
 // vira um nome de arquivo seguro: sem acento, sem espaço, sem caractere especial
 function slugify(texto){

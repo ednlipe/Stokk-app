@@ -404,7 +404,7 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
 #view-rendimento{--warn:#E0A800;--warn-dim:rgba(224,168,0,.16);}
 @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) #view-rendimento{--warn:#9A6F00;--warn-dim:#FBEFC4;} }
 :root[data-theme="light"] #view-rendimento{--warn:#9A6F00;--warn-dim:#FBEFC4;}
-main .view#view-rendimento.active{max-width:1240px;}
+main .view#view-rendimento.active,main .view#view-diesel.active{max-width:1240px;}
 .rend-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;margin-bottom:14px;}
 .rend-mes{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-size:21px;text-transform:capitalize;}
 .rend-mes button{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:18px;cursor:pointer;}
@@ -451,6 +451,19 @@ table.rend-tab{width:100%;border-collapse:separate;border-spacing:0 3px;font-var
 .rend-bar .n.ok{color:var(--ok);} .rend-bar .n.warn{color:var(--warn);} .rend-bar .n.bad{color:var(--danger);}
 .rend-vazio{padding:34px 16px;text-align:center;color:var(--text-muted);font-size:14px;}
 #rend-tip{position:fixed;z-index:60;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--accent);border-radius:6px;padding:7px 10px;font-family:var(--font-mono);font-size:12px;line-height:1.45;opacity:0;max-width:260px;box-shadow:0 6px 24px rgba(0,0,0,.35);}
+
+/* painel de diesel */
+.dsl-chart{display:flex;align-items:flex-end;gap:2px;height:150px;border-bottom:1px solid var(--border);}
+.dsl-col{flex:1;height:100%;display:flex;align-items:flex-end;cursor:default;min-width:0;}
+.dsl-col i{display:block;width:100%;border-radius:3px 3px 0 0;min-height:0;transition:filter .1s;}
+.dsl-col:hover i{filter:brightness(1.25);}
+.dsl-col:hover{background:var(--surface-2);}
+.dsl-axis{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:5px;}
+.dsl-mini{height:8px;background:var(--surface-2);border-radius:3px;overflow:hidden;min-width:70px;}
+.dsl-mini i{display:block;height:100%;background:var(--accent);border-radius:0 3px 3px 0;}
+.dsl-tab td:first-child span{color:var(--text-muted);font-size:11px;margin-left:4px;}
+.dsl-tab td{white-space:nowrap;}
+#dsl-tip{position:fixed;z-index:60;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--accent);border-radius:6px;padding:7px 10px;font-family:var(--font-mono);font-size:12px;line-height:1.45;opacity:0;max-width:260px;}
 /* contagem cega */
 .cega-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;}
 .cega-stat{background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
@@ -647,9 +660,18 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
     <section class="view" id="view-rendimento">
       <div id="rend-body"></div>
     </section>
+
+    <!-- GESTÃO · DIESEL -->
+    <section class="view" id="view-diesel">
+      <div id="dsl-body"></div>
+    </section>
   </main>
 
   <nav class="bottom">
+    <button data-nav="diesel" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M5 21V5a1 1 0 011-1h7a1 1 0 011 1v16M4 21h11M14 9h2.5a1.5 1.5 0 011.5 1.5V16a1.5 1.5 0 003 0V8l-3-3M7 8h4"/></svg>
+      Diesel
+    </button>
     <button data-nav="dashboard" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
       Início
@@ -748,13 +770,20 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
    A proteção real está no banco (RLS); aqui é só a escolha. state.area vazio = banco ainda sem update_012. */
 // abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
 const ABAS_OCULTAS_POR_AREA = { planta1: ['rendimento'] };
+// ambiente Gestão (update_015): só mostra o painel de diesel; as outras áreas não mostram essa aba
 function esconderAbasPorArea(){
+  const gestao = state.area === 'gestao';
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
   document.querySelectorAll('[data-nav]').forEach(el=>{
-    if (ocultas.includes(el.getAttribute('data-nav'))) el.style.display = 'none';
+    const n = el.getAttribute('data-nav'), diesel = n==='diesel';
+    if (gestao ? !diesel : (diesel || ocultas.includes(n))) el.style.display = 'none';
+    else if (gestao) el.style.display = '';
   });
 }
-const AREA_TABLES = ['volumes','movimentos','sessoes','producoes'];
+const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias'].concat(DIESEL_TABLES);
+// tabelas gravadas só com INSERT (o histórico não aceita "upsert": isso exigiria permissão de UPDATE)
+const SOMENTE_INSERIR = ['movimentos'].concat(DIESEL_TABLES);
 function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
@@ -811,12 +840,33 @@ function createSupabaseDB(){
       .subscribe();
   }
   async function refetch(table, orderField, orderDir, limitN){
-    let q = sb.from(table).select('*');
-    const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
-    if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
-    if (limitN) q = q.limit(limitN);
-    const {data, error} = await q;
-    if (error){ console.error(table, error); toast('Erro ao ler dados: '+error.message, 4000); return; }
+    // O Supabase devolve no máximo 1000 linhas por pedido: lemos em páginas até acabar (ou até o limite pedido).
+    const PAGINA = 1000;
+    const pkCol = camelToSnake(PK[table] || 'id');
+    const ar = areaDaTabela(table);
+    const data = []; let error = null;
+    while (true){
+      let q = sb.from(table).select('*');
+      if (ar) q = q.eq('area', ar);
+      if (orderField) q = q.order(camelToSnake(orderField), {ascending: orderDir!=='desc'});
+      q = q.order(pkCol, {ascending:true});          // desempate fixo, para a paginação não repetir nem pular linhas
+      const pedir = Math.min(PAGINA, limitN ? (limitN - data.length) : PAGINA);
+      q = q.range(data.length, data.length + pedir - 1);
+      const r = await q;
+      if (r.error){ error = r.error; break; }
+      const lote = r.data || [];
+      data.push(...lote);
+      if (lote.length < pedir || (limitN && data.length >= limitN)) break;
+    }
+    if (error){
+      console.error(table, error);
+      // tabelas do diesel só existem depois do update_015: sem ele, a tela avisa em vez de encher de erros
+      if (table==='ocorrencias'){ state.paradasErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      toast('Erro ao ler dados: '+error.message, 4000); return;
+    }
+    if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
+    if (table==='ocorrencias') state.paradasErr = null;
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
   }
@@ -829,7 +879,7 @@ function createSupabaseDB(){
           async set(dataObj){
             const row = Object.assign(objToSnake(dataObj), {[camelToSnake(pk)]: id});
             const ar = areaDaTabela(table); if (ar) row.area = ar;
-            const {error} = await sb.from(table).upsert(row);
+            const {error} = await (SOMENTE_INSERIR.includes(table) ? sb.from(table).insert(row) : sb.from(table).upsert(row));
             if (error){ toast('Erro ao salvar: '+error.message, 4000); throw error; }
           },
           async update(dataObj){
@@ -955,9 +1005,9 @@ async function onAuthed(user){
   state.ready.db = true; state.ready.downloads = true;
   document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
-  setView('dashboard');
+  setView(state.area === 'gestao' ? 'diesel' : 'dashboard');
 }
-const APP_VERSAO = '1.4.2 · 27/10';
+const APP_VERSAO = '1.5.1 · 05/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -1225,6 +1275,7 @@ function encontrarProdutoPorCodigoEtiqueta(codigoEtiqueta){
 
 /* ---------------- DATA SUBSCRIPTIONS ---------------- */
 function subscribeData(){
+  if (state.area === 'gestao'){ subscribeDiesel(); return; }   // ambiente Gestão: só as tabelas de diesel
   db.collection('volumes').onSnapshot(snap=>{
     state.volumes.clear();
     snap.docs.forEach(d=>state.volumes.set(d.id, d.data()));
@@ -1284,6 +1335,7 @@ function renderView(name){
   else if (name==='inventario') { state.relatorioAberto ? renderRelatorioRegistrado(state.relatorioAberto) : renderInventario(); }
   else if (name==='historico') renderHistorico();
   else if (name==='rendimento') renderRendimento();
+  else if (name==='diesel') renderDiesel();
 }
 
 /* ================= RENDIMENTO METÁLICO =================
@@ -1514,6 +1566,428 @@ function rendExportar(){
     }
   });
 })();
+
+/* ================= DIESEL — núcleo (saldo do tanque, custo médio, consumo, alertas) =================
+   Funções puras (sem tela, sem banco): recebem listas e devolvem números. Mesma cópia no app e no desktop;
+   testadas em tests/diesel_core.test.cjs (que lê este trecho direto do código).
+   Regras: ver docs/regras-de-negocio.md (Diesel).
+   - Lançamento anulado (anulado = true) nunca entra em conta nenhuma.
+   - Saldo do tanque = entradas − abastecimentos + ajustes de régua (medição com ajustar = true).
+   - Custo médio ponderado: a cada compra, novo custo = (saldo×custo + litros×preço) ÷ (saldo + litros);
+     saída e ajuste não mudam o custo médio. Saldo negativo conta como zero na média.
+   - Cada abastecimento guarda o custo médio do momento (custoLitro); o gasto histórico não muda depois.
+   - Consumo: cada abastecimento repõe o que o equipamento gastou desde o abastecimento anterior
+     (tanque do equipamento cheio nos dois). Consumo = litros ÷ horas (L/h) ou km ÷ litros (km/L). */
+const DSL_MS_DIA = 86400000;
+function dslNum(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function dslT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
+function dslValidos(lista){ return (lista||[]).filter(x=>x && !x.anulado); }
+
+// Percorre o tanque no tempo e devolve saldo, custo médio e totais. "ate" (opcional) corta no tempo.
+function dslTanque(tanqueId, entradas, abastecimentos, medicoes, ate){
+  const lim = ate ? dslT(ate) : Infinity;
+  const ev = [];
+  dslValidos(entradas).filter(x=>x.tanqueId===tanqueId).forEach(x=>ev.push({k:0, t:dslT(x.dataHora), x}));
+  dslValidos(medicoes).filter(x=>x.tanqueId===tanqueId && x.ajustar).forEach(x=>ev.push({k:1, t:dslT(x.dataHora), x}));
+  dslValidos(abastecimentos).filter(x=>x.tanqueId===tanqueId).forEach(x=>ev.push({k:2, t:dslT(x.dataHora), x}));
+  ev.sort((a,b)=> a.t-b.t || a.k-b.k);
+  let saldo = 0, custo = 0, entL = 0, entV = 0, saiL = 0, ajuL = 0;
+  for (const e of ev){
+    if (e.t > lim) break;
+    if (e.k===0){
+      const l = dslNum(e.x.litros), p = dslNum(e.x.precoLitro);
+      const base = Math.max(saldo, 0);
+      custo = (base + l) > 0 ? (base*custo + l*p) / (base + l) : p;
+      saldo += l; entL += l; entV += dslNum(e.x.valorTotal);
+    } else if (e.k===1){ const d = dslNum(e.x.diferenca); saldo += d; ajuL += d; }
+    else { const l = dslNum(e.x.litros); saldo -= l; saiL += l; }
+  }
+  return { saldo, custoMedio: custo > 0 ? custo : null, entradasL: entL, entradasValor: entV, saidasL: saiL, ajustesL: ajuL };
+}
+// Custo (R$/L) que um abastecimento feito AGORA deve guardar: o custo médio do tanque; nulo se não há compra.
+function dslCustoParaAbastecer(tanqueId, entradas, abastecimentos, medicoes){
+  const r = dslTanque(tanqueId, entradas, abastecimentos, medicoes);
+  return r.custoMedio;
+}
+
+// Lê o medidor mais recente do equipamento (para validar e sugerir o próximo).
+function dslUltimoAbastecimento(equipId, abastecimentos){
+  const l = dslValidos(abastecimentos).filter(a=>a.equipamentoId===equipId);
+  l.sort((a,b)=> dslT(b.dataHora)-dslT(a.dataHora) || dslT(b.timestamp)-dslT(a.timestamp));
+  return l[0] || null;
+}
+// Confere o medidor digitado. Devolve {erro} (bloqueia) ou {aviso} (só avisa) ou {}.
+function dslValidarMedidor(equip, ultimo, valor, troca){
+  const v = (valor===''||valor==null) ? NaN : Number(valor);
+  if (!Number.isFinite(v) || v < 0) return { erro: 'Informe o ' + (equip && equip.medidor==='km' ? 'km' : 'horímetro') + ' do equipamento.' };
+  if (troca || !ultimo) return {};
+  const ant = dslNum(ultimo.medidor), un = equip && equip.medidor==='km' ? 'km' : 'h';
+  if (v < ant) return { erro: 'O valor (' + v + ' ' + un + ') é menor que o do último abastecimento (' + ant + ' ' + un + '). Confira, ou marque "troca de medidor".' };
+  if (v === ant) return { aviso: 'O valor é igual ao do último abastecimento. Confira se o equipamento realmente não rodou.' };
+  const salto = v - ant, limite = un==='km' ? 3000 : 400;
+  if (salto > limite) return { aviso: 'O equipamento andou ' + Math.round(salto) + ' ' + un + ' desde o último abastecimento. Confira o valor digitado.' };
+  return {};
+}
+
+// Consumo de um equipamento. Cada abastecimento (menos o 1º e os de troca de medidor) forma um intervalo.
+function dslConsumo(equip, abastecimentos){
+  const km = equip && equip.medidor==='km';
+  const l = dslValidos(abastecimentos).filter(a=>a.equipamentoId===equip.id)
+    .sort((a,b)=> dslT(a.dataHora)-dslT(b.dataHora) || dslT(a.timestamp)-dslT(b.timestamp));
+  const intervalos = []; let somaL = 0, somaD = 0;
+  for (let i=1; i<l.length; i++){
+    if (l[i].trocaMedidor) continue;
+    const d = dslNum(l[i].medidor) - dslNum(l[i-1].medidor), lit = dslNum(l[i].litros);
+    if (!(d > 0) || !(lit > 0)) continue;
+    const valor = km ? d/lit : lit/d;   // km/L ou L/h
+    intervalos.push({ id:l[i].id, dataHora:l[i].dataHora, delta:d, litros:lit, valor });
+    somaL += lit; somaD += d;
+  }
+  const media = somaD > 0 ? (km ? somaD/somaL : somaL/somaD) : null;
+  return { unidade: km ? 'km/L' : 'L/h', media, intervalos, somaLitros: somaL, somaDelta: somaD };
+}
+// Marca o último intervalo como fora do normal: >50% pior que a média dos intervalos anteriores (precisa de 3+ antes).
+function dslAnomalia(consumo){
+  const iv = consumo.intervalos; if (iv.length < 4) return null;
+  const ult = iv[iv.length-1], ant = iv.slice(0, -1);
+  const km = consumo.unidade==='km/L';
+  const mediaAnt = km ? ant.reduce((s,x)=>s+x.delta,0)/ant.reduce((s,x)=>s+x.litros,0) : ant.reduce((s,x)=>s+x.litros,0)/ant.reduce((s,x)=>s+x.delta,0);
+  const pior = km ? ult.valor < mediaAnt/1.5 : ult.valor > mediaAnt*1.5;
+  return pior ? { valor: ult.valor, mediaAnterior: mediaAnt } : null;
+}
+
+// Dias parados: quantos dias se passaram entre "de" e "ate" (datas em Brasília), contando só seg–sex se uteis.
+function dslDiaSP(t){ return new Date(t - 3*3600000).toISOString().slice(0,10); }   // AAAA-MM-DD em Brasília
+function dslDiasEntre(deT, ateT, uteis){
+  let a = Date.parse(dslDiaSP(deT)+'T00:00:00Z'), b = Date.parse(dslDiaSP(ateT)+'T00:00:00Z');
+  if (b <= a) return 0;
+  if (!uteis) return Math.round((b-a)/DSL_MS_DIA);
+  let n = 0;
+  for (let t = a + DSL_MS_DIA; t <= b; t += DSL_MS_DIA){ const w = new Date(t).getUTCDay(); if (w!==0 && w!==6) n++; }
+  return n;
+}
+// Equipamentos ativos, com alerta ligado, que passaram do prazo sem abastecer (menos os que estão com ocorrência em aberto).
+// Sem nenhum abastecimento, conta a partir do cadastro (criadoEm).
+function dslSemAbastecer(equipamentos, abastecimentos, agoraT, ocorrencias){
+  const agora = agoraT || Date.now();
+  const ult = {};
+  dslValidos(abastecimentos).forEach(a=>{ const t = dslT(a.dataHora); if (!ult[a.equipamentoId] || t > ult[a.equipamentoId]) ult[a.equipamentoId] = t; });
+  const out = [];
+  for (const e of (equipamentos||[])){
+    if (!e || e.ativo===false || e.alertaAtivo===false) continue;
+    if (ocorrencias && dslOcorrenciaAberta(e.id, ocorrencias)) continue;   // parado/em manutenção: não é falta de abastecimento
+    const prazo = dslNum(e.diasAlerta) || 2;
+    const base = ult[e.id] || dslT(e.criadoEm);
+    if (!base) continue;
+    const dias = dslDiasEntre(base, agora, !!e.alertaDiasUteis);
+    if (dias > prazo) out.push({ equipamento:e, dias, prazo, ultimo: ult[e.id] || null });
+  }
+  return out.sort((a,b)=> b.dias-a.dias);
+}
+
+// Resumo de um período (de/ate = timestamps; "de" inclusive, "ate" exclusive) para o painel.
+function dslResumo(equipamentos, abastecimentos, entradas, de, ate, filtroEquipId){
+  const ab = dslValidos(abastecimentos).filter(a=>{ const t = dslT(a.dataHora); return t>=de && t<ate && (!filtroEquipId || a.equipamentoId===filtroEquipId); });
+  const en = dslValidos(entradas).filter(x=>{ const t = dslT(x.dataHora); return t>=de && t<ate; });
+  let litros = 0, gasto = 0, litrosComCusto = 0;
+  const porEquip = {};
+  ab.forEach(a=>{
+    const l = dslNum(a.litros); litros += l;
+    const o = porEquip[a.equipamentoId] = porEquip[a.equipamentoId] || { id:a.equipamentoId, litros:0, gasto:0, litrosComCusto:0, n:0 };
+    o.litros += l; o.n++;
+    if (a.custoTotal!=null && a.custoLitro!=null){ gasto += dslNum(a.custoTotal); litrosComCusto += l; o.gasto += dslNum(a.custoTotal); o.litrosComCusto += l; }
+  });
+  let compL = 0, compV = 0;
+  en.forEach(x=>{ compL += dslNum(x.litros); compV += dslNum(x.valorTotal); });
+  return {
+    abastecimentos: ab.length, litros, litrosPorAbastecimento: ab.length ? litros/ab.length : null,
+    gasto, litrosComCusto, custoMedioLitro: litrosComCusto>0 ? gasto/litrosComCusto : null, semCusto: litros - litrosComCusto,
+    compras: en.length, compradoL: compL, compradoValor: compV, precoMedioCompra: compL>0 ? compV/compL : null,
+    porEquip
+  };
+}
+// Dias de diesel que o saldo atual aguenta, pelo consumo médio diário dos últimos "dias" dias.
+function dslDiasRestantes(saldo, tanqueId, abastecimentos, agoraT, dias){
+  const agora = agoraT || Date.now(), d = dias || 14, de = agora - d*DSL_MS_DIA;
+  const usado = dslValidos(abastecimentos).filter(a=>a.tanqueId===tanqueId && dslT(a.dataHora)>=de && dslT(a.dataHora)<=agora).reduce((s,a)=>s+dslNum(a.litros),0);
+  const porDia = usado / d;
+  return porDia > 0 ? Math.max(saldo,0) / porDia : null;
+}
+
+// ---- Paradas e manutenção (ocorrências) ----
+// Em aberto = sem liberadaEm e não anulada. Uma ocorrência em aberto por equipamento (o banco garante).
+function dslOcorrenciaAberta(equipId, ocorrencias){
+  return dslValidos(ocorrencias).find(o=>o.equipamentoId===equipId && !o.liberadaEm) || null;
+}
+// Horas entre a abertura e a liberação (ou até agora, se ainda aberta).
+function dslOcorrenciaHoras(o, agoraT){
+  const fim = o.liberadaEm ? dslT(o.liberadaEm) : (agoraT || Date.now());
+  const h = (fim - dslT(o.abertaEm)) / 3600000;
+  return h > 0 ? h : 0;
+}
+// Resumo por data de abertura (de inclusive, ate exclusive). Abertas contam as horas até agora.
+function dslParadasResumo(ocorrencias, de, ate, agoraT, filtroEquipId){
+  const agora = agoraT || Date.now();
+  const l = dslValidos(ocorrencias).filter(o=>{ const t = dslT(o.abertaEm); return t>=de && t<ate && (!filtroEquipId || o.equipamentoId===filtroEquipId); });
+  const porMotivo = {}, porEquip = {};
+  let horas = 0, abertas = 0, liberadas = 0, horasLib = 0;
+  l.forEach(o=>{
+    const h = dslOcorrenciaHoras(o, agora); horas += h;
+    if (o.liberadaEm){ liberadas++; horasLib += h; } else abertas++;
+    const m = porMotivo[o.motivo] = porMotivo[o.motivo] || { motivo:o.motivo, n:0, horas:0 }; m.n++; m.horas += h;
+    const e = porEquip[o.equipamentoId] = porEquip[o.equipamentoId] || { id:o.equipamentoId, n:0, horas:0 }; e.n++; e.horas += h;
+  });
+  return { total:l.length, abertas, liberadas, horas, tempoMedioH: liberadas ? horasLib/liberadas : null, porMotivo, porEquip };
+}
+
+/* ================= DIESEL — painel (ambiente Gestão, só leitura) ================= */
+/* Painel de diesel do desktop (só leitura): período, equipamento, totais, gráficos por dia/mês, por equipamento,
+   tanques, alertas e exportação. Os lançamentos são feitos no app (aba Gestão); aqui só se acompanha. */
+const DSL_TIPOS = { maquina:'Máquina', caminhao:'Caminhão', outro:'Outro' };
+const DSL_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const dslFmtL = n => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{maximumFractionDigits:1})+' L';
+const dslFmtR = n => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const dslFmtRL = n => (n==null||isNaN(n)) ? '—' : 'R$ '+Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:3})+'/L';
+const dslFmtN = (n,d) => (n==null||isNaN(n)) ? '—' : Number(n).toLocaleString('pt-BR',{maximumFractionDigits:d==null?1:d});
+function dslFmtDias(d){ if (d==null) return ''; if (d>365) return 'mais de 1 ano'; const n = Math.floor(d); return n<1 ? 'menos de 1 dia' : 'cerca de '+n+(n===1?' dia':' dias'); }
+function dslFmtMed(n, un){ return dslFmtN(n,1)+' '+(un==='km'?'km':'h'); }
+function dslDataCurta(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+function dslEquipPorId(id){ return state.equipamentos.find(e=>e.id===id) || null; }
+function dslNomeTanque(id){ const t = state.tanques.find(x=>x.id===id); return t ? t.nome : '?'; }
+function dslSemBanco(){ return !!(state.dieselErr && Object.keys(state.dieselErr).length); }
+Object.assign(state, { equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [], ocorrencias: [], paradasErr: null, dieselErr: {},
+  dslPer: 'mes', dslMes: (function(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })(),
+  dslAno: new Date().getFullYear(), dslEquip: 'TODOS', dslTipo: 'TODOS' });
+
+// período escolhido: { de, ate (exclusivo), rotulo, porMes }
+function dslPeriodo(){
+  const hoje = new Date();
+  if (state.dslPer==='30d'){
+    const de = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()-29).getTime(), ate = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()+1).getTime();
+    return { de, ate, rotulo:'Últimos 30 dias', porMes:false };
+  }
+  if (state.dslPer==='ano'){
+    return { de:new Date(state.dslAno,0,1).getTime(), ate:new Date(state.dslAno+1,0,1).getTime(), rotulo:String(state.dslAno), porMes:true };
+  }
+  const [y,m] = state.dslMes.split('-').map(Number);
+  return { de:new Date(y,m-1,1).getTime(), ate:new Date(y,m,1).getTime(), rotulo:DSL_MESES[m-1]+' / '+y, porMes:false };
+}
+// abastecimentos válidos que passam nos filtros de equipamento e tipo
+function dslFiltrados(){
+  const ids = new Set(state.equipamentos.filter(e=> (state.dslTipo==='TODOS'||e.tipo===state.dslTipo) && (state.dslEquip==='TODOS'||e.id===state.dslEquip)).map(e=>e.id));
+  return state.abastecimentos.filter(a=>!a.anulado && ids.has(a.equipamentoId));
+}
+function dslBaldes(P, ab){
+  const b = [];
+  if (P.porMes){
+    const y = new Date(P.de).getFullYear();
+    for (let m=0; m<12; m++) b.push({ ini:new Date(y,m,1).getTime(), fim:new Date(y,m+1,1).getTime(), rotulo:DSL_MESES[m].slice(0,3), cheio:DSL_MESES[m]+'/'+y, litros:0, gasto:0, n:0 });
+  } else {
+    for (let t=P.de; t<P.ate; ){ const d = new Date(t), nx = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1).getTime();
+      b.push({ ini:t, fim:nx, rotulo:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), cheio:d.toLocaleDateString('pt-BR'), litros:0, gasto:0, n:0 }); t = nx; }
+  }
+  ab.forEach(a=>{ const t = dslT(a.dataHora); const x = b.find(k=>t>=k.ini && t<k.fim); if (!x) return;
+    x.litros += dslNum(a.litros); x.n++; if (a.custoTotal!=null) x.gasto += dslNum(a.custoTotal); });
+  return b;
+}
+function dslGrafico(baldes, campo, cor, fmt){
+  const max = Math.max(1, ...baldes.map(b=>b[campo]));
+  const cols = baldes.map(b=>'<div class="dsl-col" data-tip="'+esc(b.cheio)+'<br>'+esc(fmt(b[campo]))+'<br>'+b.n+' abastecimento'+(b.n===1?'':'s')+'"><i style="height:'+(b[campo]/max*100)+'%;background:'+cor+';"></i></div>').join('');
+  return '<div class="dsl-chart">'+cols+'</div><div class="dsl-axis"><span>'+esc(baldes[0].rotulo)+'</span><span>pico: '+esc(fmt(max))+'</span><span>'+esc(baldes[baldes.length-1].rotulo)+'</span></div>';
+}
+
+function dslFmtHoras(h){
+  if (h==null || isNaN(h)) return '—';
+  if (h < 1) return Math.max(1, Math.round(h*60))+' min';
+  if (h < 48){ const hh = Math.floor(h), mm = Math.round((h-hh)*60); return hh+' h'+(mm?' '+mm+' min':''); }
+  const d = Math.floor(h/24), hh = Math.round(h-d*24); return d+' dia'+(d===1?'':'s')+(hh?' '+hh+' h':'');
+}
+const MANUT_CAT = { manutencao:'Manutenção', parada:'Parada' };
+// ocorrências que passam nos filtros de equipamento e tipo
+function dslOcFiltradas(){
+  const ids = new Set(state.equipamentos.filter(e=> (state.dslTipo==='TODOS'||e.tipo===state.dslTipo) && (state.dslEquip==='TODOS'||e.id===state.dslEquip)).map(e=>e.id));
+  return dslValidos(state.ocorrencias).filter(o=>ids.has(o.equipamentoId));
+}
+function dslBlocoParadas(P){
+  if (state.paradasErr) return '<div class="card left-danger" style="margin-top:16px;"><b>Paradas e manutenção ainda não estão no banco.</b><p class="hint" style="margin:6px 0 0;">Rode o arquivo update_016_paradas.sql no SQL Editor do Supabase e atualize a página.</p></div>';
+  const oc = dslOcFiltradas(), agora = Date.now();
+  const R = dslParadasResumo(oc, P.de, P.ate, agora);
+  const abertas = oc.filter(o=>!o.liberadaEm).sort((a,b)=>dslT(a.abertaEm)-dslT(b.abertaEm));
+  const nome = o => { const e = dslEquipPorId(o.equipamentoId); return esc(e ? e.codigo : (o.equipamentoCodigo||'?')); };
+  const motivos = Object.values(R.porMotivo).sort((a,b)=>b.horas-a.horas);
+  const maxH = Math.max(1, ...motivos.map(m=>m.horas));
+  const tabMot = motivos.map(m=>'<tr><td>'+esc(m.motivo)+'</td><td><div class="dsl-mini"><i style="width:'+(m.horas/maxH*100)+'%;"></i></div></td><td>'+m.n+'</td><td>'+dslFmtHoras(m.horas)+'</td></tr>').join('');
+  const lib = oc.filter(o=>o.liberadaEm && dslT(o.liberadaEm)>=P.de && dslT(o.liberadaEm)<P.ate).sort((a,b)=>dslT(b.liberadaEm)-dslT(a.liberadaEm)).slice(0,12)
+    .map(o=>'<tr><td>'+nome(o)+'</td><td>'+esc(o.motivo)+'</td><td>'+dslDataCurta(o.abertaEm)+'</td><td>'+dslDataCurta(o.liberadaEm)+'</td><td>'+dslFmtHoras(dslOcorrenciaHoras(o))+'</td><td>'+esc(o.motivoLiberacao||'')+' — '+esc(o.servicoRealizado||'')+'</td><td>'+esc(o.recebidoPor||'')+'</td></tr>').join('');
+  const itAb = abertas.map(o=>'<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">'+nome(o)+' · '+esc(o.motivo)+'</div><div class="li-desc">'+esc(MANUT_CAT[o.categoria]||o.categoria)+' · desde '+dslDataCurta(o.abertaEm)+(o.abertaPorNome?' · '+esc(o.abertaPorNome):'')+' · '+esc(o.descricao)+'</div></div><div class="li-side"><div class="li-weight" style="color:var(--danger);">'+dslFmtHoras(dslOcorrenciaHoras(o,agora))+'</div></div></div>').join('');
+  return `
+    <h2 class="section-title" style="margin-top:22px;">Paradas e manutenção <small style="font-weight:400;">${esc(P.rotulo)}</small></h2>
+    <div class="rend-kpis">
+      <div class="stat ${abertas.length?'bad':''}"><div class="n">${abertas.length}</div><div class="l">Parados agora</div></div>
+      <div class="stat"><div class="n">${R.total}</div><div class="l">Ocorrências abertas no período</div></div>
+      <div class="stat accent"><div class="n">${dslFmtN(R.horas,0)} h</div><div class="l">Horas paradas</div></div>
+      <div class="stat"><div class="n">${R.tempoMedioH!=null?dslFmtHoras(R.tempoMedioH):'—'}</div><div class="l">Tempo médio até liberar</div></div>
+    </div>
+    <div class="rend-grid-2">
+      <div class="card"><div class="rend-card-t">Em aberto <small>agora</small></div>${itAb || '<div class="rend-vazio">Nenhum equipamento parado.</div>'}</div>
+      <div class="card"><div class="rend-card-t">Por motivo <small>horas paradas</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Motivo</th><th></th><th>Vezes</th><th>Horas</th></tr></thead><tbody>${tabMot||'<tr><td colspan="4" class="rend-vazio">Sem ocorrências neste período.</td></tr>'}</tbody></table></div></div>
+    </div>
+    <div class="card" style="margin-top:16px;"><div class="rend-card-t">Últimas liberações <small>o que foi feito e quem pegou o equipamento</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Equip.</th><th>Motivo</th><th>Parou</th><th>Liberado</th><th>Tempo</th><th>Liberação / serviço</th><th>Quem pegou</th></tr></thead><tbody>${lib||'<tr><td colspan="7" class="rend-vazio">Nenhuma liberação neste período.</td></tr>'}</tbody></table></div></div>`;
+}
+function renderDiesel(){
+  const body = document.getElementById('dsl-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = '<div class="card left-danger"><b>O módulo de Diesel ainda não está no banco.</b><p class="hint" style="margin:6px 0 0;">Rode o arquivo update_015_diesel.sql no SQL Editor do Supabase e atualize a página.</p></div>'; return; }
+  const P = dslPeriodo(), ab = dslFiltrados();
+  const noPeriodo = ab.filter(a=>{ const t = dslT(a.dataHora); return t>=P.de && t<P.ate; });
+  const R = dslResumo(state.equipamentos, noPeriodo, state.entradas, P.de, P.ate);
+  const baldes = dslBaldes(P, noPeriodo);
+  const eqVis = state.equipamentos.filter(e=>(state.dslTipo==='TODOS'||e.tipo===state.dslTipo));
+  // por equipamento
+  const linhas = eqVis.map(e=>{
+    const o = R.porEquip[e.id] || { litros:0, gasto:0, n:0, litrosComCusto:0 };
+    const c = dslConsumo(e, noPeriodo);
+    return { e, o, c };
+  }).filter(x=>x.o.n>0 || state.dslEquip===x.e.id).sort((a,b)=>b.o.litros-a.o.litros);
+  const maxL = Math.max(1, ...linhas.map(x=>x.o.litros));
+  const tabEq = linhas.map(x=>'<tr><td>'+esc(x.e.codigo)+' <span>'+esc(x.e.nome)+'</span></td><td>'+esc(DSL_TIPOS[x.e.tipo]||x.e.tipo)+'</td>'
+    + '<td><div class="dsl-mini"><i style="width:'+(x.o.litros/maxL*100)+'%;"></i></div></td><td>'+dslFmtN(x.o.litros,0)+' L</td><td>'+x.o.n+'</td><td>'+dslFmtR(x.o.gasto)+'</td>'
+    + '<td>'+(x.c.media!=null?dslFmtN(x.c.media,2)+' '+x.c.unidade:'—')+'</td></tr>').join('');
+  // tanques e alertas (sempre de agora, sem filtro de período)
+  const tanques = state.tanques.filter(t=>t.ativo!==false);
+  let saldoTotal = 0;
+  const cardsT = tanques.map(t=>{
+    const x = dslTanque(t.id, state.entradas, state.abastecimentos, state.medicoes); saldoTotal += x.saldo;
+    const dias = dslDiasRestantes(x.saldo, t.id, state.abastecimentos), baixo = t.minimoL!=null && x.saldo < Number(t.minimoL);
+    const pct = t.capacidadeL ? Math.max(0,Math.min(100,x.saldo/Number(t.capacidadeL)*100)) : null;
+    const ultMed = state.medicoes.filter(m=>!m.anulado && m.tanqueId===t.id).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora))[0];
+    return '<div class="card '+(baixo||x.saldo<0?'left-danger':'left-info')+'"><div class="rend-card-t" style="margin-bottom:4px;">'+esc(t.nome)+(baixo?'<small style="color:var(--danger);">saldo baixo</small>':'')+'</div>'
+      + '<div style="font-family:var(--font-head);font-size:28px;line-height:1.1;">'+dslFmtL(x.saldo)+'</div>'
+      + (pct!=null?'<div class="dsl-mini" style="margin:6px 0;"><i style="width:'+pct+'%;background:var(--info);"></i></div>':'')
+      + '<div class="hint" style="margin:4px 0 0;">Custo médio '+dslFmtRL(x.custoMedio)+(dias!=null?' · dura '+dslFmtDias(dias):'')+'</div>'
+      + '<div class="hint" style="margin:2px 0 0;">Entrou '+dslFmtL(x.entradasL)+' · saiu '+dslFmtL(x.saidasL)+'</div>'
+      + (ultMed?'<div class="hint" style="margin:2px 0 0;">Última régua ('+dslDataCurta(ultMed.dataHora)+'): '+dslFmtL(ultMed.litrosMedidos)+', diferença <b style="color:'+(Math.abs(ultMed.diferenca)<1?'var(--ok)':'var(--danger)')+';">'+(ultMed.diferenca>0?'+':'')+dslFmtL(ultMed.diferenca)+'</b></div>':'')+'</div>';
+  }).join('') || '<div class="rend-vazio">Nenhum tanque cadastrado.</div>';
+  const parados = dslSemAbastecer(state.equipamentos, state.abastecimentos, null, state.ocorrencias);
+  const anom = state.equipamentos.filter(e=>e.ativo!==false).map(e=>({ e, a: dslAnomalia(dslConsumo(e, state.abastecimentos)) })).filter(x=>x.a);
+  const itensAl = parados.map(p=>'<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">'+esc(p.equipamento.codigo)+' — '+esc(p.equipamento.nome)+'</div><div class="li-desc">sem abastecer: '+(p.ultimo?'último em '+dslDataCurta(p.ultimo):'nunca abasteceu')+' · prazo '+p.prazo+' dia'+(p.prazo===1?'':'s')+'</div></div><div class="li-side"><div class="li-weight" style="color:var(--danger);">'+p.dias+' dias</div></div></div>').join('')
+    + anom.map(x=>{ const un = dslConsumo(x.e, state.abastecimentos).unidade; return '<div class="list-item"><div class="li-main"><div class="li-code" style="font-size:14px;">'+esc(x.e.codigo)+' — '+esc(x.e.nome)+'</div><div class="li-desc">último consumo '+dslFmtN(x.a.valor,2)+' '+un+', média anterior '+dslFmtN(x.a.mediaAnterior,2)+'</div></div><div class="li-side"><div class="li-weight" style="color:var(--danger);">consumo fora do normal</div></div></div>'; }).join('');
+  const recentes = ab.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,12).map(a=>{
+    const e = dslEquipPorId(a.equipamentoId), un = e&&e.medidor==='km'?'km':'h';
+    return '<tr><td>'+dslDataCurta(a.dataHora)+'</td><td>'+esc(e?e.codigo:a.equipamentoCodigo||'?')+'</td><td>'+dslFmtL(a.litros)+'</td><td>'+dslFmtMed(a.medidor,un)+'</td><td>'+(a.custoTotal!=null?dslFmtR(a.custoTotal):'sem custo')+'</td><td>'+esc(a.usuarioNome||'')+'</td></tr>';
+  }).join('');
+  const compras = state.entradas.filter(c=>!c.anulado).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)).slice(0,8).map(c=>
+    '<tr><td>'+dslDataCurta(c.dataHora)+'</td><td>'+esc(dslNomeTanque(c.tanqueId))+'</td><td>'+dslFmtL(c.litros)+'</td><td>'+dslFmtRL(c.precoLitro)+'</td><td>'+dslFmtR(c.valorTotal)+'</td><td>'+esc(c.fornecedor||'')+(c.nota?' · NF '+esc(c.nota):'')+'</td></tr>').join('');
+  const tipos = ['TODOS'].concat(Object.keys(DSL_TIPOS));
+  const html = `
+    <div class="rend-top">
+      <div class="filter-row wrap">${[['mes','Mês'],['30d','30 dias'],['ano','Ano']].map(p=>`<button class="filter-chip ${state.dslPer===p[0]?'active':''}" data-dsl-act="per" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>
+      ${state.dslPer==='30d' ? `<div class="rend-mes"><span>${esc(P.rotulo)}</span></div>` : `<div class="rend-mes"><button data-dsl-act="nav" data-v="-1" aria-label="Anterior">‹</button><span>${esc(P.rotulo)}</span><button data-dsl-act="nav" data-v="1" aria-label="Próximo">›</button></div>`}
+      <select id="dsl-equip" data-dsl-sel="equip" style="width:auto;margin:0;"><option value="TODOS">Todos os equipamentos</option>${state.equipamentos.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(e=>`<option value="${esc(e.id)}" ${state.dslEquip===e.id?'selected':''}>${esc(e.codigo)} — ${esc(e.nome)}</option>`).join('')}</select>
+      <select id="dsl-tipo" data-dsl-sel="tipo" style="width:auto;margin:0;">${tipos.map(t=>`<option value="${t}" ${state.dslTipo===t?'selected':''}>${t==='TODOS'?'Todos os tipos':DSL_TIPOS[t]}</option>`).join('')}</select>
+      <div class="spacer"></div>
+      <button class="btn ghost small" data-dsl-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button>
+      <button class="btn primary small" data-dsl-act="export">Exportar (Excel)</button>
+    </div>
+    <div class="rend-kpis">
+      <div class="stat accent"><div class="n">${dslFmtN(R.litros,0)} L</div><div class="l">Diesel consumido</div></div>
+      <div class="stat"><div class="n">${R.abastecimentos}</div><div class="l">Abastecimentos${R.litrosPorAbastecimento?' · média '+dslFmtN(R.litrosPorAbastecimento,0)+' L cada':''}</div></div>
+      <div class="stat"><div class="n">${dslFmtR(R.gasto)}</div><div class="l">Gasto${R.semCusto>0?' · '+dslFmtN(R.semCusto,0)+' L sem custo':''}</div></div>
+      <div class="stat"><div class="n">${dslFmtRL(R.custoMedioLitro)}</div><div class="l">Custo médio por litro</div></div>
+      <div class="stat"><div class="n">${dslFmtN(R.compradoL,0)} L</div><div class="l">Comprado${R.compradoValor?' · '+dslFmtR(R.compradoValor)+(R.precoMedioCompra?' · '+dslFmtRL(R.precoMedioCompra):''):''}</div></div>
+      <div class="stat ${tanques.some(t=>t.minimoL!=null&&dslTanque(t.id,state.entradas,state.abastecimentos,state.medicoes).saldo<Number(t.minimoL))?'bad':''}"><div class="n">${dslFmtL(saldoTotal)}</div><div class="l">Saldo atual do tanque</div></div>
+    </div>
+    <div class="rend-grid">
+      <div class="card"><div class="rend-card-t">Litros por ${P.porMes?'mês':'dia'} <small>${esc(P.rotulo)}</small></div>${dslGrafico(baldes,'litros','var(--accent)',v=>dslFmtL(v))}</div>
+      <div class="card"><div class="rend-card-t">Gasto por ${P.porMes?'mês':'dia'} <small>R$ pelo custo médio do tanque no dia</small></div>${dslGrafico(baldes,'gasto','var(--info)',v=>dslFmtR(v))}</div>
+    </div>
+    <div class="rend-grid-2">
+      <div class="card"><div class="rend-card-t">Tanques <small>agora</small></div>${cardsT}</div>
+      <div class="card"><div class="rend-card-t">Alertas <small>${parados.length+anom.length} aberto${parados.length+anom.length===1?'':'s'}</small></div>${itensAl || '<div class="rend-vazio">Nenhum alerta. Todos os equipamentos em dia.</div>'}</div>
+    </div>
+    ${dslBlocoParadas(P)}
+    <div class="card" style="margin-top:16px;"><div class="rend-card-t">Por equipamento <small>${esc(P.rotulo)} · consumo = litros ÷ horas (máquinas) ou km ÷ litros (caminhão)</small></div>
+      <div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Equipamento</th><th>Tipo</th><th></th><th>Litros</th><th>Abast.</th><th>Gasto</th><th>Consumo médio</th></tr></thead><tbody>${tabEq || '<tr><td colspan="7" class="rend-vazio">Sem abastecimentos neste período.</td></tr>'}</tbody></table></div></div>
+    <div class="rend-grid-2">
+      <div class="card"><div class="rend-card-t">Últimos abastecimentos</div><div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Data</th><th>Equip.</th><th>Litros</th><th>Medidor</th><th>Custo</th><th>Quem</th></tr></thead><tbody>${recentes||'<tr><td colspan="6" class="rend-vazio">Nenhum.</td></tr>'}</tbody></table></div></div>
+      <div class="card"><div class="rend-card-t">Últimas compras</div><div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Data</th><th>Tanque</th><th>Litros</th><th>R$/L</th><th>Total</th><th>Fornecedor</th></tr></thead><tbody>${compras||'<tr><td colspan="6" class="rend-vazio">Nenhuma.</td></tr>'}</tbody></table></div></div>
+    </div>
+    <p class="hint" style="margin-top:14px;">Lançamentos anulados não entram em nenhuma conta. O custo de cada abastecimento é o custo médio do tanque no momento do lançamento. O consumo assume que cada abastecimento completa o tanque do equipamento.</p>`;
+  if (state.dslHtml === html) return;
+  state.dslHtml = html; body.innerHTML = html;
+}
+function dslExportar(){
+  const P = dslPeriodo(), ab = dslFiltrados().filter(a=>{ const t = dslT(a.dataHora); return t>=P.de && t<P.ate; });
+  const R = dslResumo(state.equipamentos, ab, state.entradas, P.de, P.ate);
+  const fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
+  const wb = XLSX.utils.book_new();
+  const resumo = [['Equipamento','Nome','Tipo','Unidade','Litros','Abastecimentos','Gasto (R$)','Consumo médio','Unidade do consumo']];
+  state.equipamentos.forEach(e=>{ const o = R.porEquip[e.id]; if (!o) return; const c = dslConsumo(e, ab);
+    resumo.push([e.codigo, e.nome, DSL_TIPOS[e.tipo]||e.tipo, e.medidor==='km'?'km':'h', Math.round(o.litros*10)/10, o.n, Math.round(o.gasto*100)/100, c.media==null?'':Math.round(c.media*100)/100, c.unidade]); });
+  resumo.push([]); resumo.push(['TOTAL','','','', Math.round(R.litros*10)/10, R.abastecimentos, Math.round(R.gasto*100)/100]);
+  const w1 = XLSX.utils.aoa_to_sheet([['Diesel — '+P.rotulo], [], ...resumo]); w1['!cols'] = [{wch:14},{wch:24},{wch:12},{wch:9},{wch:12},{wch:15},{wch:13},{wch:15},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, w1, 'Por equipamento');
+  const linhasAb = [['Data','Equipamento','Medidor','Unidade','Litros','Custo (R$/L)','Custo total (R$)','Tanque','Usuário','Observação']];
+  ab.slice().sort((a,b)=>dslT(a.dataHora)-dslT(b.dataHora)).forEach(a=>{ const e = dslEquipPorId(a.equipamentoId);
+    linhasAb.push([fmt(a.dataHora), e?e.codigo:a.equipamentoCodigo, a.medidor, e&&e.medidor==='km'?'km':'h', a.litros, a.custoLitro==null?'':a.custoLitro, a.custoTotal==null?'':a.custoTotal, dslNomeTanque(a.tanqueId), a.usuarioNome||'', a.obs||'']); });
+  const w2 = XLSX.utils.aoa_to_sheet(linhasAb); w2['!cols'] = [{wch:18},{wch:14},{wch:12},{wch:8},{wch:10},{wch:13},{wch:15},{wch:18},{wch:18},{wch:26}];
+  XLSX.utils.book_append_sheet(wb, w2, 'Abastecimentos');
+  const linhasC = [['Data','Tanque','Litros','Preço (R$/L)','Total (R$)','Fornecedor','Nota fiscal','Usuário']];
+  state.entradas.filter(c=>!c.anulado && dslT(c.dataHora)>=P.de && dslT(c.dataHora)<P.ate).sort((a,b)=>dslT(a.dataHora)-dslT(b.dataHora))
+    .forEach(c=>linhasC.push([fmt(c.dataHora), dslNomeTanque(c.tanqueId), c.litros, c.precoLitro, c.valorTotal, c.fornecedor||'', c.nota||'', c.usuarioNome||'']));
+  const w3 = XLSX.utils.aoa_to_sheet(linhasC); w3['!cols'] = [{wch:18},{wch:18},{wch:10},{wch:13},{wch:13},{wch:22},{wch:12},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, w3, 'Compras');
+  if (!state.paradasErr){
+    const linhasP = [['Equipamento','Categoria','Motivo','Descrição','Aberta em','Aberta por','Liberada em','Motivo da liberação','O que foi feito','Quem pegou','Horas parado','Situação']];
+    dslOcFiltradas().filter(o=>dslT(o.abertaEm)>=P.de && dslT(o.abertaEm)<P.ate).sort((a,b)=>dslT(a.abertaEm)-dslT(b.abertaEm)).forEach(o=>{ const e = dslEquipPorId(o.equipamentoId);
+      linhasP.push([e?e.codigo:o.equipamentoCodigo, MANUT_CAT[o.categoria]||o.categoria, o.motivo, o.descricao, fmt(o.abertaEm), o.abertaPorNome||'', fmt(o.liberadaEm), o.motivoLiberacao||'', o.servicoRealizado||'', o.recebidoPor||'', Math.round(dslOcorrenciaHoras(o)*100)/100, o.liberadaEm?'liberada':'em aberto']); });
+    const w4 = XLSX.utils.aoa_to_sheet(linhasP); w4['!cols'] = [{wch:14},{wch:12},{wch:22},{wch:30},{wch:18},{wch:18},{wch:18},{wch:22},{wch:30},{wch:18},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, w4, 'Paradas');
+  }
+  XLSX.writeFile(wb, 'diesel_'+(state.dslPer==='mes'?state.dslMes:state.dslPer==='ano'?state.dslAno:'30dias')+'.xlsx');
+  toast('Arquivo exportado.');
+}
+(function ligarDiesel(){
+  const view = document.getElementById('view-diesel');
+  const tip = document.createElement('div'); tip.id = 'dsl-tip'; document.body.appendChild(tip);
+  view.addEventListener('mousemove', e=>{
+    const t = e.target.closest('[data-tip]');
+    if (!t){ tip.style.opacity = 0; return; }
+    tip.innerHTML = t.getAttribute('data-tip'); tip.style.opacity = 1;
+    tip.style.left = Math.min(e.clientX+14, innerWidth-260)+'px'; tip.style.top = (e.clientY+14)+'px';
+  });
+  view.addEventListener('mouseleave', ()=>{ tip.style.opacity = 0; });
+  view.addEventListener('change', e=>{
+    const s = e.target.closest('[data-dsl-sel]'); if (!s) return;
+    if (s.dataset.dslSel==='equip') state.dslEquip = s.value; else state.dslTipo = s.value;
+    if (state.dslEquip!=='TODOS' && state.dslTipo!=='TODOS'){ const e2 = dslEquipPorId(state.dslEquip); if (e2 && e2.tipo!==state.dslTipo) state.dslEquip = 'TODOS'; }
+    renderDiesel();
+  });
+  view.addEventListener('click', async e=>{
+    const b = e.target.closest('[data-dsl-act]'); if (!b) return;
+    const a = b.dataset.dslAct;
+    if (a==='per'){ state.dslPer = b.dataset.v; renderDiesel(); }
+    else if (a==='nav'){
+      const v = Number(b.dataset.v);
+      if (state.dslPer==='ano') state.dslAno += v;
+      else { const [y,m] = state.dslMes.split('-').map(Number); const n = new Date(y, m-1+v, 1); state.dslMes = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); }
+      renderDiesel();
+    }
+    else if (a==='export') dslExportar();
+    else if (a==='refresh'){ b.disabled = true; b.textContent = 'Atualizando…'; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Diesel atualizado.'); } finally{ b.disabled = false; b.textContent = '↻ Atualizar'; } }
+  });
+})();
+function subscribeDiesel(){
+  const ass = (tabela, chave, campo, lim)=>{
+    const c = db.collection(tabela); if (campo) c.orderBy(campo,'desc'); if (lim) c.limit(lim);
+    c.onSnapshot(snap=>{ state[chave] = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
+  };
+  ass('equipamentos','equipamentos'); ass('tanques','tanques');
+  ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000);
+}
 
 /* ================= DASHBOARD ================= */
 function renderDashHeader(){

@@ -34,3 +34,13 @@ com o mesmo adaptador de dados e as mesmas políticas RLS. Visual de menu latera
 ### Contagem cega (desktop, v1.4.0)
 "Iniciar conferência" abre o popup Padrão/Cega; o nome opcional da cega é digitado no próprio popup (`#cega-nome-popup`).
 Mesma regra do app (`regras-de-negocio.md` §9.3.1). No desktop o leitor (USB ou Bluetooth em modo teclado) digita no campo `#cega-input` da própria tela de Conferência; a lista fica abaixo. **Status:** testado em navegador com API simulada.
+
+### Painel de Diesel (desktop, v1.5.0)
+Aba **Diesel**, só na área **Gestão** (as outras áreas não a mostram; na Gestão ela é a única aba). **Só leitura:** os lançamentos são feitos no app. Mesmo núcleo de cálculo do app (bloco "DIESEL — núcleo", cópia idêntica; `tests/diesel_core.test.cjs` falha se divergirem).
+- **Filtros:** período (Mês com setas, 30 dias, Ano), equipamento e tipo.
+- **Totais:** diesel consumido, abastecimentos (e litros por abastecimento), gasto, custo médio por litro, comprado (litros, valor, preço médio) e saldo atual do tanque.
+- **Gráficos:** litros e gasto por dia (por mês no Ano), com dica ao passar o mouse; **por equipamento** (litros, abastecimentos, gasto, consumo médio); **tanques** (saldo, custo médio, dias que dura, última régua); **alertas** (sem abastecer e consumo fora do normal); últimos abastecimentos e compras.
+- **Paradas e manutenção (v1.5.1):** bloco abaixo dos alertas (`dslBlocoParadas`): parados agora, ocorrências abertas no período, horas paradas, tempo médio até liberar, lista dos em aberto, horas por motivo e últimas liberações (o que foi feito e quem pegou). Respeita os filtros de período, equipamento e tipo. Sem o `update_016`, mostra só o aviso.
+- **Exportar (Excel):** 4 abas (Por equipamento, Abastecimentos, Compras, Paradas) do período e filtros escolhidos.
+- **Também nesta versão (desktop):** a leitura passou a ser paginada (páginas de 1000, igual ao app) e `movimentos` passou a gravar com INSERT (antes usava "upsert" e daria "permission denied" ao importar planilha).
+- Funções: `renderDiesel`, `dslPeriodo`, `dslFiltrados`, `dslBaldes`, `dslGrafico`, `dslExportar`, `subscribeDiesel`. **Status:** testado no navegador com dados simulados; não testado em produção.

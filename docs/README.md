@@ -1,6 +1,6 @@
 # STOKK — Índice da documentação
 
-**Última atualização:** 2026-10-27 · **Versão do app (rótulo na tela):** `1.4.2 · <carimbo da build>`
+**Última atualização:** 2026-11-05 · **Versão do app (rótulo na tela):** `1.5.1 · <carimbo da build>`
 
 Leia só o arquivo da área em que vai mexer:
 
@@ -16,3 +16,4 @@ Leia só o arquivo da área em que vai mexer:
 | Build, deploy, CI | [deploy.md](deploy.md) |
 | O que falta / problemas conhecidos | [pendencias.md](pendencias.md) |
 | O que mudou e quando | [historico.md](historico.md) |
+| Mapa do App.jsx (divisão em módulos) | [mapa-app-jsx.md](mapa-app-jsx.md) |
