@@ -1,6 +1,6 @@
 # STOKK — Mapa do `src/App.jsx` (para dividir em módulos)
 
-> Só mapeamento: **nada foi movido**. Linhas aproximadas da v1.4.2 (4.480 linhas, 202 funções). Na v1.5.0 entraram mais dois blocos no fim do `App.jsx`, antes da exportação XLSX: **Diesel — núcleo** (funções puras `dsl*`, testadas; candidato fácil a módulo) e **Diesel — telas** (~500 linhas, independente das outras telas). Na v1.5.1 entrou, dentro do bloco de telas do diesel (antes de "Equipamentos"), o trecho **Paradas e manutenção** (`renderGManut`, `gManut*`, `MANUT_*`).
+> Só mapeamento: **nada foi movido**. Linhas aproximadas da v1.4.2 (4.480 linhas, 202 funções). Na v1.5.0 entraram mais dois blocos no fim do `App.jsx`, antes da exportação XLSX: **Diesel — núcleo** (funções puras `dsl*`, testadas; candidato fácil a módulo) e **Diesel — telas** (~500 linhas, independente das outras telas). Na v1.5.1 entrou, dentro do bloco de telas do diesel (antes de "Equipamentos"), o trecho **Paradas e manutenção** (`renderGManut`, `gManut*`, `MANUT_*`); na v1.5.2, o trecho **Localização** (`renderGLocal`, `gLocal*`) logo antes dele.
 > Status: proposta, não executada.
 
 ## Como o arquivo é hoje

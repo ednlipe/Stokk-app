@@ -81,5 +81,8 @@ As views `bi.estoque`, `bi.movimentos`, `bi.conferencias`, `bi.producoes`, `bi.p
 ### Diesel (2026-11-05, update_015)
 Views novas em `bi.*` (só lançamentos válidos, horário de Brasília): `diesel_abastecimentos` (data, equipamento, tipo, unidade, leitura do medidor, litros, `custo_litro`, `custo_total`, tanque, usuário), `diesel_entradas` (compras: litros, preço, total, fornecedor, nota) e `diesel_equipamentos`. O saldo do tanque **não** é gravado (é calculado no app); no Power BI some entradas − abastecimentos. Consumo (L/h, km/L) e o aviso de dias sem abastecer também são calculados no app, não nas views. **Status:** não testado no Power BI.
 
+### Localização (2026-11-06, update_017)
+Views novas em `bi.*` (só registros não anulados, horário de Brasília): `equipamento_locais` (histórico: equipamento, local, observação, `desde`, quem informou) e `equipamento_local_atual` (uma linha por equipamento com o local mais recente). **Status:** não testado no Power BI.
+
 ### Paradas e manutenção (2026-11-05, update_016)
 View `bi.manutencao_ocorrencias` (só ocorrências não anuladas, horário de Brasília): equipamento, nome, tipo, categoria, motivo, descrição, abertura (data/hora e quem), liberação (data/hora, motivo, o que foi feito, quem pegou, quem registrou), `situacao` (Em aberto/Liberada) e `horas_parado` (se aberta, até agora). **Status:** não testado no Power BI.

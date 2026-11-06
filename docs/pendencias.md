@@ -5,7 +5,7 @@
 
 ## 13. Pendências do Diesel (v1.5.0 — nada disso foi testado em produção)
 
-- **Antes de tudo:** o 1.5.0 ainda não foi aplicado; aplique 015 e 016 juntos (ordem em `deploy.md`).
+- **Antes de tudo:** o 1.5.0/1.5.1 ainda não foi aplicado; aplique 015, 016 e 017 juntos (ordem em `deploy.md`).
 - Rodar `update_015_diesel.sql`, liberar a área Gestão em `usuario_areas`, publicar a Edge Function e criar o cron do tipo `diesel` (ordem em `deploy.md`).
 - Testar no uso real: cadastro de tanque/equipamentos, compra, abastecimento (máquina e caminhão), anulação, conferência da régua, painel do desktop e o push de "sem abastecer".
 - Confirmar com a empresa: quantos tanques e equipamentos; quem lança abastecimento e compra; se o horímetro do caminhão também importa; prazo de guarda dos registros; se a empresa quer cópia dos dados em outro lugar (Excel online/Power Automate, ver conversa de 01/11).
@@ -21,6 +21,14 @@
 - Quem libera digita à mão "quem pegou o equipamento" (texto livre). Se quiser escolher da lista de pessoas, é uma melhoria futura.
 - Se o app ficar sem internet ao abrir/liberar, a ocorrência não é gravada (o app mostra o erro); o aviso push falho não é reenviado.
 - Sem foto/anexo na ocorrência e sem ligação com o checklist de segurança (ideia futura).
+
+## 13.2 Pendências de Localização e lançamentos no desktop (v1.5.2 — nada testado em produção)
+
+- Rodar `update_017_localizacao.sql` (depois do 016) e testar no uso real: o operador informa o local no celular, o supervisor vê no desktop e no app; correção de ocorrência em aberto; lançar abastecimento e cadastrar pelo desktop.
+- **Local é texto livre:** os nomes vão variar. Se a empresa preferir uma lista fixa de locais (pátio, frente, oficina…), é uma melhoria pequena (tabela de locais cadastrados pelo supervisor).
+- A localização é informada à mão e pode ficar desatualizada; o app mostra "há quanto tempo" para ajudar. Rastreio automático (celular corporativo/GPS) continua só como ideia.
+- No desktop, quem lança pelo PC aparece com o nome da conta; se várias pessoas usarem o mesmo PC/login, os registros ficam no mesmo nome (cada pessoa deveria entrar com a própria conta).
+- Corrigir ocorrência é só do supervisor. Se o operador também precisar corrigir a própria abertura, é mudança de política (RLS) e de coluna liberada.
 
 ## 14. Limitações conhecidas
 

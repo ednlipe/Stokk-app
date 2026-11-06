@@ -196,6 +196,7 @@ const APP_HTML = `
     <section class="view" id="view-gabast"><div id="gabast-body"></div></section>
     <section class="view" id="view-gtanque"><div id="gtanque-body"></div></section>
     <section class="view" id="view-gmanut"><div id="gmanut-body"></div></section>
+    <section class="view" id="view-glocal"><div id="glocal-body"></div></section>
     <section class="view" id="view-gequip"><div id="gequip-body"></div></section>
   </main>
 
@@ -211,6 +212,10 @@ const APP_HTML = `
     <button data-nav="gmanut" style="display:none;">
       <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
       Paradas
+    </button>
+    <button data-nav="glocal" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      Locais
     </button>
     <button data-nav="gtanque" style="display:none;">
       <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>
@@ -306,6 +311,7 @@ const state = {
   armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || '',
   equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [],   // ambiente Gestão (diesel)
   ocorrencias: [], paradasErr: null,   // paradas e manutenção (update_016)
+  locais: [], locaisErr: null, glocalBusca: '',   // localização dos equipamentos (update_017)
   dieselErr: {}
 };
 
@@ -329,7 +335,7 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
 // abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
 const ABAS_OCULTAS_POR_AREA = { planta1: ['producao'] };
 // ambiente Gestão (update_015): só mostra as abas de diesel; as outras áreas não mostram essas abas
-const ABAS_GESTAO = ['gdash','gabast','gmanut','gtanque','gequip'];
+const ABAS_GESTAO = ['gdash','gabast','gmanut','glocal','gtanque','gequip'];
 function esconderAbasPorArea(){
   const gestao = state.area === 'gestao';
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
@@ -340,9 +346,9 @@ function esconderAbasPorArea(){
   });
 }
 const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
-const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias'].concat(DIESEL_TABLES);
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
 // tabelas gravadas só com INSERT (o histórico não aceita "upsert": isso exigiria permissão de UPDATE em todas as colunas)
-const SOMENTE_INSERIR = ['movimentos','ocorrencias'].concat(DIESEL_TABLES);
+const SOMENTE_INSERIR = ['movimentos','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
 function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
@@ -447,11 +453,13 @@ function createSupabaseDB(){
       // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
       if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='ocorrencias'){ state.paradasErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      if (table==='equipamento_locais'){ state.locaisErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='producoes'){ state.producoesErro = error.message || 'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
     if (table==='producoes') state.producoesErro = null;
     if (table==='ocorrencias') state.paradasErr = null;
+    if (table==='equipamento_locais') state.locaisErr = null;
     if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
@@ -1180,6 +1188,7 @@ function renderView(name){
   else if (name==='gabast') gabastMontar();
   else if (name==='gtanque') renderGTanque();
   else if (name==='gmanut') renderGManut();
+  else if (name==='glocal') renderGLocal();
   else if (name==='gequip') renderGEquip();
 }
 
@@ -4628,6 +4637,17 @@ function dslDiasRestantes(saldo, tanqueId, abastecimentos, agoraT, dias){
   return porDia > 0 ? Math.max(saldo,0) / porDia : null;
 }
 
+// ---- Localização ----
+// Local atual = último registro válido do equipamento (pela data/hora informada; empate: o lançado depois).
+function dslLocalAtual(equipId, locais){
+  let m = null;
+  dslValidos(locais).forEach(l=>{
+    if (l.equipamentoId !== equipId) return;
+    if (!m || dslT(l.dataHora) > dslT(m.dataHora) || (dslT(l.dataHora) === dslT(m.dataHora) && dslT(l.timestamp) > dslT(m.timestamp))) m = l;
+  });
+  return m;
+}
+
 // ---- Paradas e manutenção (ocorrências) ----
 // Em aberto = sem liberadaEm e não anulada. Uma ocorrência em aberto por equipamento (o banco garante).
 function dslOcorrenciaAberta(equipId, ocorrencias){
@@ -4960,6 +4980,93 @@ function gTanqueForm(tid){
   };
 }
 
+/* ---- Localização dos equipamentos (update_017) ----
+   Qualquer pessoa da Gestão informa onde o equipamento está (texto livre). O local atual é o último registro válido;
+   os anteriores ficam como histórico. Nada se apaga: o supervisor anula com motivo. */
+function gLocalAvisoBanco(){
+  return '<div class="card left-danger"><b>A localização ainda não está no banco.</b>'
+    + '<p class="hint" style="margin:6px 0 0;">Rode o arquivo <b>update_017_localizacao.sql</b> no SQL Editor do Supabase e atualize a página.</p></div>';
+}
+function dslHaTempo(iso){ const h = (Date.now()-dslT(iso))/3600000; return h < 1 ? 'agora há pouco' : 'há '+dslFmtHoras(h); }
+function gLocalLinha(e){
+  const l = dslLocalAtual(e.id, state.locais), oa = dslOcorrenciaAberta(e.id, state.ocorrencias);
+  return '<div class="list-item" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;"><div class="li-main">'
+    + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+'</div>'
+    + (l ? '<div style="font-size:15px;margin:3px 0 1px;"><b>'+esc(l.local)+'</b></div><div class="li-desc">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>'
+           : '<div class="li-desc" style="margin:3px 0;">Local ainda não informado</div>')
+    + (oa?'<div style="margin-top:4px;">'+dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger')+'</div>':'')
+    + '</div><div class="li-side"><button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
+}
+function gLocalLista(){
+  const box = document.getElementById('gl-lista'); if (!box) return;
+  const q = String(state.glocalBusca||'').trim().toLowerCase();
+  const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
+    .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(l?l.local:'')).toLowerCase().includes(q); });
+  box.innerHTML = eqs.map(gLocalLinha).join('') || '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>';
+  const rec = document.getElementById('gl-recentes'); if (!rec) return;
+  const sup = dslEhSup();
+  rec.innerHTML = state.locais.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)||dslT(b.timestamp)-dslT(a.timestamp)).slice(0,25).map(l=>
+    '<div class="list-item" style="'+(l.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(l.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(l.equipamentoId,l.equipamentoCodigo))+' → '+esc(l.local)+(l.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
+    + (sup&&!l.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(l.id)+'">anular</button></div>':'')+'</div>').join('')
+    || '<p class="hint">Nenhuma localização informada ainda.</p>';
+}
+function renderGLocal(){
+  const body = document.getElementById('glocal-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
+  if (state.locaisErr){ body.innerHTML = gLocalAvisoBanco(); return; }
+  if (!document.getElementById('gl-lista')){
+    body.innerHTML = '<div class="btn-row" style="margin-bottom:10px;"><button class="btn primary" data-g-act="local-nova" data-e="">+ Atualizar local</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
+      + '<input type="search" id="gl-busca" placeholder="Buscar equipamento ou local…" value="'+esc(state.glocalBusca||'')+'">'
+      + '<h2 class="section-title">Onde estão agora</h2><div class="card" id="gl-lista" style="padding:0 14px;"></div>'
+      + '<h2 class="section-title">Últimas atualizações</h2><div class="card" id="gl-recentes" style="padding:0 14px;"></div>';
+    document.getElementById('gl-busca').addEventListener('input', ev=>{ state.glocalBusca = ev.target.value; gLocalLista(); });
+  }
+  gLocalLista();
+}
+function gLocalSheet(equipId){
+  const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+  if (!eqs.length){ toast('Nenhum equipamento cadastrado.', 3000); return; }
+  const sug = [...new Set(dslValidos(state.locais).map(l=>String(l.local).trim()))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
+  openSheet('<h2 class="section-title" style="margin-top:0;">Atualizar local</h2>'
+    + '<label class="field-label">Equipamento</label><select id="gl-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
+    + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
+    + '<label class="field-label">Onde está atuando</label><input type="text" id="gl-local" maxlength="120" list="gl-sug" placeholder="Ex.: Pátio 2, carregando sucata" autocomplete="off"><datalist id="gl-sug">'+sug.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>'
+    + '<label class="field-label">Observação (opcional)</label><input type="text" id="gl-obs" maxlength="200">'
+    + '<label class="field-label">Desde</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date())+'">'
+    + '<button class="btn primary" id="gl-ok">Salvar local</button>');
+  const mostra = ()=>{ const l = dslLocalAtual(document.getElementById('gl-equip').value, state.locais); document.getElementById('gl-atual').textContent = l ? 'Local atual: '+l.local+' (desde '+dslDataCurta(l.dataHora)+')' : ''; };
+  document.getElementById('gl-equip').addEventListener('change', mostra); mostra();
+  document.getElementById('gl-ok').onclick = async ()=>{
+    const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = (document.getElementById('gl-local').value||'').trim(), quando = new Date(document.getElementById('gl-data').value);
+    if (!eq){ toast('Escolha o equipamento.'); return; }
+    if (!local){ toast('Informe onde o equipamento está.'); return; }
+    if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
+    if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const atual = dslLocalAtual(eq.id, state.locais);
+    if (atual && atual.local.trim().toLowerCase()===local.toLowerCase() && !confirm('O equipamento já está registrado em "'+atual.local+'".\n\nRegistrar mesmo assim?')) return;
+    const b = document.getElementById('gl-ok'); b.disabled = true;
+    try{
+      const id = 'lo_'+uid();
+      await db.collection('equipamento_locais').doc(id).set({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, obs:(document.getElementById('gl-obs').value||'').trim()||null,
+        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() });
+      closeSheet(); toast(eq.codigo+' → '+local); if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gLocalHist(id){
+  const e = dslEquipPorId(id); if (!e) return;
+  const sup = dslEhSup();
+  const l = state.locais.filter(x=>x.equipamentoId===id).sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)||dslT(b.timestamp)-dslT(a.timestamp)).slice(0,30);
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(e.codigo)+' — '+esc(e.nome)+'</h2>'
+    + '<button class="btn primary" data-g-act="local-nova" data-e="'+esc(id)+'">Atualizar local</button>'
+    + '<h2 class="section-title">Por onde passou</h2><div class="card" style="padding:0 14px;">'
+    + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(x.local)+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
+      + (sup&&!x.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
+    + '</div>');
+}
+
 /* ---- Paradas e manutenção (update_016) ----
    Qualquer pessoa da Gestão abre uma ocorrência (equipamento + motivo); ela fica EM ABERTO. O supervisor libera na
    mesma ocorrência (o que foi feito, quem pegou, data e hora). Nada é apagado: o supervisor anula com motivo. */
@@ -4986,8 +5093,8 @@ function gManutCard(o){
   return '<div class="card left-danger"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><b>'+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+(e?' — '+esc(e.nome):'')+'</b>'
     + dslChip(MANUT_CAT[o.categoria]||o.categoria,'danger')+'</div>'
     + '<div style="margin:6px 0 2px;"><b>'+esc(o.motivo)+'</b></div><div>'+esc(o.descricao)+'</div>'
-    + '<div class="hint" style="margin:6px 0 8px;">Aberta em '+dslDataCurta(o.abertaEm)+(o.abertaPorNome?' por '+esc(o.abertaPorNome):'')+' · parado há <b>'+dslFmtHoras(dslOcorrenciaHoras(o))+'</b></div>'
-    + (dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button>':'<div class="hint" style="margin:0;">Quem libera é o supervisor.</div>')+'</div>';
+    + '<div class="hint" style="margin:6px 0 8px;">Aberta em '+dslDataCurta(o.abertaEm)+(o.abertaPorNome?' por '+esc(o.abertaPorNome):'')+' · parado há <b>'+dslFmtHoras(dslOcorrenciaHoras(o))+'</b>'+(dslLocalAtual(o.equipamentoId,state.locais)?' · local: '+esc(dslLocalAtual(o.equipamentoId,state.locais).local):'')+'</div>'
+    + (dslEhSup()?'<div class="btn-row"><button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button><button class="btn ghost small" data-g-act="manut-editar" data-id="'+esc(o.id)+'" style="border:1px solid var(--border);width:auto;">Corrigir</button></div>':'<div class="hint" style="margin:0;">Quem libera é o supervisor.</div>')+'</div>';
 }
 function gManutLinha(o){
   const h = dslOcorrenciaHoras(o);
@@ -5067,7 +5174,31 @@ function gManutLiberarSheet(id){
       if (db.refetchAll) await db.refetchAll();
       const novo = state.ocorrencias.find(x=>x.id===id);
       if (novo && novo.liberadaEm){ closeSheet(); toast('Equipamento liberado.'); gManutAvisar(id, 'liberacao'); }
-      else { toast('Não foi possível liberar. Confira se você é supervisor da Gestão.', 4000); b.disabled = false; }
+      else { toast('Não foi possível liberar. Confira se você é supervisor de Veículos Móveis.', 4000); b.disabled = false; }
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function gManutEditarSheet(id){
+  const o = state.ocorrencias.find(x=>x.id===id); if (!o || o.liberadaEm || o.anulado) return;
+  if (!dslEhSup()){ toast('Só o supervisor corrige a ocorrência.'); return; }
+  const motivos = cat => { const l = MANUT_MOTIVOS[cat].slice(); if (cat===o.categoria && !l.includes(o.motivo)) l.unshift(o.motivo); return l.map(m=>'<option '+(m===o.motivo&&cat===o.categoria?'selected':'')+'>'+esc(m)+'</option>').join(''); };
+  openSheet('<h2 class="section-title" style="margin-top:0;">Corrigir ocorrência · '+esc(dslEquipNome(o.equipamentoId,o.equipamentoCodigo))+'</h2>'
+    + '<p class="hint">Só dá para corrigir enquanto está em aberto. Aberta em '+dslDataCurta(o.abertaEm)+'; a data de abertura não muda.</p>'
+    + '<label class="field-label">O que é</label><select id="me-cat"><option value="manutencao" '+(o.categoria==='manutencao'?'selected':'')+'>Manutenção (quebra, reparo, revisão)</option><option value="parada" '+(o.categoria==='parada'?'selected':'')+'>Parada (sem operador, sem diesel…)</option></select>'
+    + '<label class="field-label">Motivo</label><select id="me-motivo">'+motivos(o.categoria)+'</select>'
+    + '<label class="field-label">Descrição</label><input type="text" id="me-desc" maxlength="300" value="'+esc(o.descricao)+'">'
+    + '<button class="btn primary" id="me-ok">Salvar correção</button>');
+  document.getElementById('me-cat').onchange = ()=>{ document.getElementById('me-motivo').innerHTML = motivos(document.getElementById('me-cat').value); };
+  document.getElementById('me-ok').onclick = async ()=>{
+    const desc = (document.getElementById('me-desc').value||'').trim(); if (!desc){ toast('Descreva o que está acontecendo.'); return; }
+    const dados = { categoria:document.getElementById('me-cat').value, motivo:document.getElementById('me-motivo').value, descricao:desc };
+    const b = document.getElementById('me-ok'); b.disabled = true;
+    try{
+      await db.collection('ocorrencias').doc(id).update(dados);
+      if (db.refetchAll) await db.refetchAll();
+      const novo = state.ocorrencias.find(x=>x.id===id);
+      if (novo && novo.descricao===desc && novo.motivo===dados.motivo){ closeSheet(); toast('Ocorrência corrigida.'); }
+      else { toast('Não foi possível corrigir. Confira se você é supervisor e se ela ainda está em aberto.', 4000); b.disabled = false; }
     }catch(e){ console.error(e); b.disabled = false; }
   };
 }
@@ -5078,7 +5209,8 @@ function gManutDetalhe(id){
     + l('Motivo',o.motivo)+l('Descrição',o.descricao)+l('Aberta em',dslDataCurta(o.abertaEm)+(o.abertaPorNome?' por '+o.abertaPorNome:''))
     + (o.liberadaEm ? l('Liberada em',dslDataCurta(o.liberadaEm)+(o.liberadaPorNome?' por '+o.liberadaPorNome:''))+l('Por que foi liberado',o.motivoLiberacao)+l('O que foi feito',o.servicoRealizado)+l('Quem pegou o equipamento',o.recebidoPor) : '<div class="li-desc" style="margin:4px 0;"><b>Situação:</b> em aberto</div>')
     + l('Tempo parado',dslFmtHoras(dslOcorrenciaHoras(o))) + (o.anulado?l('Motivo da anulação',o.anuladoMotivo):'')
-    + (!o.liberadaEm&&!o.anulado&&dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button>':'')
+    + (o.editadaEm?l('Corrigida em',dslDataCurta(o.editadaEm)):'')
+    + (!o.liberadaEm&&!o.anulado&&dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button><button class="btn" data-g-act="manut-editar" data-id="'+esc(o.id)+'">Corrigir motivo / descrição</button>':'')
     + (dslEhSup()&&!o.anulado?'<button class="btn ghost" data-g-act="anular" data-t="ocorrencias" data-id="'+esc(o.id)+'" style="border:1px solid var(--border);">Anular ocorrência</button>':''));
 }
 function gManutExportar(){
@@ -5095,10 +5227,11 @@ function renderGEquip(){
   if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
   const parados = {}; dslSemAbastecer(state.equipamentos, state.abastecimentos, null, state.ocorrencias).forEach(p=>{ parados[p.equipamento.id] = p; });
   const lista = state.equipamentos.slice().sort((a,b)=>(b.ativo!==false)-(a.ativo!==false) || String(a.codigo).localeCompare(String(b.codigo))).map(e=>{
-    const c = dslConsumo(e, state.abastecimentos), ult = dslUltimoAbastecimento(e.id, state.abastecimentos), p = parados[e.id], oa = dslOcorrenciaAberta(e.id, state.ocorrencias), un = e.medidor==='km'?'km':'h';
+    const c = dslConsumo(e, state.abastecimentos), ult = dslUltimoAbastecimento(e.id, state.abastecimentos), p = parados[e.id], oa = dslOcorrenciaAberta(e.id, state.ocorrencias), loc = dslLocalAtual(e.id, state.locais), un = e.medidor==='km'?'km':'h';
     return '<div class="list-item" data-g-act="equip" data-id="'+esc(e.id)+'" style="cursor:pointer;'+(e.ativo===false?'opacity:.55;':'')+'"><div class="li-main">'
       + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+'</div>'
       + '<div class="li-desc">'+esc(DSL_TIPOS[e.tipo]||e.tipo)+' · mede em '+(un==='km'?'km':'horas')+(ult?' · último: '+dslDataCurta(ult.dataHora)+' ('+dslFmtMed(ult.medidor,un)+')':' · nunca abasteceu')+'</div>'
+      + (loc?'<div class="li-desc">Local: <b>'+esc(loc.local)+'</b> · '+dslHaTempo(loc.dataHora)+'</div>':'')
       + '<div style="margin-top:4px;">'+(e.ativo===false?dslChip('inativo'):'')+(e.ativo!==false&&e.alertaAtivo===false?dslChip('alerta desligado','info'):'')+(oa?dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger'):'')+(p?dslChip('sem abastecer há '+p.dias+' dias','danger'):'')+'</div></div>'
       + '<div class="li-side"><div class="li-weight" style="font-size:14px;">'+(c.media!=null?dslFmtN(c.media,2)+' '+c.unidade:'—')+'</div></div></div>';
   }).join('');
@@ -5154,7 +5287,7 @@ function gEquipForm(id){
 
 /* ---- anular, exportar e cliques ---- */
 function gAnularSheet(tabela, id){
-  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência' };
+  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência', equipamento_locais:'registro de local' };
   openSheet('<h2 class="section-title" style="margin-top:0;">Anular '+(nomes[tabela]||'lançamento')+'</h2>'
     + '<p class="hint">O lançamento não é apagado: fica marcado como anulado, com o motivo, e deixa de entrar nas contas. Para corrigir, anule e lance de novo.</p>'
     + '<label class="field-label">Motivo (obrigatório)</label><input type="text" id="anu-motivo" maxlength="200" placeholder="Ex.: digitei errado">'
@@ -5191,11 +5324,14 @@ async function gClique(e){
     else if (a==='manut-nova') gManutAbrirSheet(b.dataset.e||'');
     else if (a==='manut-liberar') gManutLiberarSheet(id);
     else if (a==='manut-ver') gManutDetalhe(id);
+    else if (a==='manut-editar') gManutEditarSheet(id);
+    else if (a==='local-nova') gLocalSheet(b.dataset.e||'');
+    else if (a==='local-hist') gLocalHist(id);
     else if (a==='equip') gEquipDetalhe(id);
     else if (a==='equip-novo') gEquipForm(null);
     else if (a==='equip-edit') gEquipForm(id);
 }
-['gdash','gabast','gmanut','gtanque','gequip'].forEach(v=>document.getElementById('view-'+v).addEventListener('click', gClique));
+['gdash','gabast','gmanut','glocal','gtanque','gequip'].forEach(v=>document.getElementById('view-'+v).addEventListener('click', gClique));
 document.getElementById('sheet-content').addEventListener('click', gClique);   // botões dentro das janelas (anular, editar…)
 function subscribeDiesel(){
   const ass = (tabela, chave, campo, lim)=>{
@@ -5203,7 +5339,7 @@ function subscribeDiesel(){
     c.onSnapshot(snap=>{ state[chave] = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
   };
   ass('equipamentos','equipamentos'); ass('tanques','tanques');
-  ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000);
+  ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000); ass('equipamento_locais','locais','dataHora',5000);
 }
 
 /* ================= XLSX EXPORT ================= */
@@ -5213,6 +5349,7 @@ const COL_LABELS = {
   lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)',
   dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo',
   equipamento:'Equipamento', unidade:'Unidade', leitura:'Horímetro / km', litros:'Litros', custoLitro:'Custo (R$/L)', custoTotal:'Custo total (R$)',
+  local:'Local', desde:'Desde',
   categoria:'Categoria', motivo:'Motivo', descricao:'Descrição', abertaEm:'Aberta em', abertaPor:'Aberta por', liberadaEm:'Liberada em', motivoLiberacao:'Motivo da liberação', servico:'O que foi feito', recebidoPor:'Quem pegou', horas:'Horas parado',
   tanque:'Tanque', usuario:'Usuário', situacao:'Situação', precoLitro:'Preço (R$/L)', valorTotal:'Valor total (R$)', fornecedor:'Fornecedor', nota:'Nota fiscal'
 };

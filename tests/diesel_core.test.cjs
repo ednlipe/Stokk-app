@@ -5,7 +5,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8'
 const ini = src.indexOf('/* ================= DIESEL — núcleo');
 const fim = src.indexOf('/* ================= DIESEL — telas');
 assert(ini > 0 && fim > ini, 'núcleo do diesel não encontrado em src/App.jsx');
-const D = new Function(src.slice(ini, fim) + '; return { dslTanque, dslCustoParaAbastecer, dslUltimoAbastecimento, dslValidarMedidor, dslConsumo, dslAnomalia, dslDiasEntre, dslSemAbastecer, dslResumo, dslDiasRestantes, dslOcorrenciaAberta, dslOcorrenciaHoras, dslParadasResumo };')();
+const D = new Function(src.slice(ini, fim) + '; return { dslTanque, dslCustoParaAbastecer, dslUltimoAbastecimento, dslValidarMedidor, dslConsumo, dslAnomalia, dslDiasEntre, dslSemAbastecer, dslResumo, dslDiasRestantes, dslOcorrenciaAberta, dslOcorrenciaHoras, dslParadasResumo, dslLocalAtual };')();
 // o painel do desktop usa uma cópia idêntica do núcleo: se alguém mudar uma e esquecer a outra, o teste avisa
 const desk = fs.readFileSync(path.join(__dirname, '..', 'public', 'desktop', 'index.html'), 'utf8');
 const di = desk.indexOf('/* ================= DIESEL — núcleo'), df = desk.indexOf('/* ================= DIESEL — painel');
@@ -160,5 +160,19 @@ assert.strictEqual(D.dslParadasResumo([], 0, 1).tempoMedioH, null);
 // equipamento com ocorrência em aberto não gera aviso de "sem abastecer"
 assert.deepStrictEqual(nomes(D.dslSemAbastecer(eqs, abs, T(dia(12, 12)), [{ id: 'o9', equipamentoId: 'e1', abertaEm: dia(8) }])).includes('PC01'), false);
 assert.ok(nomes(D.dslSemAbastecer(eqs, abs, T(dia(12, 12)), [])).includes('PC01'));
+
+// ---- localização: o local atual é o último registro válido
+const locs = [
+  { id: 'l1', equipamentoId: 'e1', local: 'Pátio 2', dataHora: dia(3, 8), timestamp: dia(3, 8) },
+  { id: 'l2', equipamentoId: 'e1', local: 'Frente de obra', dataHora: dia(5, 8), timestamp: dia(5, 8) },
+  { id: 'l3', equipamentoId: 'e1', local: 'Oficina', dataHora: dia(7, 8), timestamp: dia(7, 9), anulado: true },     // anulado: ignorado
+  { id: 'l4', equipamentoId: 'e2', local: 'Portaria', dataHora: dia(4, 8), timestamp: dia(4, 8) },
+  { id: 'l5', equipamentoId: 'e2', local: 'Balança', dataHora: dia(4, 8), timestamp: dia(4, 9) },                   // mesma hora: vale o lançado depois
+  { id: 'l6', equipamentoId: 'e1', local: 'Pátio 1', dataHora: dia(2, 8), timestamp: dia(9, 8) },                   // lançado tarde, mas com data antiga: não vira o atual
+];
+assert.strictEqual(D.dslLocalAtual('e1', locs).local, 'Frente de obra');
+assert.strictEqual(D.dslLocalAtual('e2', locs).local, 'Balança');
+assert.strictEqual(D.dslLocalAtual('e9', locs), null);
+assert.strictEqual(D.dslLocalAtual('e1', []), null);
 
 console.log('diesel_core: todos os testes passaram');

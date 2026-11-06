@@ -104,6 +104,17 @@ Quinta aba da Gestão (**Paradas**, `#view-gmanut`, `ABAS_GESTAO` inclui `gmanut
 - Funções: `renderGManut`, `gManutCard`, `gManutLinha`, `gManutAbrirSheet`, `gManutLiberarSheet`, `gManutDetalhe`, `gManutExportar`, `gManutAvisar`. Tabela assinada em `subscribeDiesel` (`ocorrencias`, por `abertaEm`).
 - **Status:** testado no navegador com Supabase simulado (supervisor e operador) e nos testes automáticos; **não testado em produção, no APK nem com push real**.
 
+### 7.10 Gestão · Locais e correção de ocorrência (v1.5.2)
+Quarta aba nova da Gestão (**Locais**, `#view-glocal`; `ABAS_GESTAO` ficou com Resumo · Abastecer · Paradas · Locais · Tanque · Equipamentos). Regras: `regras-de-negocio.md` §9.7; tabela: `banco.md` §4.3.3.
+- **Onde estão agora:** lista de equipamentos ativos com o local atual, observação, desde quando, há quanto tempo e quem informou; etiqueta vermelha se estiver em manutenção/parado. Busca por equipamento ou local. Tocar no equipamento abre **por onde passou** (histórico, com **anular** para o supervisor); o botão **Atualizar** abre a janela de novo local.
+- **Atualizar local:** equipamento, "onde está atuando" (texto livre com sugestões dos nomes já usados), observação e "desde" (data/hora, não futura). Pergunta antes se o local é igual ao atual.
+- **Últimas atualizações:** os 25 registros mais recentes (supervisor anula com motivo).
+- **Em outras telas:** Equipamentos mostra "Local: …"; o cartão da ocorrência em aberto mostra o local do equipamento.
+- **Corrigir ocorrência em aberto (supervisor):** botão **Corrigir** no cartão (e "Corrigir motivo / descrição" nos detalhes) altera categoria, motivo e descrição; depois de gravar o app confere se valeu.
+- Se o `update_017` não foi rodado, só a aba Locais mostra o aviso (`state.locaisErr`); o resto continua funcionando (a correção de ocorrência dá o aviso de falta de permissão).
+- Funções: `renderGLocal`, `gLocalLista`, `gLocalLinha`, `gLocalSheet`, `gLocalHist`, `gManutEditarSheet`, `dslLocalAtual` (núcleo). Tabela assinada em `subscribeDiesel` (`equipamento_locais`, por `dataHora`, até 5000).
+- **Status:** testado no navegador com Supabase simulado (supervisor e operador) e nos testes automáticos; **não testado em produção nem no APK**.
+
 ## 8. Leitura de etiquetas e leitores
 
 ### 8.1 Formato da etiqueta

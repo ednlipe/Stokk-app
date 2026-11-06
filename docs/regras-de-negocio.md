@@ -65,5 +65,12 @@ Núcleo `dslOcorrenciaAberta`, `dslOcorrenciaHoras`, `dslParadasResumo` (mesmo b
 - **Nada se apaga nem se edita:** liberada ou anulada, a ocorrência fica como está; para corrigir, o supervisor **anula** (com motivo) e abre de novo. Ocorrência anulada não entra em nenhuma conta.
 - **Horas paradas** = liberação − abertura (se ainda aberta, até agora). No painel, o período filtra pela data de **abertura**; tempo médio = só das liberadas.
 - **Equipamento com ocorrência em aberto não gera "sem abastecer"** (app, desktop e aviso push); o app avisa na tela de Abastecer que ele está parado, mas não bloqueia o lançamento.
+- **Correção (v1.5.2):** enquanto está em aberto, o **supervisor** pode corrigir categoria, motivo e descrição (a data de abertura não muda); fica gravado quando e por quem (`editada_em`, `editada_por`). Depois de liberada ou anulada, não muda mais.
 - **Aviso push:** ao abrir, os supervisores da área recebem na hora (menos quem abriu); ao liberar, os supervisores e quem abriu (menos quem liberou), com o que foi feito, quem pegou e o tempo parado. Se o aviso falhar, a ocorrência já está salva. Cada aviso sai uma vez só.
 
+### 9.7 Localização dos equipamentos (v1.5.2)
+Núcleo `dslLocalAtual` (mesmo bloco "DIESEL — núcleo", cópia no desktop) e teste em `tests/diesel_core.test.cjs`.
+- **Texto livre + histórico:** qualquer pessoa da Gestão informa onde o equipamento está (local, observação opcional, desde quando). Cada informação vira uma linha; o **local atual** é a mais recente (pela data/hora informada; se for a mesma hora, a lançada depois). Os anteriores formam o histórico "por onde passou".
+- Registro anulado (pelo supervisor, com motivo) não conta; nada se apaga nem se edita.
+- Como o texto é livre, o app sugere os nomes já usados (lista de sugestões) para evitar variações do mesmo lugar ("Pátio 2" / "patio2"); avisa se o local informado é igual ao atual.
+- A localização é **informada à mão** (não é rastreamento). Rastreio por GPS é outro assunto (ver conversa de 05/11).

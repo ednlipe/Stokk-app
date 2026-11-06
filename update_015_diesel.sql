@@ -31,7 +31,7 @@ begin;
 set local lock_timeout = '8s';
 
 -- ---------- 1) Área Gestão ----------
-insert into public.areas (id, nome) values ('gestao', 'Gestão')
+insert into public.areas (id, nome) values ('gestao', 'Veículos Móveis')
 on conflict (id) do nothing;
 
 -- ---------- 2) Tabelas ----------
