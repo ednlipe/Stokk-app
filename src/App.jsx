@@ -5747,7 +5747,7 @@ function subscribeCinco(){
    Tela para criar login, bloquear/reativar, trocar papel, escolher as áreas e redefinir senha.
    Tudo passa pela Edge Function "admin-usuarios", que confere no servidor se quem chama é administrador
    (profiles.admin, marcado só pelo SQL). O botão só aparece para quem é admin, mas a trava de verdade é no servidor. */
-const ADM_FUNCAO = 'admin-usuarios';
+const ADM_FUNCAO = 'super-worker';   // endereço (slug) real da função no Supabase; o nome exibido é admin-usuarios
 function admEstado(){ return state.adm || (state.adm = { usuarios:null, areas:[], erro:'', carregando:false }); }
 function admEhAdmin(){ return !!(state.user && state.user.admin); }
 async function admChamar(acao, dados){
