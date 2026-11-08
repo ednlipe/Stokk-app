@@ -119,6 +119,16 @@ Quarta aba nova da Gestão (**Locais**, `#view-glocal`; `ABAS_GESTAO` ficou com 
 - Funções: `renderGLocal`, `gLocalLista`, `gLocalLinha`, `gLocalSheet`, `gLocalHist`, `gManutEditarSheet`, `dslLocalAtual` (núcleo). Tabela assinada em `subscribeDiesel` (`equipamento_locais`, por `dataHora`, até 5000).
 - **Status:** testado no navegador com Supabase simulado (supervisor e operador) e nos testes automáticos; **não testado em produção nem no APK**.
 
+### 7.11 Gestão Planta 1 · 5S (v1.6.0)
+Ambiente novo (`state.area === 'gestao_p1'`; `ABAS_DA_AREA`/`ABA_INICIAL` generalizam o que antes era só `gestao`). Duas abas: **Resumo** (`#view-c5resumo`) e **5S** (`#view-c5lista`).
+- **Resumo:** alerta de 5S em aberto há mais de 7 dias; no mês: concluídos, abertos, em aberto agora, tempo médio; por setor e por pessoa; botão **Exportar 5S (Excel)** (supervisor).
+- **5S:** **+ Novo 5S** (setor, o que está errado, foto do antes, data/hora; caixa "Já resolvi" mostra foto do depois e "o que foi feito"); **Em aberto** (foto, setor, descrição, quem/quando, botão **Concluir**); **Concluídos** (antes e depois lado a lado). Tocar no item abre o detalhe com as fotos grandes; supervisor: **Corrigir setor/descrição** (só em aberto) e **Anular 5S**.
+- **Foto:** `<input type=file accept=image/* capture=environment>` (câmera) ou galeria; `c5Comprimir` reduz no aparelho (1280 px, JPEG, alvo 300 KB) antes de `c5Enviar` (Storage `cinco-s`, `upsert:false`). As fotos são privadas: `c5Urls`/`c5Hidratar` pedem links temporários de 1 h (`createSignedUrls`) e preenchem as `<img data-c5>`. A permissão de câmera já está no `AndroidManifest.xml`.
+- Sem internet a foto **não é enviada**: o app avisa e a janela continua aberta (a foto reduzida fica na tela) para tentar de novo; não há fila offline.
+- Se o `update_018` não foi rodado, as duas abas mostram o aviso (`state.cincoErr`).
+- Funções: `renderC5Resumo`, `renderC5Lista`, `c5AbrirSheet`, `c5ConcluirSheet`, `c5EditarSheet`, `c5Detalhe`, `c5Exportar`, `c5Clique`, `subscribeCinco`, `completarAntigos` (ramo `cinco_s`: traz os abertos antigos se a leitura bater no limite de 5000).
+- **Status:** testado no navegador com Supabase simulado (supervisor e operador: abrir, concluir, abrir e concluir, corrigir, anular, foto de 7,8 MB reduzida para ~90 KB) e o SQL em Postgres local; **não testado** com o Supabase real, com câmera real no APK nem com fotos reais de celular.
+
 ## 8. Leitura de etiquetas e leitores
 
 ### 8.1 Formato da etiqueta

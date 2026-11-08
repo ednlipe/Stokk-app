@@ -198,6 +198,9 @@ const APP_HTML = `
     <section class="view" id="view-gmanut"><div id="gmanut-body"></div></section>
     <section class="view" id="view-glocal"><div id="glocal-body"></div></section>
     <section class="view" id="view-gequip"><div id="gequip-body"></div></section>
+    <!-- GESTÃO PLANTA 1 · 5S -->
+    <section class="view" id="view-c5resumo"><div id="c5resumo-body"></div></section>
+    <section class="view" id="view-c5lista"><div id="c5lista-body"></div></section>
   </main>
 
   <nav class="bottom">
@@ -224,6 +227,14 @@ const APP_HTML = `
     <button data-nav="gequip" style="display:none;">
       <svg viewBox="0 0 24 24"><path d="M3 17h2a2 2 0 004 0h6a2 2 0 004 0h1v-5l-3-4h-5v5H3zM9 8V5h4"/></svg>
       Equipamentos
+    </button>
+    <button data-nav="c5resumo" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
+      Resumo
+    </button>
+    <button data-nav="c5lista" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      5S
     </button>
     <button data-nav="dashboard" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
@@ -312,6 +323,7 @@ const state = {
   equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [],   // ambiente Gestão (diesel)
   ocorrencias: [], paradasErr: null,   // paradas e manutenção (update_016)
   locais: [], locaisErr: null, glocalBusca: '',   // localização dos equipamentos (update_017)
+  cincoS: [], cincoErr: null,   // 5S da Gestão Planta 1 (update_018)
   dieselErr: {}
 };
 
@@ -336,19 +348,25 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
 const ABAS_OCULTAS_POR_AREA = { planta1: ['producao'] };
 // ambiente Gestão (update_015): só mostra as abas de diesel; as outras áreas não mostram essas abas
 const ABAS_GESTAO = ['gdash','gabast','gmanut','glocal','gtanque','gequip'];
+// ambiente Gestão Planta 1 (update_018): só as abas do 5S
+const ABAS_P1 = ['c5resumo','c5lista'];
+// áreas com abas próprias: só mostram as suas; as demais áreas escondem todas essas abas
+const ABAS_DA_AREA = { gestao: ABAS_GESTAO, gestao_p1: ABAS_P1 };
+const ABA_INICIAL = { gestao: 'gdash', gestao_p1: 'c5resumo' };
 function esconderAbasPorArea(){
-  const gestao = state.area === 'gestao';
+  const propria = state.area ? ABAS_DA_AREA[state.area] : null;
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
+  const deOutras = ABAS_GESTAO.concat(ABAS_P1);
   document.querySelectorAll('[data-nav]').forEach(el=>{
-    const n = el.getAttribute('data-nav'), daGestao = ABAS_GESTAO.includes(n);
-    if (gestao ? !daGestao : (daGestao || ocultas.includes(n))) el.style.display = 'none';
-    else if (gestao) el.style.display = '';
+    const n = el.getAttribute('data-nav');
+    if (propria ? !propria.includes(n) : (deOutras.includes(n) || ocultas.includes(n))) el.style.display = 'none';
+    else if (propria) el.style.display = '';
   });
 }
 const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
-const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias','equipamento_locais','cinco_s'].concat(DIESEL_TABLES);
 // tabelas gravadas só com INSERT (o histórico não aceita "upsert": isso exigiria permissão de UPDATE em todas as colunas)
-const SOMENTE_INSERIR = ['movimentos','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
+const SOMENTE_INSERIR = ['movimentos','ocorrencias','equipamento_locais','cinco_s'].concat(DIESEL_TABLES);
 function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
@@ -453,6 +471,11 @@ function createSupabaseDB(){
           return q;
         }));
         rs.forEach(r=>{ if (r.error) throw r.error; juntar(r.data); });
+      } else if (table==='cinco_s'){
+        let q = sb.from('cinco_s').select('*').is('concluido_em', null).eq('anulado', false);
+        if (ar) q = q.eq('area', ar);
+        const r = await q; if (r.error) throw r.error;
+        juntar(r.data);
       }
     }catch(err){ console.error('completarAntigos', table, err); }
   }
@@ -483,6 +506,7 @@ function createSupabaseDB(){
       if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='ocorrencias'){ state.paradasErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='equipamento_locais'){ state.locaisErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      if (table==='cinco_s'){ state.cincoErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='producoes'){ state.producoesErro = error.message || 'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
@@ -490,6 +514,7 @@ function createSupabaseDB(){
     if (table==='producoes') state.producoesErro = null;
     if (table==='ocorrencias') state.paradasErr = null;
     if (table==='equipamento_locais') state.locaisErr = null;
+    if (table==='cinco_s') state.cincoErr = null;
     if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
@@ -632,7 +657,7 @@ async function onAuthed(user){
   state.ready.db = true; state.ready.downloads = true;
   document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
-  setView(state.area === 'gestao' ? 'gdash' : 'dashboard');
+  setView(ABA_INICIAL[state.area] || 'dashboard');
   registrarPush(user.id);
 }
 
@@ -1117,6 +1142,7 @@ function salvarSessaoSeguida(id){
 }
 function subscribeData(){
   if (state.area === 'gestao'){ subscribeDiesel(); return; }   // ambiente Gestão: só as tabelas de diesel
+  if (state.area === 'gestao_p1'){ subscribeCinco(); return; }   // Gestão Planta 1: só o 5S
   db.collection('volumes').onSnapshot(snap=>{
     state.volumes.clear();
     snap.docs.forEach(d=>state.volumes.set(d.id, d.data()));
@@ -1220,6 +1246,8 @@ function renderView(name){
   else if (name==='gmanut') renderGManut();
   else if (name==='glocal') renderGLocal();
   else if (name==='gequip') renderGEquip();
+  else if (name==='c5resumo') renderC5Resumo();
+  else if (name==='c5lista') renderC5Lista();
 }
 
 /* ================= DASHBOARD ================= */
@@ -5317,7 +5345,7 @@ function gEquipForm(id){
 
 /* ---- anular, exportar e cliques ---- */
 function gAnularSheet(tabela, id){
-  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência', equipamento_locais:'registro de local' };
+  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência', equipamento_locais:'registro de local', cinco_s:'5S' };
   openSheet('<h2 class="section-title" style="margin-top:0;">Anular '+(nomes[tabela]||'lançamento')+'</h2>'
     + '<p class="hint">O lançamento não é apagado: fica marcado como anulado, com o motivo, e deixa de entrar nas contas. Para corrigir, anule e lance de novo.</p>'
     + '<label class="field-label">Motivo (obrigatório)</label><input type="text" id="anu-motivo" maxlength="200" placeholder="Ex.: digitei errado">'
@@ -5372,6 +5400,309 @@ function subscribeDiesel(){
   ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000); ass('equipamento_locais','locais','dataHora',5000);
 }
 
+/* ================= 5S — núcleo (regras de cálculo; MESMA cópia no desktop: public/desktop/index.html) =================
+   Cada registro: setor, problema, fotoAntes, abertoEm, concluidoEm (vazio = em aberto), fotoDepois, acao, anulado.
+   Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
+const C5_DIAS_ALERTA = 7;
+function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
+function c5Validos(rs){ return (rs||[]).filter(r=>!r.anulado); }
+function c5Abertos(rs){ return c5Validos(rs).filter(r=>!r.concluidoEm).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)); }
+// horas entre abrir e concluir; se ainda está em aberto, até agora
+function c5Horas(r, agoraT){
+  const fim = r.concluidoEm ? c5T(r.concluidoEm) : (agoraT==null ? Date.now() : agoraT);
+  return Math.max(0, (fim - c5T(r.abertoEm)) / 3600000);
+}
+function c5Chave(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase().replace(/\s+/g,' '); }
+// setores já usados (mais usados primeiro), para sugerir ao abrir um 5S novo
+function c5Setores(rs){
+  const m = new Map();
+  c5Validos(rs).forEach(r=>{ const k = c5Chave(r.setor); if (!k) return; const x = m.get(k) || { nome: String(r.setor).trim().replace(/\s+/g,' '), n: 0 }; x.n++; m.set(k, x); });
+  return [...m.values()].sort((a,b)=>b.n-a.n || a.nome.localeCompare(b.nome)).map(x=>x.nome);
+}
+// resumo do período [de, ate): abertos e concluídos DENTRO do período; "abertosAgora" e "antigos" valem para hoje
+function c5Resumo(rs, de, ate, agoraT){
+  const agora = agoraT==null ? Date.now() : agoraT, v = c5Validos(rs);
+  const noP = t => !isNaN(t) && t >= de && t < ate;
+  const abertosP = v.filter(r=>noP(c5T(r.abertoEm))), concP = v.filter(r=>r.concluidoEm && noP(c5T(r.concluidoEm)));
+  const abertosAgora = c5Abertos(rs), limite = agora - C5_DIAS_ALERTA*86400000;
+  const antigos = abertosAgora.filter(r=>c5T(r.abertoEm) < limite);
+  const medias = concP.map(r=>c5Horas(r, agora));
+  const setores = new Map(), pessoas = new Map(), dias = new Map();
+  const sobe = (mapa, nome, campo)=>{ const k = c5Chave(nome) || '(sem nome)'; const x = mapa.get(k) || { nome: String(nome||'(sem nome)').trim().replace(/\s+/g,' ') || '(sem nome)', abertos:0, concluidos:0 }; x[campo]++; const lim = String(nome||'').trim().replace(/\s+/g,' '); if (lim && x.nome===x.nome.toLowerCase() && lim!==lim.toLowerCase()) x.nome = lim; mapa.set(k, x); };
+  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); });
+  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
+  const ordem = (a,b)=> (b.abertos+b.concluidos)-(a.abertos+a.concluidos) || a.nome.localeCompare(b.nome);
+  return {
+    abertosP: abertosP.length, concluidosP: concP.length,
+    abertosAgora: abertosAgora.length, antigos: antigos.length, antigosLista: antigos,
+    tempoMedioH: medias.length ? medias.reduce((s,x)=>s+x,0)/medias.length : null,
+    porSetor: [...setores.values()].sort(ordem), porPessoa: [...pessoas.values()].sort(ordem),
+    concluidosPorDia: dias
+  };
+}
+
+/* ================= 5S — telas (Gestão Planta 1, update_018) ================= */
+const C5_BUCKET = 'cinco-s', C5_LADO_MAX = 1280, C5_ALVO_BYTES = 300*1024, C5_MAX_BYTES = 1900*1024;
+function c5SemBanco(){ return !!state.cincoErr; }
+function c5AvisoBanco(){
+  return '<div class="card left-danger"><b>O 5S ainda não está no banco.</b>'
+    + '<p class="hint" style="margin:6px 0 0;">Rode o arquivo <b>update_018_cinco_s.sql</b> no SQL Editor do Supabase e atualize a página.</p></div>';
+}
+function c5Tempo(h){ return dslFmtHoras(h); }
+function c5Mes(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function c5Hoje(){ const h = new Date(); return { de:new Date(h.getFullYear(), h.getMonth(), 1).getTime(), ate:new Date(h.getFullYear(), h.getMonth()+1, 1).getTime() }; }
+
+/* ---- foto: reduzir no aparelho antes de enviar (3–5 MB → ~150–300 KB) ---- */
+function c5CarregarImagem(file){
+  return new Promise((ok, err)=>{
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = ()=>{ URL.revokeObjectURL(url); ok(im); };
+    im.onerror = ()=>{ URL.revokeObjectURL(url); err(new Error('Não consegui abrir essa foto.')); };
+    im.src = url;
+  });
+}
+async function c5Comprimir(file){
+  if (!file) throw new Error('Nenhuma foto escolhida.');
+  const im = await c5CarregarImagem(file);
+  const lado = Math.max(im.naturalWidth, im.naturalHeight); if (!lado) throw new Error('Foto inválida.');
+  const k = lado > C5_LADO_MAX ? C5_LADO_MAX/lado : 1;
+  const w = Math.max(1, Math.round(im.naturalWidth*k)), h = Math.max(1, Math.round(im.naturalHeight*k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); cx.drawImage(im, 0, 0, w, h);
+  let q = 0.72, blob = null;
+  for (let i = 0; i < 5; i++){
+    blob = await new Promise(r=>cv.toBlob(r, 'image/jpeg', q));
+    if (!blob) throw new Error('Não consegui reduzir a foto.');
+    if (blob.size <= C5_ALVO_BYTES) break;
+    q -= 0.1;
+  }
+  if (blob.size > C5_MAX_BYTES) throw new Error('A foto ficou grande demais. Tente outra.');
+  return blob;
+}
+async function c5Enviar(caminho, blob){
+  const r = await sb.storage.from(C5_BUCKET).upload(caminho, blob, { contentType:'image/jpeg', upsert:false });
+  if (r.error) throw r.error;
+}
+// links temporários (1 h) das fotos privadas; guardados em memória para não pedir de novo a cada tela
+const c5UrlCache = new Map();
+async function c5Urls(paths){
+  const faltam = [...new Set(paths)].filter(p=>p && !(c5UrlCache.get(p) && c5UrlCache.get(p).ate > Date.now()));
+  if (!faltam.length) return;
+  try{
+    const r = await sb.storage.from(C5_BUCKET).createSignedUrls(faltam, 3600);
+    if (r.error) throw r.error;
+    (r.data||[]).forEach(d=>{ if (d.signedUrl) c5UrlCache.set(d.path, { url:d.signedUrl, ate:Date.now()+3300000 }); });
+  }catch(e){ console.error('c5Urls', e); }
+}
+async function c5Hidratar(raiz){
+  if (!raiz) return;
+  const imgs = [...raiz.querySelectorAll('img[data-c5]')]; if (!imgs.length) return;
+  await c5Urls(imgs.map(i=>i.dataset.c5));
+  imgs.forEach(i=>{ const c = c5UrlCache.get(i.dataset.c5); if (c){ i.src = c.url; i.classList.remove('c5-sem'); } else { i.classList.add('c5-sem'); i.alt = 'foto indisponível'; } });
+}
+function c5Img(path, cls){ return '<img class="c5-img '+(cls||'')+'" data-c5="'+esc(path||'')+'" alt="" loading="lazy">'; }
+// campo de foto dentro de uma janela: tirar na hora (câmera) ou escolher da galeria; guarda a foto já reduzida
+function c5CampoFoto(id, rotulo){
+  return '<label class="field-label">'+esc(rotulo)+'</label><div class="c5-campo" id="'+id+'">'
+    + '<div class="c5-prev" id="'+id+'-prev"><span>Sem foto</span></div>'
+    + '<div class="btn-row"><label class="btn primary c5-btn">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden></label>'
+    + '<label class="btn ghost c5-btn" style="border:1px solid var(--border);">Galeria<input type="file" accept="image/*" hidden></label></div></div>';
+}
+function c5LigarFoto(id, guarda){
+  const box = document.getElementById(id), prev = document.getElementById(id+'-prev');
+  box.querySelectorAll('input[type=file]').forEach(inp=>{
+    inp.onchange = async ()=>{
+      const f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
+      prev.innerHTML = '<span>Reduzindo a foto…</span>';
+      try{
+        const blob = await c5Comprimir(f);
+        if (guarda.url) URL.revokeObjectURL(guarda.url);
+        guarda.blob = blob; guarda.url = URL.createObjectURL(blob);
+        prev.innerHTML = '<img src="'+guarda.url+'" alt=""><small>'+Math.round(blob.size/1024)+' KB</small>';
+      }catch(e){ console.error(e); guarda.blob = null; prev.innerHTML = '<span>Sem foto</span>'; toast(e.message||'Não consegui usar essa foto.', 3500); }
+    };
+  });
+}
+function c5Caminho(id, quando, lado){ return state.area+'/'+c5Mes(quando)+'/'+id+'_'+lado+'.jpg'; }
+
+/* ---- listas ---- */
+function c5CardAberto(r){
+  const h = c5Horas(r), velho = h >= C5_DIAS_ALERTA*24;
+  return '<div class="card c5-card '+(velho?'left-danger':'')+'">'
+    + '<div class="c5-linha" data-c5-act="ver" data-id="'+esc(r.id)+'">'+c5Img(r.fotoAntes,'c5-mini')
+    + '<div class="c5-txt"><b>'+esc(r.setor)+'</b>'+(velho?' '+dslChip('há '+c5Tempo(h),'danger'):'')+'<div>'+esc(r.problema)+'</div>'
+    + '<div class="hint" style="margin:4px 0 0;">'+dslDataCurta(r.abertoEm)+(r.abertoPorNome?' · '+esc(r.abertoPorNome):'')+(velho?'':' · há '+c5Tempo(h))+'</div></div></div>'
+    + '<div class="btn-row"><button class="btn primary" data-c5-act="concluir" data-id="'+esc(r.id)+'">Concluir (foto do depois)</button></div></div>';
+}
+function c5LinhaHist(r){
+  return '<div class="list-item" data-c5-act="ver" data-id="'+esc(r.id)+'" style="cursor:pointer;'+(r.anulado?'opacity:.55;':'')+'">'
+    + '<div class="c5-par">'+c5Img(r.fotoAntes,'c5-mini2')+(r.fotoDepois?c5Img(r.fotoDepois,'c5-mini2'):'')+'</div>'
+    + '<div class="li-main"><div class="li-code" style="font-size:14px;'+(r.anulado?'text-decoration:line-through;':'')+'">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+    + '<div class="li-desc">'+esc(r.acao||r.problema)+'</div><div class="li-desc">'+dslDataCurta(r.concluidoEm||r.abertoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+'</div></div></div>';
+}
+function renderC5Lista(){
+  const body = document.getElementById('c5lista-body'); if (!body) return;
+  if (c5SemBanco()){ body.innerHTML = c5AvisoBanco(); return; }
+  const abertos = c5Abertos(state.cincoS);
+  const hist = state.cincoS.filter(r=>r.anulado || r.concluidoEm).sort((a,b)=>c5T(b.concluidoEm||b.abertoEm)-c5T(a.concluidoEm||a.abertoEm)).slice(0,30);
+  body.innerHTML =
+    '<div class="btn-row" style="margin-bottom:12px;"><button class="btn primary" data-c5-act="novo">+ Novo 5S (foto do antes)</button><button class="btn ghost small" data-c5-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
+    + '<h2 class="section-title" style="margin-top:6px;">Em aberto ('+abertos.length+')</h2>'
+    + (abertos.map(c5CardAberto).join('') || '<div class="card"><p class="hint" style="margin:0;">Nenhum 5S em aberto.</p></div>')
+    + '<h2 class="section-title">Concluídos</h2><div class="card" style="padding:0 14px;">'+(hist.map(c5LinhaHist).join('')||'<p class="hint">Nenhum 5S concluído ainda.</p>')+'</div>';
+  c5Hidratar(body);
+}
+function renderC5Resumo(){
+  const body = document.getElementById('c5resumo-body'); if (!body) return;
+  if (c5SemBanco()){ body.innerHTML = c5AvisoBanco(); return; }
+  const P = c5Hoje(), R = c5Resumo(state.cincoS, P.de, P.ate), mes = new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  const barras = lista => lista.length ? lista.slice(0,8).map(x=>'<div class="list-item" style="cursor:default;"><div class="li-main"><div class="li-code" style="font-size:14px;">'+esc(x.nome)+'</div></div><div class="li-side"><div class="li-weight" style="font-size:13px;">'+x.concluidos+' concl. · '+x.abertos+' aberto'+(x.abertos===1?'':'s')+'</div></div></div>').join('') : '<p class="hint">Nada neste mês ainda.</p>';
+  body.innerHTML =
+    '<div class="btn-row" style="margin-bottom:12px;"><button class="btn primary" data-c5-act="novo">+ Novo 5S (foto do antes)</button><button class="btn ghost small" data-c5-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
+    + (R.antigos ? '<div class="card left-danger"><b>⚠ '+R.antigos+' 5S em aberto há mais de '+C5_DIAS_ALERTA+' dias</b>'+R.antigosLista.slice(0,5).map(r=>'<div class="li-desc" data-c5-act="ver" data-id="'+esc(r.id)+'" style="cursor:pointer;margin-top:4px;">'+esc(r.setor)+' · '+esc(r.problema)+' · há '+c5Tempo(c5Horas(r))+'</div>').join('')+'</div>' : '')
+    + '<h2 class="section-title" style="margin-top:6px;text-transform:capitalize;">'+esc(mes)+'</h2><div class="stats">'
+    + '<div class="stat accent"><div class="n">'+R.concluidosP+'</div><div class="l">Concluídos no mês</div></div>'
+    + '<div class="stat"><div class="n">'+R.abertosP+'</div><div class="l">Abertos no mês</div></div>'
+    + '<div class="stat"><div class="n">'+R.abertosAgora+'</div><div class="l">Em aberto agora</div></div>'
+    + '<div class="stat"><div class="n" style="font-size:22px;">'+(R.tempoMedioH!=null?c5Tempo(R.tempoMedioH):'—')+'</div><div class="l">Tempo médio até concluir</div></div></div>'
+    + '<h2 class="section-title">Por setor</h2><div class="card" style="padding:0 14px;">'+barras(R.porSetor)+'</div>'
+    + '<h2 class="section-title">Por pessoa</h2><div class="card" style="padding:0 14px;">'+barras(R.porPessoa)+'</div>'
+    + (dslEhSup()?'<button class="btn ghost" data-c5-act="exportar" style="border:1px solid var(--border);">Exportar 5S (Excel)</button>':'');
+}
+
+/* ---- janelas ---- */
+function c5SetorCampo(){
+  const sug = c5Setores(state.cincoS);
+  return '<label class="field-label">Setor / local</label><input type="text" id="c5-setor" maxlength="80" list="c5-setores" placeholder="Ex.: Laminação, Expedição, Oficina" autocomplete="off">'
+    + '<datalist id="c5-setores">'+sug.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>';
+}
+function c5AbrirSheet(){
+  const antes = {}, depois = {};
+  openSheet('<h2 class="section-title" style="margin-top:0;">Novo 5S</h2>'
+    + c5SetorCampo()
+    + '<label class="field-label">O que está errado / vai melhorar</label><input type="text" id="c5-problema" maxlength="300" placeholder="Ex.: ferramentas espalhadas no chão">'
+    + c5CampoFoto('c5-f-antes', 'Foto do ANTES')
+    + '<label class="field-label">Data e hora</label><input type="datetime-local" id="c5-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label" style="display:flex;align-items:center;gap:8px;margin-top:14px;"><input type="checkbox" id="c5-ja" style="width:auto;"> Já resolvi (informar o depois agora)</label>'
+    + '<div id="c5-depois-box" style="display:none;">'+c5CampoFoto('c5-f-depois','Foto do DEPOIS')
+    + '<label class="field-label">O que foi feito</label><input type="text" id="c5-acao" maxlength="500" placeholder="Ex.: guardou as ferramentas no painel"></div>'
+    + '<button class="btn primary" id="c5-ok">Salvar em aberto</button>');
+  c5LigarFoto('c5-f-antes', antes); c5LigarFoto('c5-f-depois', depois);
+  const ja = document.getElementById('c5-ja'), ok = document.getElementById('c5-ok');
+  ja.onchange = ()=>{ document.getElementById('c5-depois-box').style.display = ja.checked ? '' : 'none'; ok.textContent = ja.checked ? 'Salvar e concluir' : 'Salvar em aberto'; };
+  ok.onclick = async ()=>{
+    const setor = (document.getElementById('c5-setor').value||'').trim(), problema = (document.getElementById('c5-problema').value||'').trim(), quando = new Date(document.getElementById('c5-data').value);
+    const concluir = ja.checked, acao = (document.getElementById('c5-acao').value||'').trim();
+    if (!setor){ toast('Informe o setor.'); return; }
+    if (!problema){ toast('Descreva o que está errado.'); return; }
+    if (!antes.blob){ toast('Tire a foto do antes.'); return; }
+    if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
+    if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    if (concluir && !depois.blob){ toast('Tire a foto do depois.'); return; }
+    if (concluir && !acao){ toast('Informe o que foi feito.'); return; }
+    const id = 'cs_'+uid(); ok.disabled = true; ok.textContent = 'Enviando fotos…';
+    try{
+      const pA = c5Caminho(id, quando, 'antes');
+      await c5Enviar(pA, antes.blob);
+      await db.collection('cinco_s').doc(id).set({ id, setor, problema, fotoAntes:pA, abertoEm:quando.toISOString(), abertoPor:state.user.id, abertoPorNome:state.user.nome });
+      if (concluir){
+        try{ await c5ConcluirGravar(id, depois.blob, acao, new Date()); toast('5S registrado e concluído.'); }
+        catch(e){ console.error(e); toast('5S aberto, mas não consegui concluir. Conclua pela lista.', 4500); }
+      } else toast('5S aberto.');
+      closeSheet(); if (db.refetchAll) await db.refetchAll();
+    }catch(e){ console.error(e); toast('Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.', 4500); ok.disabled = false; ok.textContent = concluir ? 'Salvar e concluir' : 'Salvar em aberto'; }
+  };
+}
+async function c5ConcluirGravar(id, blob, acao, quando){
+  const pD = c5Caminho(id, quando, 'depois');
+  await c5Enviar(pD, blob);
+  await db.collection('cinco_s').doc(id).update({ concluidoEm:quando.toISOString(), concluidoPorNome:state.user.nome, fotoDepois:pD, acao });
+}
+function c5ConcluirSheet(id){
+  const r = state.cincoS.find(x=>x.id===id); if (!r || r.concluidoEm || r.anulado) return;
+  const depois = {};
+  openSheet('<h2 class="section-title" style="margin-top:0;">Concluir 5S · '+esc(r.setor)+'</h2>'
+    + '<p class="hint">Antes: '+esc(r.problema)+' · aberto em '+dslDataCurta(r.abertoEm)+'</p>'+c5Img(r.fotoAntes,'c5-grande')
+    + c5CampoFoto('c5-f-depois','Foto do DEPOIS')
+    + '<label class="field-label">O que foi feito</label><input type="text" id="c5-acao" maxlength="500" placeholder="Ex.: guardou as ferramentas no painel">'
+    + '<label class="field-label">Data e hora da conclusão</label><input type="datetime-local" id="c5-data" value="'+dslLocalInput(new Date())+'">'
+    + '<button class="btn primary" id="c5-ok">Concluir 5S</button>');
+  c5Hidratar(document.getElementById('sheet-content')); c5LigarFoto('c5-f-depois', depois);
+  document.getElementById('c5-ok').onclick = async ()=>{
+    const acao = (document.getElementById('c5-acao').value||'').trim(), quando = new Date(document.getElementById('c5-data').value);
+    if (!depois.blob){ toast('Tire a foto do depois.'); return; }
+    if (!acao){ toast('Informe o que foi feito.'); return; }
+    if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
+    if (quando.getTime() < c5T(r.abertoEm)){ toast('A conclusão não pode ser antes da abertura ('+dslDataCurta(r.abertoEm)+').', 3500); return; }
+    if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando foto…';
+    try{
+      await c5ConcluirGravar(id, depois.blob, acao, quando);
+      if (db.refetchAll) await db.refetchAll();
+      const novo = state.cincoS.find(x=>x.id===id);
+      if (novo && novo.concluidoEm){ closeSheet(); toast('5S concluído.'); }
+      else { toast('Não foi possível concluir. Tente de novo.', 4000); b.disabled = false; b.textContent = 'Concluir 5S'; }
+    }catch(e){ console.error(e); toast('Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.', 4500); b.disabled = false; b.textContent = 'Concluir 5S'; }
+  };
+}
+function c5EditarSheet(id){
+  const r = state.cincoS.find(x=>x.id===id); if (!r || r.concluidoEm || r.anulado) return;
+  if (!dslEhSup()){ toast('Só o supervisor corrige o 5S.'); return; }
+  openSheet('<h2 class="section-title" style="margin-top:0;">Corrigir 5S</h2>'
+    + '<p class="hint">Só dá para corrigir enquanto está em aberto. A foto e a data não mudam.</p>'
+    + c5SetorCampo()+'<label class="field-label">O que está errado / vai melhorar</label><input type="text" id="c5-problema" maxlength="300">'
+    + '<button class="btn primary" id="c5-ok">Salvar correção</button>');
+  document.getElementById('c5-setor').value = r.setor; document.getElementById('c5-problema').value = r.problema;
+  document.getElementById('c5-ok').onclick = async ()=>{
+    const setor = (document.getElementById('c5-setor').value||'').trim(), problema = (document.getElementById('c5-problema').value||'').trim();
+    if (!setor || !problema){ toast('Preencha setor e descrição.'); return; }
+    const b = document.getElementById('c5-ok'); b.disabled = true;
+    try{
+      await db.collection('cinco_s').doc(id).update({ setor, problema });
+      if (db.refetchAll) await db.refetchAll();
+      const novo = state.cincoS.find(x=>x.id===id);
+      if (novo && novo.setor===setor && novo.problema===problema){ closeSheet(); toast('5S corrigido.'); }
+      else { toast('Não foi possível corrigir. Confira se você é supervisor e se ainda está em aberto.', 4000); b.disabled = false; }
+    }catch(e){ console.error(e); b.disabled = false; }
+  };
+}
+function c5Detalhe(id){
+  const r = state.cincoS.find(x=>x.id===id); if (!r) return;
+  const l = (t,v)=> v ? '<div class="li-desc" style="margin:4px 0;"><b>'+t+':</b> '+esc(v)+'</div>' : '';
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</h2>'
+    + l('O que estava errado',r.problema)+l('Aberto em',dslDataCurta(r.abertoEm)+(r.abertoPorNome?' por '+r.abertoPorNome:''))
+    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b></div>'+c5Img(r.fotoAntes,'c5-grande')
+    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b></div>'+c5Img(r.fotoDepois,'c5-grande')+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
+      : '<div class="li-desc" style="margin:8px 0;"><b>Situação:</b> em aberto há '+c5Tempo(c5Horas(r))+'</div>')
+    + (r.anulado?l('Motivo da anulação',r.anuladoMotivo):'') + (r.editadoEm?l('Corrigido em',dslDataCurta(r.editadoEm)):'')
+    + (!r.concluidoEm&&!r.anulado?'<button class="btn primary" data-c5-act="concluir" data-id="'+esc(r.id)+'">Concluir (foto do depois)</button>':'')
+    + (!r.concluidoEm&&!r.anulado&&dslEhSup()?'<button class="btn" data-c5-act="editar" data-id="'+esc(r.id)+'">Corrigir setor / descrição</button>':'')
+    + (dslEhSup()&&!r.anulado?'<button class="btn ghost" data-g-act="anular" data-t="cinco_s" data-id="'+esc(r.id)+'" style="border:1px solid var(--border);">Anular 5S</button>':''));
+  c5Hidratar(document.getElementById('sheet-content'));
+}
+function c5Exportar(){
+  const fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
+  const rows = state.cincoS.slice().sort((a,b)=>c5T(b.abertoEm)-c5T(a.abertoEm)).map(r=>({ setor:r.setor, problema:r.problema, abertoEm:fmt(r.abertoEm), abertoPor:r.abertoPorNome||'', concluidoEm:fmt(r.concluidoEm), concluidoPor:r.concluidoPorNome||'', acao:r.acao||'',
+    horas:Math.round(c5Horas(r)*100)/100, situacao:r.anulado?'ANULADO: '+(r.anuladoMotivo||''):(r.concluidoEm?'concluído':'em aberto') }));
+  exportXlsx(rows, '5s_'+todayStr()+'.xlsx', ['setor','problema','abertoEm','abertoPor','concluidoEm','concluidoPor','acao','horas','situacao'], '5S — Gestão Planta 1');
+}
+async function c5Clique(e){
+  const b = e.target.closest('[data-c5-act]'); if (!b) return;
+  const a = b.dataset.c5Act, id = b.dataset.id;
+  if (a==='novo') c5AbrirSheet();
+  else if (a==='concluir') c5ConcluirSheet(id);
+  else if (a==='editar') c5EditarSheet(id);
+  else if (a==='ver') c5Detalhe(id);
+  else if (a==='exportar') c5Exportar();
+  else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
+}
+['c5resumo','c5lista'].forEach(v=>document.getElementById('view-'+v).addEventListener('click', c5Clique));
+document.getElementById('sheet-content').addEventListener('click', c5Clique);
+function subscribeCinco(){
+  const c = db.collection('cinco_s'); c.orderBy('abertoEm','desc'); c.limit(5000);
+  c.onSnapshot(snap=>{ state.cincoS = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
+}
+
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {
   situacao:'Situação', lote:'Lote/Volume', produto:'Produto', armazem:'Armazém', peso:'Peso (kg)',
@@ -5379,7 +5710,7 @@ const COL_LABELS = {
   lado:'Tipo', corrida:'Corrida', pesoKg:'Peso (kg)',
   dia:'Dia', t1:'1º turno', t2:'2º turno', t3:'3º turno', total:'Dia todo',
   equipamento:'Equipamento', unidade:'Unidade', leitura:'Horímetro / km', litros:'Litros', custoLitro:'Custo (R$/L)', custoTotal:'Custo total (R$)',
-  local:'Local', desde:'Desde',
+  local:'Local', desde:'Desde', setor:'Setor', problema:'O que estava errado', concluidoEm:'Concluído em', concluidoPor:'Concluído por', acao:'O que foi feito',
   categoria:'Categoria', motivo:'Motivo', descricao:'Descrição', abertaEm:'Aberta em', abertaPor:'Aberta por', liberadaEm:'Liberada em', motivoLiberacao:'Motivo da liberação', servico:'O que foi feito', recebidoPor:'Quem pegou', horas:'Horas parado',
   tanque:'Tanque', usuario:'Usuário', situacao:'Situação', precoLitro:'Preço (R$/L)', valorTotal:'Valor total (R$)', fornecedor:'Fornecedor', nota:'Nota fiscal'
 };

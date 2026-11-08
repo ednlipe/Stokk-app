@@ -160,6 +160,20 @@ label.g-chk input{width:20px;height:20px;flex:none;accent-color:var(--accent);ma
 #view-locais:fullscreen .wall-cont b{font-size:46px;} #view-locais:fullscreen .wall-cont span{font-size:14px;} #view-locais:fullscreen .wall-cont>div{min-width:150px;padding:10px 18px;}
 #view-locais:fullscreen .wall-cod{font-size:38px;} #view-locais:fullscreen .wall-local{font-size:30px;} #view-locais:fullscreen .wall-sub,#view-locais:fullscreen .wall-motivo{font-size:16px;} #view-locais:fullscreen .wall-st{font-size:16px;}
 #view-locais:fullscreen .wall-dica{display:block;text-align:center;color:var(--text-muted);font-size:13px;margin-top:22px;}
+main .view#view-c5resumo.active,main .view#view-c5galeria.active{max-width:1400px;}
+.c5-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px;}
+.c5-grid.c5-grid-2{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));}
+.c5-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;}
+.c5-card:hover{border-color:var(--accent);}
+.c5-card.velho{border-left:4px solid var(--danger);} .c5-card.anulado{opacity:.55;}
+.c5-par{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--border);}
+.c5-par>div{position:relative;background:var(--surface-2);min-height:170px;}
+.c5-par>div>span{position:absolute;left:6px;top:6px;z-index:1;font-size:10.5px;letter-spacing:.8px;background:rgba(0,0,0,.6);color:#fff;padding:2px 6px;border-radius:4px;}
+.c5-img{display:block;width:100%;height:100%;min-height:170px;max-height:230px;object-fit:cover;background:var(--surface-2);}
+.c5-img.c5-sem{opacity:.35;}
+.c5-img.c5-grande{max-height:60vh;object-fit:contain;min-height:0;height:auto;}
+.c5-ph{display:flex;align-items:center;justify-content:center;height:100%;min-height:170px;color:var(--text-muted);font-size:13px;}
+.c5-info{padding:12px 14px;} .c5-acao{color:var(--ok);margin-top:2px;}
 .dsl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
 .dsl-acoes .btn{width:auto;padding:9px 14px;margin:0;font-size:13px;}
 .dsl-tab td .link-btn{margin-left:8px;}
@@ -709,6 +723,14 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
     <section class="view" id="view-locais">
       <div id="loc-body"></div>
     </section>
+
+    <!-- GESTÃO PLANTA 1 · 5S -->
+    <section class="view" id="view-c5resumo">
+      <div id="c5r-body"></div>
+    </section>
+    <section class="view" id="view-c5galeria">
+      <div id="c5g-body"></div>
+    </section>
   </main>
 
   <nav class="bottom">
@@ -719,6 +741,14 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
     <button data-nav="locais" style="display:none;">
       <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
       Localização
+    </button>
+    <button data-nav="c5resumo" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      Resumo 5S
+    </button>
+    <button data-nav="c5galeria" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      Galeria
     </button>
     <button data-nav="dashboard" class="active">
       <svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
@@ -819,19 +849,23 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
 // abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
 const ABAS_OCULTAS_POR_AREA = { planta1: ['rendimento'] };
 // ambiente Gestão (update_015): só mostra o painel de diesel; as outras áreas não mostram essa aba
+// ambientes de Gestão: Veículos Móveis (abastecimento + localização) e Gestão Planta 1 (5S, update_018)
+const ABAS_DA_AREA = { gestao: ['diesel','locais'], gestao_p1: ['c5resumo','c5galeria'] };
+const ABA_INICIAL = { gestao: 'diesel', gestao_p1: 'c5resumo' };
 function esconderAbasPorArea(){
-  const gestao = state.area === 'gestao';
+  const propria = state.area ? ABAS_DA_AREA[state.area] : null;
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
+  const deOutras = [].concat(...Object.values(ABAS_DA_AREA));
   document.querySelectorAll('[data-nav]').forEach(el=>{
-    const n = el.getAttribute('data-nav'), diesel = (n==='diesel' || n==='locais');
-    if (gestao ? !diesel : (diesel || ocultas.includes(n))) el.style.display = 'none';
-    else if (gestao) el.style.display = '';
+    const n = el.getAttribute('data-nav');
+    if (propria ? !propria.includes(n) : (deOutras.includes(n) || ocultas.includes(n))) el.style.display = 'none';
+    else if (propria) el.style.display = '';
   });
 }
 const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
-const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
+const AREA_TABLES = ['volumes','movimentos','sessoes','producoes','ocorrencias','equipamento_locais','cinco_s'].concat(DIESEL_TABLES);
 // tabelas gravadas só com INSERT (o histórico não aceita "upsert": isso exigiria permissão de UPDATE)
-const SOMENTE_INSERIR = ['movimentos','ocorrencias','equipamento_locais'].concat(DIESEL_TABLES);
+const SOMENTE_INSERIR = ['movimentos','ocorrencias','equipamento_locais','cinco_s'].concat(DIESEL_TABLES);
 function areaDaTabela(table){ return (state.area && AREA_TABLES.includes(table)) ? state.area : null; }
 function areaSalva(userId){ try{ return localStorage.getItem('stokk_area_'+userId); }catch(e){ return null; } }
 function salvarArea(userId, id){ try{ localStorage.setItem('stokk_area_'+userId, id); }catch(e){} }
@@ -913,6 +947,11 @@ function createSupabaseDB(){
           return q;
         }));
         rs.forEach(r=>{ if (r.error) throw r.error; juntar(r.data); });
+      } else if (table==='cinco_s'){
+        let q = sb.from('cinco_s').select('*').is('concluido_em', null).eq('anulado', false);
+        if (ar) q = q.eq('area', ar);
+        const r = await q; if (r.error) throw r.error;
+        juntar(r.data);
       }
     }catch(err){ console.error('completarAntigos', table, err); }
   }
@@ -947,6 +986,7 @@ function createSupabaseDB(){
       // tabelas do diesel só existem depois do update_015: sem ele, a tela avisa em vez de encher de erros
       if (table==='equipamento_locais'){ state.locaisErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (table==='ocorrencias'){ state.paradasErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
+      if (table==='cinco_s'){ state.cincoErr = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       if (DIESEL_TABLES.includes(table)){ state.dieselErr = state.dieselErr||{}; state.dieselErr[table] = error.message||'erro'; cache[table] = []; (listeners[table]||[]).forEach(fn=>fn()); return; }
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
@@ -954,6 +994,7 @@ function createSupabaseDB(){
     if (DIESEL_TABLES.includes(table) && state.dieselErr) delete state.dieselErr[table];
     if (table==='ocorrencias') state.paradasErr = null;
     if (table==='equipamento_locais') state.locaisErr = null;
+    if (table==='cinco_s') state.cincoErr = null;
     cache[table] = (data||[]).map(objToCamel);
     (listeners[table]||[]).forEach(fn=>fn());
   }
@@ -1092,9 +1133,9 @@ async function onAuthed(user){
   state.ready.db = true; state.ready.downloads = true;
   document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
-  setView(state.area === 'gestao' ? 'diesel' : 'dashboard');
+  setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.5.4 · 06/11';
+const APP_VERSAO = '1.6.0 · 07/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -1363,6 +1404,7 @@ function encontrarProdutoPorCodigoEtiqueta(codigoEtiqueta){
 /* ---------------- DATA SUBSCRIPTIONS ---------------- */
 function subscribeData(){
   if (state.area === 'gestao'){ subscribeDiesel(); return; }   // ambiente Gestão: só as tabelas de diesel
+  if (state.area === 'gestao_p1'){ subscribeCinco(); return; }   // Gestão Planta 1: só o 5S
   db.collection('volumes').onSnapshot(snap=>{
     state.volumes.clear();
     snap.docs.forEach(d=>state.volumes.set(d.id, d.data()));
@@ -1424,6 +1466,8 @@ function renderView(name){
   else if (name==='rendimento') renderRendimento();
   else if (name==='diesel') renderDiesel();
   else if (name==='locais') renderLocais();
+  else if (name==='c5resumo') renderC5Resumo();
+  else if (name==='c5galeria') renderC5Galeria();
 }
 
 /* ================= RENDIMENTO METÁLICO =================
@@ -2143,7 +2187,7 @@ function gEquipForm(id){
   };
 }
 function gAnularSheet(tabela, id){
-  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência', equipamento_locais:'registro de local' };
+  const nomes = { abastecimentos:'abastecimento', tanque_entradas:'compra', tanque_medicoes:'conferência da régua', ocorrencias:'ocorrência', equipamento_locais:'registro de local', cinco_s:'5S' };
   openSheet('<h2 class="section-title" style="margin-top:0;">Anular '+(nomes[tabela]||'lançamento')+'</h2>'
     + '<p class="hint">O lançamento não é apagado: fica marcado como anulado, com o motivo, e deixa de entrar nas contas. Para corrigir, anule e lance de novo.</p>'
     + '<label class="field-label">Motivo (obrigatório)</label><input type="text" id="anu-motivo" maxlength="200" placeholder="Ex.: digitei errado">'
@@ -2609,6 +2653,199 @@ function subscribeDiesel(){
   };
   ass('equipamentos','equipamentos'); ass('tanques','tanques');
   ass('tanque_entradas','entradas','dataHora',2000); ass('abastecimentos','abastecimentos','dataHora',10000); ass('tanque_medicoes','medicoes','dataHora',1000); ass('ocorrencias','ocorrencias','abertaEm',3000); ass('equipamento_locais','locais','dataHora',5000);
+}
+
+/* ================= 5S — núcleo (regras de cálculo; MESMA cópia no desktop: public/desktop/index.html) =================
+   Cada registro: setor, problema, fotoAntes, abertoEm, concluidoEm (vazio = em aberto), fotoDepois, acao, anulado.
+   Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
+const C5_DIAS_ALERTA = 7;
+function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
+function c5Validos(rs){ return (rs||[]).filter(r=>!r.anulado); }
+function c5Abertos(rs){ return c5Validos(rs).filter(r=>!r.concluidoEm).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)); }
+// horas entre abrir e concluir; se ainda está em aberto, até agora
+function c5Horas(r, agoraT){
+  const fim = r.concluidoEm ? c5T(r.concluidoEm) : (agoraT==null ? Date.now() : agoraT);
+  return Math.max(0, (fim - c5T(r.abertoEm)) / 3600000);
+}
+function c5Chave(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase().replace(/\s+/g,' '); }
+// setores já usados (mais usados primeiro), para sugerir ao abrir um 5S novo
+function c5Setores(rs){
+  const m = new Map();
+  c5Validos(rs).forEach(r=>{ const k = c5Chave(r.setor); if (!k) return; const x = m.get(k) || { nome: String(r.setor).trim().replace(/\s+/g,' '), n: 0 }; x.n++; m.set(k, x); });
+  return [...m.values()].sort((a,b)=>b.n-a.n || a.nome.localeCompare(b.nome)).map(x=>x.nome);
+}
+// resumo do período [de, ate): abertos e concluídos DENTRO do período; "abertosAgora" e "antigos" valem para hoje
+function c5Resumo(rs, de, ate, agoraT){
+  const agora = agoraT==null ? Date.now() : agoraT, v = c5Validos(rs);
+  const noP = t => !isNaN(t) && t >= de && t < ate;
+  const abertosP = v.filter(r=>noP(c5T(r.abertoEm))), concP = v.filter(r=>r.concluidoEm && noP(c5T(r.concluidoEm)));
+  const abertosAgora = c5Abertos(rs), limite = agora - C5_DIAS_ALERTA*86400000;
+  const antigos = abertosAgora.filter(r=>c5T(r.abertoEm) < limite);
+  const medias = concP.map(r=>c5Horas(r, agora));
+  const setores = new Map(), pessoas = new Map(), dias = new Map();
+  const sobe = (mapa, nome, campo)=>{ const k = c5Chave(nome) || '(sem nome)'; const x = mapa.get(k) || { nome: String(nome||'(sem nome)').trim().replace(/\s+/g,' ') || '(sem nome)', abertos:0, concluidos:0 }; x[campo]++; const lim = String(nome||'').trim().replace(/\s+/g,' '); if (lim && x.nome===x.nome.toLowerCase() && lim!==lim.toLowerCase()) x.nome = lim; mapa.set(k, x); };
+  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); });
+  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
+  const ordem = (a,b)=> (b.abertos+b.concluidos)-(a.abertos+a.concluidos) || a.nome.localeCompare(b.nome);
+  return {
+    abertosP: abertosP.length, concluidosP: concP.length,
+    abertosAgora: abertosAgora.length, antigos: antigos.length, antigosLista: antigos,
+    tempoMedioH: medias.length ? medias.reduce((s,x)=>s+x,0)/medias.length : null,
+    porSetor: [...setores.values()].sort(ordem), porPessoa: [...pessoas.values()].sort(ordem),
+    concluidosPorDia: dias
+  };
+}
+
+/* ================= 5S — painel (desktop; Gestão Planta 1, update_018) =================
+   Duas abas: "Resumo 5S" (números do período, por setor e por pessoa) e "Galeria" (antes e depois lado a lado).
+   Lê o que o app grava; as fotos ficam num bucket privado e são abertas por links temporários (1 h). */
+const C5_BUCKET = 'cinco-s', C5_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+Object.assign(state, { cincoS: [], cincoErr: null, c5Per: 'mes', c5Mes: (function(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })(), c5Ano: new Date().getFullYear(), c5Setor: '', c5Sit: 'todos' });
+function c5Periodo(){
+  const hoje = new Date();
+  if (state.c5Per==='30d') return { de:new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()-29).getTime(), ate:new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()+1).getTime(), rotulo:'Últimos 30 dias', porMes:false };
+  if (state.c5Per==='ano') return { de:new Date(state.c5Ano,0,1).getTime(), ate:new Date(state.c5Ano+1,0,1).getTime(), rotulo:String(state.c5Ano), porMes:true };
+  const [y,m] = state.c5Mes.split('-').map(Number);
+  return { de:new Date(y,m-1,1).getTime(), ate:new Date(y,m,1).getTime(), rotulo:C5_MESES[m-1]+' / '+y, porMes:false };
+}
+function c5Tempo(h){ return dslFmtHoras(h); }
+function c5Aviso(){
+  return '<div class="card left-danger"><b>O 5S ainda não está no banco.</b><p class="hint" style="margin:6px 0 0;">Rode o arquivo update_018_cinco_s.sql no SQL Editor do Supabase e atualize a página.</p></div>';
+}
+const c5UrlCache = new Map();
+async function c5Urls(paths){
+  const faltam = [...new Set(paths)].filter(p=>p && !(c5UrlCache.get(p) && c5UrlCache.get(p).ate > Date.now()));
+  if (!faltam.length) return;
+  try{
+    const r = await sb.storage.from(C5_BUCKET).createSignedUrls(faltam, 3600);
+    if (r.error) throw r.error;
+    (r.data||[]).forEach(d=>{ if (d.signedUrl) c5UrlCache.set(d.path, { url:d.signedUrl, ate:Date.now()+3300000 }); });
+  }catch(e){ console.error('c5Urls', e); }
+}
+async function c5Hidratar(raiz){
+  if (!raiz) return;
+  const imgs = [...raiz.querySelectorAll('img[data-c5]')]; if (!imgs.length) return;
+  await c5Urls(imgs.map(i=>i.dataset.c5));
+  imgs.forEach(i=>{
+    const c = c5UrlCache.get(i.dataset.c5);
+    if (c){ i.src = c.url; i.classList.remove('c5-sem'); const a = i.closest('a[data-c5-link]'); if (a) a.href = c.url; }
+    else { i.classList.add('c5-sem'); i.alt = 'foto indisponível'; }
+  });
+}
+function c5Img(path, cls){ return '<img class="c5-img '+(cls||'')+'" data-c5="'+esc(path||'')+'" alt="" loading="lazy">'; }
+function c5Cartao(r){
+  const h = c5Horas(r), aberto = !r.concluidoEm, velho = aberto && h >= C5_DIAS_ALERTA*24;
+  return '<div class="c5-card'+(r.anulado?' anulado':'')+(velho?' velho':'')+'" data-c5-act="ver" data-id="'+esc(r.id)+'">'
+    + '<div class="c5-par"><div><span>ANTES</span>'+c5Img(r.fotoAntes)+'</div><div><span>DEPOIS</span>'+(r.fotoDepois?c5Img(r.fotoDepois):'<div class="c5-ph">'+(r.anulado?'—':'em aberto')+'</div>')+'</div></div>'
+    + '<div class="c5-info"><b>'+esc(r.setor)+'</b>'+(r.anulado?' '+dslChip('anulado','danger'):(aberto?' '+dslChip(velho?'aberto há '+c5Tempo(h):'em aberto',velho?'danger':'info'):' '+dslChip('concluído','ok')))
+    + '<div>'+esc(r.problema)+'</div>'+(r.acao?'<div class="c5-acao">→ '+esc(r.acao)+'</div>':'')
+    + '<div class="hint" style="margin:6px 0 0;">'+dslDataCurta(r.abertoEm)+(r.abertoPorNome?' · '+esc(r.abertoPorNome):'')+(r.concluidoEm?' → '+dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+' ('+c5Tempo(h)+')':'')+'</div></div></div>';
+}
+function c5Filtrados(P){
+  let rs = state.cincoS.slice();
+  if (state.c5Setor) rs = rs.filter(r=>c5Chave(r.setor)===c5Chave(state.c5Setor));
+  const noP = t => !isNaN(t) && t>=P.de && t<P.ate;
+  const sit = state.c5Sit;
+  if (sit==='abertos') rs = rs.filter(r=>!r.anulado && !r.concluidoEm);
+  else if (sit==='concluidos') rs = rs.filter(r=>!r.anulado && r.concluidoEm && noP(c5T(r.concluidoEm)));
+  else if (sit==='anulados') rs = rs.filter(r=>r.anulado && noP(c5T(r.abertoEm)));
+  else rs = rs.filter(r=>!r.anulado && (noP(c5T(r.abertoEm)) || (r.concluidoEm && noP(c5T(r.concluidoEm))) || !r.concluidoEm));
+  return rs.sort((a,b)=>c5T(b.concluidoEm||b.abertoEm)-c5T(a.concluidoEm||a.abertoEm));
+}
+function c5Barra(P, R){
+  const mes = state.c5Per==='30d' ? '<div class="rend-mes"><span>'+esc(P.rotulo)+'</span></div>' : '<div class="rend-mes"><button data-c5-act="nav" data-v="-1" aria-label="Anterior">‹</button><span>'+esc(P.rotulo)+'</span><button data-c5-act="nav" data-v="1" aria-label="Próximo">›</button></div>';
+  return '<div class="rend-top"><div class="filter-row wrap">'+[['mes','Mês'],['30d','30 dias'],['ano','Ano']].map(p=>'<button class="filter-chip '+(state.c5Per===p[0]?'active':'')+'" data-c5-act="per" data-v="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'+mes
+    + '<div class="spacer"></div><button class="btn ghost small" data-c5-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button><button class="btn ghost small" data-c5-act="export" style="border:1px solid var(--border);">Exportar (Excel)</button></div>';
+}
+function c5Baldes(P){
+  const out = [];
+  if (P.porMes){ for (let m=0;m<12;m++) out.push({ rotulo:C5_MESES[m].slice(0,3), cheio:C5_MESES[m]+' / '+state.c5Ano, ini:new Date(state.c5Ano,m,1).getTime(), fim:new Date(state.c5Ano,m+1,1).getTime(), n:0 }); }
+  else { for (let t=P.de; t<P.ate; ){ const d = new Date(t), f = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1).getTime(); out.push({ rotulo:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), cheio:d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}), ini:t, fim:f, n:0 }); t = f; } }
+  c5Validos(state.cincoS).forEach(r=>{ if (!r.concluidoEm) return; const t = c5T(r.concluidoEm); const b = out.find(x=>t>=x.ini && t<x.fim); if (b) b.n++; });
+  return out;
+}
+function renderC5Resumo(){
+  const body = document.getElementById('c5r-body'); if (!body) return;
+  if (state.cincoErr){ body.innerHTML = c5Aviso(); return; }
+  const P = c5Periodo(), R = c5Resumo(state.cincoS, P.de, P.ate);
+  const baldes = c5Baldes(P), max = Math.max(1, ...baldes.map(b=>b.n));
+  const grafico = '<div class="dsl-chart">'+baldes.map(b=>'<div class="dsl-col" data-tip="'+esc(b.cheio)+'<br>'+b.n+' concluído'+(b.n===1?'':'s')+'"><i style="height:'+(b.n/max*100)+'%;background:var(--ok);"></i></div>').join('')+'</div><div class="dsl-axis"><span>'+esc(baldes[0].rotulo)+'</span><span>pico: '+max+'</span><span>'+esc(baldes[baldes.length-1].rotulo)+'</span></div>';
+  const maxS = Math.max(1, ...R.porSetor.map(x=>x.abertos+x.concluidos));
+  const tab = (lista, vazio)=> lista.length ? lista.map(x=>'<tr><td>'+esc(x.nome)+'</td><td><div class="dsl-mini"><i style="width:'+((x.abertos+x.concluidos)/maxS*100)+'%;"></i></div></td><td>'+x.concluidos+'</td><td>'+x.abertos+'</td></tr>').join('') : '<tr><td colspan="4" class="rend-vazio">'+vazio+'</td></tr>';
+  const cab = '<thead><tr><th></th><th></th><th>Concl.</th><th>Abertos</th></tr></thead>';
+  const recentes = c5Validos(state.cincoS).filter(r=>r.concluidoEm).sort((a,b)=>c5T(b.concluidoEm)-c5T(a.concluidoEm)).slice(0,6);
+  body.innerHTML = c5Barra(P, R)
+    + (R.antigos ? '<div class="card left-danger" style="margin-bottom:14px;"><b>⚠ '+R.antigos+' 5S em aberto há mais de '+C5_DIAS_ALERTA+' dias</b>'+R.antigosLista.slice(0,6).map(r=>'<div class="li-desc" data-c5-act="ver" data-id="'+esc(r.id)+'" style="cursor:pointer;margin-top:4px;">'+esc(r.setor)+' · '+esc(r.problema)+' · há '+c5Tempo(c5Horas(r))+'</div>').join('')+'</div>' : '')
+    + '<div class="rend-kpis"><div class="stat ok"><div class="n">'+R.concluidosP+'</div><div class="l">Concluídos no período</div></div><div class="stat"><div class="n">'+R.abertosP+'</div><div class="l">Abertos no período</div></div>'
+    + '<div class="stat '+(R.antigos?'bad':'accent')+'"><div class="n">'+R.abertosAgora+'</div><div class="l">Em aberto agora</div></div><div class="stat"><div class="n">'+(R.tempoMedioH!=null?c5Tempo(R.tempoMedioH):'—')+'</div><div class="l">Tempo médio até concluir</div></div></div>'
+    + '<div class="rend-grid-2"><div class="card"><div class="rend-card-t">Concluídos <small>'+(P.porMes?'por mês':'por dia')+'</small></div>'+grafico+'</div>'
+    + '<div class="card"><div class="rend-card-t">Por setor <small>neste período</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab">'+cab+'<tbody>'+tab(R.porSetor,'Nada neste período.')+'</tbody></table></div></div></div>'
+    + '<div class="rend-grid-2"><div class="card"><div class="rend-card-t">Por pessoa <small>quem abriu e quem concluiu</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab">'+cab+'<tbody>'+tab(R.porPessoa,'Nada neste período.')+'</tbody></table></div></div>'
+    + '<div class="card"><div class="rend-card-t">Últimos concluídos <small><button class="link-btn" data-c5-act="galeria">ver galeria</button></small></div>'+(recentes.length?'<div class="c5-grid c5-grid-2">'+recentes.map(c5Cartao).join('')+'</div>':'<div class="rend-vazio">Nenhum 5S concluído ainda.</div>')+'</div></div>';
+  c5Hidratar(body);
+}
+function renderC5Galeria(){
+  const body = document.getElementById('c5g-body'); if (!body) return;
+  if (state.cincoErr){ body.innerHTML = c5Aviso(); return; }
+  const P = c5Periodo(), lista = c5Filtrados(P), setores = c5Setores(state.cincoS);
+  body.innerHTML = c5Barra(P)
+    + '<div class="rend-top" style="margin-top:-4px;"><div class="filter-row wrap">'+[['todos','Todos'],['abertos','Em aberto'],['concluidos','Concluídos'],['anulados','Anulados']].map(p=>'<button class="filter-chip '+(state.c5Sit===p[0]?'active':'')+'" data-c5-act="sit" data-v="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'
+    + '<select id="c5-filtro-setor" style="max-width:260px;"><option value="">Todos os setores</option>'+setores.map(s=>'<option '+(c5Chave(s)===c5Chave(state.c5Setor)?'selected':'')+'>'+esc(s)+'</option>').join('')+'</select><span class="hint" style="margin:0;">'+lista.length+' registro'+(lista.length===1?'':'s')+'</span></div>'
+    + (lista.length ? '<div class="c5-grid">'+lista.slice(0,60).map(c5Cartao).join('')+'</div>'+(lista.length>60?'<p class="hint">Mostrando os 60 mais recentes. Use os filtros para ver os outros.</p>':'') : '<div class="rend-vazio">Nenhum 5S com esses filtros.</div>');
+  const sel = document.getElementById('c5-filtro-setor'); if (sel) sel.onchange = ()=>{ state.c5Setor = sel.value; renderC5Galeria(); };
+  c5Hidratar(body);
+}
+function c5Detalhe(id){
+  const r = state.cincoS.find(x=>x.id===id); if (!r) return;
+  const l = (t,v)=> v ? '<div class="li-desc" style="margin:4px 0;"><b>'+t+':</b> '+esc(v)+'</div>' : '';
+  const foto = p => '<a data-c5-link target="_blank" rel="noopener">'+c5Img(p,'c5-grande')+'</a>';
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</h2>'
+    + l('O que estava errado',r.problema)+l('Aberto em',dslDataCurta(r.abertoEm)+(r.abertoPorNome?' por '+r.abertoPorNome:''))
+    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b> <small>(clique na foto para ampliar)</small></div>'+foto(r.fotoAntes)
+    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b></div>'+foto(r.fotoDepois)+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
+      : '<div class="li-desc" style="margin:8px 0;"><b>Situação:</b> em aberto há '+c5Tempo(c5Horas(r))+'</div>')
+    + (r.anulado?l('Motivo da anulação',r.anuladoMotivo):'') + (r.editadoEm?l('Corrigido em',dslDataCurta(r.editadoEm)):'')
+    + (dslEhSup()&&!r.anulado?'<button class="btn ghost" data-g-act="anular" data-t="cinco_s" data-id="'+esc(r.id)+'" style="border:1px solid var(--border);">Anular 5S</button>':''));
+  c5Hidratar(document.getElementById('sheet-content'));
+}
+function c5Exportar(){
+  const P = c5Periodo(), fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '', noP = t => !isNaN(t) && t>=P.de && t<P.ate;
+  const wb = XLSX.utils.book_new();
+  const linhas = [['Setor','O que estava errado','Aberto em','Aberto por','Concluído em','Concluído por','O que foi feito','Horas','Situação']];
+  state.cincoS.filter(r=>noP(c5T(r.abertoEm)) || (r.concluidoEm && noP(c5T(r.concluidoEm))) || (!r.concluidoEm && !r.anulado)).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)).forEach(r=>{
+    linhas.push([r.setor, r.problema, fmt(r.abertoEm), r.abertoPorNome||'', fmt(r.concluidoEm), r.concluidoPorNome||'', r.acao||'', Math.round(c5Horas(r)*100)/100, r.anulado?'ANULADO: '+(r.anuladoMotivo||''):(r.concluidoEm?'concluído':'em aberto')]); });
+  const w1 = XLSX.utils.aoa_to_sheet(linhas); w1['!cols'] = [{wch:18},{wch:34},{wch:18},{wch:16},{wch:18},{wch:16},{wch:34},{wch:10},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, w1, '5S');
+  const R = c5Resumo(state.cincoS, P.de, P.ate);
+  const l2 = [['Setor','Concluídos','Abertos']].concat(R.porSetor.map(x=>[x.nome, x.concluidos, x.abertos]));
+  const w2 = XLSX.utils.aoa_to_sheet(l2); w2['!cols'] = [{wch:24},{wch:12},{wch:12}]; XLSX.utils.book_append_sheet(wb, w2, 'Por setor');
+  const l3 = [['Pessoa','Concluídos','Abertos']].concat(R.porPessoa.map(x=>[x.nome, x.concluidos, x.abertos]));
+  const w3 = XLSX.utils.aoa_to_sheet(l3); w3['!cols'] = [{wch:24},{wch:12},{wch:12}]; XLSX.utils.book_append_sheet(wb, w3, 'Por pessoa');
+  XLSX.writeFile(wb, '5s_'+(state.c5Per==='mes'?state.c5Mes:state.c5Per==='ano'?state.c5Ano:'30dias')+'.xlsx');
+  toast('Arquivo exportado.');
+}
+async function c5Clique(e){
+  const b = e.target.closest('[data-c5-act]'); if (!b) return;
+  if (e.target.closest('a[data-c5-link]')) return;
+  const a = b.dataset.c5Act, id = b.dataset.id;
+  if (a==='per'){ state.c5Per = b.dataset.v; renderAll(); }
+  else if (a==='nav'){
+    const v = Number(b.dataset.v);
+    if (state.c5Per==='ano') state.c5Ano += v;
+    else { const [y,m] = state.c5Mes.split('-').map(Number); const n = new Date(y, m-1+v, 1); state.c5Mes = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); }
+    renderAll();
+  }
+  else if (a==='sit'){ state.c5Sit = b.dataset.v; renderAll(); }
+  else if (a==='ver') c5Detalhe(id);
+  else if (a==='galeria') setView('c5galeria');
+  else if (a==='export') c5Exportar();
+  else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
+}
+['c5resumo','c5galeria'].forEach(v=>document.getElementById('view-'+v).addEventListener('click', c5Clique));
+document.getElementById('sheet-content').addEventListener('click', c5Clique);
+function subscribeCinco(){
+  const c = db.collection('cinco_s'); c.orderBy('abertoEm','desc'); c.limit(5000);
+  c.onSnapshot(snap=>{ state.cincoS = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
 }
 
 /* ================= DASHBOARD ================= */

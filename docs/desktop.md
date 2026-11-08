@@ -43,6 +43,13 @@ Na área **Veículos Móveis** (`gestao`) o desktop tem **duas abas**: **Abastec
 - **v1.5.4:** a releitura automática de 60 s do painel usa `db.refetchTabelas(['ocorrencias','equipamento_locais'])` (só o que o painel mostra), não mais `refetchAll()` (que relia também os 10.000 abastecimentos). O botão "↻ Atualizar" continua relendo tudo. O bloco de paradas desta aba mostra todas as ocorrências (não segue os filtros de equipamento/tipo da aba Abastecimento).
 - Funções: `renderLocais`, `dslCartaoParede`, `dslSituacaoEquip`, `locPeriodo`, `locExportar`. **Status:** testado no navegador com dados simulados (abas, cartões, salvar local, exportar); **a tela cheia real (TV) não foi testada** (navegador de teste não abre tela cheia).
 
+### 5S — Gestão Planta 1 (desktop, v1.6.0)
+Na área **Gestão Planta 1** o desktop tem duas abas (`ABAS_DA_AREA`): **Resumo 5S** (`renderC5Resumo`) e **Galeria** (`renderC5Galeria`). Só leitura das fotos; o supervisor também anula.
+- **Resumo 5S:** período (Mês com setas, 30 dias, Ano); alerta de abertos há mais de 7 dias; KPIs (concluídos e abertos no período, em aberto agora, tempo médio); gráfico de concluídos por dia (por mês no Ano); tabelas por setor e por pessoa; últimos 6 concluídos com antes/depois; **Exportar (Excel)** com 3 abas (5S, Por setor, Por pessoa).
+- **Galeria:** cartões com ANTES e DEPOIS lado a lado; filtros Todos / Em aberto / Concluídos / Anulados e por setor; até 60 por vez. Clicar abre o detalhe com as fotos grandes (clique na foto para ampliar em outra aba) e, para supervisor, **Anular 5S**.
+- Núcleo `c5*` idêntico ao do app (`tests/cinco_s_core.test.cjs` confere). As fotos usam links temporários de 1 h (`c5Urls`).
+- **Status:** testado no navegador com dados simulados (abas, filtros, fotos carregando, exportar, anular); **não testado** com fotos e banco reais.
+
 ### Painel de Diesel (desktop, v1.5.0)
 Aba **Diesel**, só na área **Gestão** (as outras áreas não a mostram; na Gestão ela é a única aba). **Só leitura:** os lançamentos são feitos no app. Mesmo núcleo de cálculo do app (bloco "DIESEL — núcleo", cópia idêntica; `tests/diesel_core.test.cjs` falha se divergirem).
 - **Filtros:** período (Mês com setas, 30 dias, Ano), equipamento e tipo.

@@ -12,7 +12,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 | App (telas e regras) | `stokk-vite/src/App.jsx` |
 | Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
 | Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…017_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
+| Banco | `schema.sql` + `update_001…018_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 
@@ -26,6 +26,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Gestão / Diesel (update_015):** área `gestao` com abas próprias (equipamentos, tanque, abastecimentos). Tabelas só com INSERT (nada se apaga ou edita: supervisor **anula** com motivo); saldo e custo médio são calculados no app, não gravados. Núcleo `dsl*` em `src/App.jsx` e cópia idêntica no desktop; `tests/diesel_core.test.cjs` confere as duas. Veja `docs/regras-de-negocio.md` §9.5.
 - **Paradas e manutenção (update_016):** tabela `ocorrencias`; qualquer conta da Gestão abre, só o supervisor libera/anula; uma em aberto por equipamento; nada se apaga. Núcleo `dslOcorrencia*`/`dslParadasResumo` (mesmo bloco do diesel). Veja `docs/regras-de-negocio.md` §9.6.
 - **Localização (update_017):** tabela `equipamento_locais` (texto livre + histórico, qualquer conta da Gestão registra, supervisor anula); local atual = último registro válido (`dslLocalAtual`). O desktop da Gestão **lança e edita** (janelas copiadas do app); a permissão real é do banco. Veja `docs/regras-de-negocio.md` §9.7.
+- **5S / Gestão Planta 1 (update_018):** área `gestao_p1`; tabela `cinco_s` (nasce em aberto com a foto do antes; qualquer conta da área conclui com a foto do depois; supervisor anula e corrige setor/descrição só em aberto; nada se apaga; regras no gatilho `cinco_s_proteger`). Fotos no bucket **privado** `cinco-s` (políticas por pasta de área, sem update/delete), reduzidas no aparelho (`c5Comprimir`) e abertas por link temporário (`c5Urls`). Núcleo `c5*` em `src/App.jsx` e cópia idêntica no desktop; `tests/cinco_s_core.test.cjs` confere as duas. Abas por área em `ABAS_DA_AREA`/`ABA_INICIAL` (app e desktop). Veja `docs/regras-de-negocio.md` §9.8. **Ainda não há notificação do 5S** (`docs/pendencias.md` §13.3).
 - **Todo peso está em kg** (`volumes.quantidade`, `movimentos.quantidade`, produção). O Power BI tem `quantidade_kg` e `quantidade_ton`.
 - **Rendimento metálico = soma produzida ÷ soma consumida** (nunca média de percentuais). Cor pelo valor com 1 casa decimal: ≥ 99 verde, ≥ 98 amarelo, abaixo vermelho.
 - **Turnos:** 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20.
