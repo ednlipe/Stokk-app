@@ -38,6 +38,7 @@
 
 ## 13.3 Pendências do 5S da Gestão Planta 1 (v1.6.0 — nada testado em produção)
 
+- **v1.6.2:** o turno do 5S usa o relógio do aparelho (como o resto do desktop), não o de Brasília; o app do celular ainda não mostra turno (só o desktop). Se precisar, levar a faixa de turno para o app.
 - **v1.6.1:** rodar também `update_019_cinco_s_fotos.sql` (várias fotos) e testar com 3 a 5 fotos reais no celular (tempo de envio em rede móvel; com 10 fotos por registro o espaço sobe para ≈ 1–2 MB).
 - Rodar `update_018_cinco_s.sql`, liberar `gestao_p1` em `usuario_areas` e testar no uso real: abrir com foto no celular, concluir depois, desktop (galeria e resumo), anular/corrigir como supervisor.
 - **Notificação do 5S (pedido do usuário, adiada):** avisar todos da Planta 1 quando um 5S for aberto/concluído, e avisar supervisor de 5S aberto há muito tempo. Faz parte do trabalho de push, junto com o item abaixo.

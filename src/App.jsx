@@ -5405,6 +5405,15 @@ function subscribeDiesel(){
    Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
 const C5_DIAS_ALERTA = 7;
 const C5_MAX_FOTOS = 5;   // por lado (antes / depois): 1 principal + até 4 extras
+// turno pelo horário, com os mesmos cortes do rendimento (07:10 / 15:10 / 23:10): 1º 07:10–15:10, 2º 15:10–23:10, 3º 23:10–07:10
+const C5_TURNOS = { 1:'1º turno', 2:'2º turno', 3:'3º turno' };
+function c5Turno(iso){
+  if (!iso) return null; const d = new Date(iso); if (isNaN(d.getTime())) return null;
+  const m = d.getHours()*60 + d.getMinutes();
+  return m >= 430 && m < 910 ? 1 : (m >= 910 && m < 1390 ? 2 : 3);
+}
+// turno em que o registro "aconteceu": a conclusão, se já foi concluído; senão a abertura
+function c5TurnoRef(r){ return c5Turno(r.concluidoEm || r.abertoEm); }
 function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
 // todas as fotos de um lado, na ordem em que foram tiradas (a principal primeiro)
 function c5Fotos(r, lado){
@@ -5433,17 +5442,17 @@ function c5Resumo(rs, de, ate, agoraT){
   const abertosAgora = c5Abertos(rs), limite = agora - C5_DIAS_ALERTA*86400000;
   const antigos = abertosAgora.filter(r=>c5T(r.abertoEm) < limite);
   const medias = concP.map(r=>c5Horas(r, agora));
-  const setores = new Map(), pessoas = new Map(), dias = new Map();
+  const setores = new Map(), pessoas = new Map(), dias = new Map(), porTurno = { 1:{abertos:0,concluidos:0}, 2:{abertos:0,concluidos:0}, 3:{abertos:0,concluidos:0} };
   const sobe = (mapa, nome, campo)=>{ const k = c5Chave(nome) || '(sem nome)'; const x = mapa.get(k) || { nome: String(nome||'(sem nome)').trim().replace(/\s+/g,' ') || '(sem nome)', abertos:0, concluidos:0 }; x[campo]++; const lim = String(nome||'').trim().replace(/\s+/g,' '); if (lim && x.nome===x.nome.toLowerCase() && lim!==lim.toLowerCase()) x.nome = lim; mapa.set(k, x); };
-  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); });
-  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
+  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); porTurno[c5Turno(r.abertoEm)].abertos++; });
+  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); porTurno[c5Turno(r.concluidoEm)].concluidos++; const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
   const ordem = (a,b)=> (b.abertos+b.concluidos)-(a.abertos+a.concluidos) || a.nome.localeCompare(b.nome);
   return {
     abertosP: abertosP.length, concluidosP: concP.length,
     abertosAgora: abertosAgora.length, antigos: antigos.length, antigosLista: antigos,
     tempoMedioH: medias.length ? medias.reduce((s,x)=>s+x,0)/medias.length : null,
     porSetor: [...setores.values()].sort(ordem), porPessoa: [...pessoas.values()].sort(ordem),
-    concluidosPorDia: dias
+    concluidosPorDia: dias, porTurno
   };
 }
 

@@ -176,6 +176,16 @@ main .view#view-c5resumo.active,main .view#view-c5galeria.active{max-width:1400p
 .c5-mais{position:absolute;right:6px;bottom:6px;font-style:normal;font-size:11px;background:rgba(0,0,0,.65);color:#fff;padding:2px 7px;border-radius:4px;}
 .c5-galfotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;}
 .c5-galfotos .c5-img.c5-grande{max-height:260px;}
+/* turnos (cores pastel; texto sempre escuro para ler nos dois temas) */
+.c5-turno,.c5-grp,.c5-turnos>div,.c5-chip.t1,.c5-chip.t2,.c5-chip.t3{color:#2b2b2b;}
+.t1.c5-turno,.t1.c5-grp,.c5-turnos>.t1,.c5-chip.t1{background:#FFF1B8;} .t2.c5-turno,.t2.c5-grp,.c5-turnos>.t2,.c5-chip.t2{background:#FFD9C0;} .t3.c5-turno,.t3.c5-grp,.c5-turnos>.t3,.c5-chip.t3{background:#D6E0FF;}
+.c5-card.t1{border-top:4px solid #F2D15C;} .c5-card.t2{border-top:4px solid #F2A67A;} .c5-card.t3{border-top:4px solid #98ADF2;}
+.c5-turno{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 14px;font-size:13px;} .c5-turno b{font-size:14px;letter-spacing:.3px;text-transform:uppercase;} .c5-turno span{font-size:12px;}
+.c5-grp{display:flex;align-items:baseline;gap:12px;margin:22px 0 10px;padding:8px 14px;border-radius:8px;} .c5-grp b{font-size:16px;text-transform:uppercase;letter-spacing:.4px;} .c5-grp span{font-size:12.5px;}
+.c5-turnos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:0 0 16px;}
+.c5-turnos>div{border-radius:var(--radius);padding:12px 16px;} .c5-turnos b{display:block;font-size:15px;text-transform:uppercase;letter-spacing:.4px;} .c5-turnos small{display:block;font-size:11.5px;opacity:.8;margin-bottom:6px;}
+.c5-turnos .n{font-family:var(--font-head);font-size:26px;font-weight:600;line-height:1.1;} .c5-turnos .n span{font-size:13px;font-family:var(--font-body);font-weight:400;} .c5-turnos .a{font-size:12.5px;}
+.c5-chip.t1.active,.c5-chip.t2.active,.c5-chip.t3.active{outline:2px solid #2b2b2b;}
 .c5-info{padding:12px 14px;} .c5-acao{color:var(--ok);margin-top:2px;}
 .dsl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
 .dsl-acoes .btn{width:auto;padding:9px 14px;margin:0;font-size:13px;}
@@ -1138,7 +1148,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.6.1 · 07/11';
+const APP_VERSAO = '1.6.2 · 07/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -2663,6 +2673,15 @@ function subscribeDiesel(){
    Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
 const C5_DIAS_ALERTA = 7;
 const C5_MAX_FOTOS = 5;   // por lado (antes / depois): 1 principal + até 4 extras
+// turno pelo horário, com os mesmos cortes do rendimento (07:10 / 15:10 / 23:10): 1º 07:10–15:10, 2º 15:10–23:10, 3º 23:10–07:10
+const C5_TURNOS = { 1:'1º turno', 2:'2º turno', 3:'3º turno' };
+function c5Turno(iso){
+  if (!iso) return null; const d = new Date(iso); if (isNaN(d.getTime())) return null;
+  const m = d.getHours()*60 + d.getMinutes();
+  return m >= 430 && m < 910 ? 1 : (m >= 910 && m < 1390 ? 2 : 3);
+}
+// turno em que o registro "aconteceu": a conclusão, se já foi concluído; senão a abertura
+function c5TurnoRef(r){ return c5Turno(r.concluidoEm || r.abertoEm); }
 function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
 // todas as fotos de um lado, na ordem em que foram tiradas (a principal primeiro)
 function c5Fotos(r, lado){
@@ -2691,17 +2710,17 @@ function c5Resumo(rs, de, ate, agoraT){
   const abertosAgora = c5Abertos(rs), limite = agora - C5_DIAS_ALERTA*86400000;
   const antigos = abertosAgora.filter(r=>c5T(r.abertoEm) < limite);
   const medias = concP.map(r=>c5Horas(r, agora));
-  const setores = new Map(), pessoas = new Map(), dias = new Map();
+  const setores = new Map(), pessoas = new Map(), dias = new Map(), porTurno = { 1:{abertos:0,concluidos:0}, 2:{abertos:0,concluidos:0}, 3:{abertos:0,concluidos:0} };
   const sobe = (mapa, nome, campo)=>{ const k = c5Chave(nome) || '(sem nome)'; const x = mapa.get(k) || { nome: String(nome||'(sem nome)').trim().replace(/\s+/g,' ') || '(sem nome)', abertos:0, concluidos:0 }; x[campo]++; const lim = String(nome||'').trim().replace(/\s+/g,' '); if (lim && x.nome===x.nome.toLowerCase() && lim!==lim.toLowerCase()) x.nome = lim; mapa.set(k, x); };
-  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); });
-  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
+  abertosP.forEach(r=>{ sobe(setores, r.setor, 'abertos'); sobe(pessoas, r.abertoPorNome, 'abertos'); porTurno[c5Turno(r.abertoEm)].abertos++; });
+  concP.forEach(r=>{ sobe(setores, r.setor, 'concluidos'); sobe(pessoas, r.concluidoPorNome, 'concluidos'); porTurno[c5Turno(r.concluidoEm)].concluidos++; const d = new Date(r.concluidoEm), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); dias.set(k, (dias.get(k)||0)+1); });
   const ordem = (a,b)=> (b.abertos+b.concluidos)-(a.abertos+a.concluidos) || a.nome.localeCompare(b.nome);
   return {
     abertosP: abertosP.length, concluidosP: concP.length,
     abertosAgora: abertosAgora.length, antigos: antigos.length, antigosLista: antigos,
     tempoMedioH: medias.length ? medias.reduce((s,x)=>s+x,0)/medias.length : null,
     porSetor: [...setores.values()].sort(ordem), porPessoa: [...pessoas.values()].sort(ordem),
-    concluidosPorDia: dias
+    concluidosPorDia: dias, porTurno
   };
 }
 
@@ -2709,7 +2728,7 @@ function c5Resumo(rs, de, ate, agoraT){
    Duas abas: "Resumo 5S" (números do período, por setor e por pessoa) e "Galeria" (antes e depois lado a lado).
    Lê o que o app grava; as fotos ficam num bucket privado e são abertas por links temporários (1 h). */
 const C5_BUCKET = 'cinco-s', C5_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-Object.assign(state, { cincoS: [], cincoErr: null, c5Per: 'mes', c5Mes: (function(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })(), c5Ano: new Date().getFullYear(), c5Setor: '', c5Sit: 'todos' });
+Object.assign(state, { cincoS: [], cincoErr: null, c5Per: 'mes', c5Mes: (function(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })(), c5Ano: new Date().getFullYear(), c5Setor: '', c5Sit: 'todos', c5Turno: 0, c5Agrupar: true });
 function c5Periodo(){
   const hoje = new Date();
   if (state.c5Per==='30d') return { de:new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()-29).getTime(), ate:new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()+1).getTime(), rotulo:'Últimos 30 dias', porMes:false };
@@ -2743,10 +2762,15 @@ async function c5Hidratar(raiz){
 }
 function c5Img(path, cls){ return '<img class="c5-img '+(cls||'')+'" data-c5="'+esc(path||'')+'" alt="" loading="lazy">'; }
 function c5Mais(r, lado){ const n = c5Fotos(r, lado).length; return n>1 ? '<em class="c5-mais">'+n+' fotos</em>' : ''; }
+function c5FaixaTurno(r){
+  const t = c5TurnoRef(r), hora = new Date(r.concluidoEm || r.abertoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return '<div class="c5-turno t'+t+'"><b>'+C5_TURNOS[t]+'</b><span>'+(r.concluidoEm?'concluído':'aberto')+' às '+hora+'</span></div>';
+}
 function c5Cartao(r){
   const h = c5Horas(r), aberto = !r.concluidoEm, velho = aberto && h >= C5_DIAS_ALERTA*24;
-  return '<div class="c5-card'+(r.anulado?' anulado':'')+(velho?' velho':'')+'" data-c5-act="ver" data-id="'+esc(r.id)+'">'
+  return '<div class="c5-card t'+c5TurnoRef(r)+(r.anulado?' anulado':'')+(velho?' velho':'')+'" data-c5-act="ver" data-id="'+esc(r.id)+'">'
     + '<div class="c5-par"><div><span>ANTES</span>'+c5Img(r.fotoAntes)+c5Mais(r,'antes')+'</div><div><span>DEPOIS</span>'+(r.fotoDepois?c5Img(r.fotoDepois)+c5Mais(r,'depois'):'<div class="c5-ph">'+(r.anulado?'—':'em aberto')+'</div>')+'</div></div>'
+    + c5FaixaTurno(r)
     + '<div class="c5-info"><b>'+esc(r.setor)+'</b>'+(r.anulado?' '+dslChip('anulado','danger'):(aberto?' '+dslChip(velho?'aberto há '+c5Tempo(h):'em aberto',velho?'danger':'info'):' '+dslChip('concluído','ok')))
     + '<div>'+esc(r.problema)+'</div>'+(r.acao?'<div class="c5-acao">→ '+esc(r.acao)+'</div>':'')
     + '<div class="hint" style="margin:6px 0 0;">'+dslDataCurta(r.abertoEm)+(r.abertoPorNome?' · '+esc(r.abertoPorNome):'')+(r.concluidoEm?' → '+dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+' ('+c5Tempo(h)+')':'')+'</div></div></div>';
@@ -2755,6 +2779,7 @@ function c5Filtrados(P){
   let rs = state.cincoS.slice();
   if (state.c5Setor) rs = rs.filter(r=>c5Chave(r.setor)===c5Chave(state.c5Setor));
   const noP = t => !isNaN(t) && t>=P.de && t<P.ate;
+  if (state.c5Turno) rs = rs.filter(r=>c5TurnoRef(r)===state.c5Turno);
   const sit = state.c5Sit;
   if (sit==='abertos') rs = rs.filter(r=>!r.anulado && !r.concluidoEm);
   else if (sit==='concluidos') rs = rs.filter(r=>!r.anulado && r.concluidoEm && noP(c5T(r.concluidoEm)));
@@ -2788,11 +2813,19 @@ function renderC5Resumo(){
     + (R.antigos ? '<div class="card left-danger" style="margin-bottom:14px;"><b>⚠ '+R.antigos+' 5S em aberto há mais de '+C5_DIAS_ALERTA+' dias</b>'+R.antigosLista.slice(0,6).map(r=>'<div class="li-desc" data-c5-act="ver" data-id="'+esc(r.id)+'" style="cursor:pointer;margin-top:4px;">'+esc(r.setor)+' · '+esc(r.problema)+' · há '+c5Tempo(c5Horas(r))+'</div>').join('')+'</div>' : '')
     + '<div class="rend-kpis"><div class="stat ok"><div class="n">'+R.concluidosP+'</div><div class="l">Concluídos no período</div></div><div class="stat"><div class="n">'+R.abertosP+'</div><div class="l">Abertos no período</div></div>'
     + '<div class="stat '+(R.antigos?'bad':'accent')+'"><div class="n">'+R.abertosAgora+'</div><div class="l">Em aberto agora</div></div><div class="stat"><div class="n">'+(R.tempoMedioH!=null?c5Tempo(R.tempoMedioH):'—')+'</div><div class="l">Tempo médio até concluir</div></div></div>'
+    + '<div class="c5-turnos">'+[1,2,3].map(t=>'<div class="t'+t+'"><b>'+C5_TURNOS[t]+'</b><small>'+C5_FAIXAS[t]+'</small><div class="n">'+R.porTurno[t].concluidos+' <span>concluídos</span></div><div class="a">'+R.porTurno[t].abertos+' aberto'+(R.porTurno[t].abertos===1?'':'s')+' no período</div></div>').join('')+'</div>'
     + '<div class="rend-grid-2"><div class="card"><div class="rend-card-t">Concluídos <small>'+(P.porMes?'por mês':'por dia')+'</small></div>'+grafico+'</div>'
     + '<div class="card"><div class="rend-card-t">Por setor <small>neste período</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab">'+cab+'<tbody>'+tab(R.porSetor,'Nada neste período.')+'</tbody></table></div></div></div>'
     + '<div class="rend-grid-2"><div class="card"><div class="rend-card-t">Por pessoa <small>quem abriu e quem concluiu</small></div><div class="rend-scroll"><table class="rend-tab dsl-tab">'+cab+'<tbody>'+tab(R.porPessoa,'Nada neste período.')+'</tbody></table></div></div>'
     + '<div class="card"><div class="rend-card-t">Últimos concluídos <small><button class="link-btn" data-c5-act="galeria">ver galeria</button></small></div>'+(recentes.length?'<div class="c5-grid c5-grid-2">'+recentes.map(c5Cartao).join('')+'</div>':'<div class="rend-vazio">Nenhum 5S concluído ainda.</div>')+'</div></div>';
   c5Hidratar(body);
+}
+const C5_FAIXAS = { 1:'07:10 às 15:10', 2:'15:10 às 23:10', 3:'23:10 às 07:10' };
+// com "agrupar", cada turno vira uma seção com seu título colorido; os registros seguem do mais recente para o mais antigo
+function c5Grupos(lista){
+  if (!state.c5Agrupar) return '<div class="c5-grid">'+lista.map(c5Cartao).join('')+'</div>';
+  return [1,2,3].map(t=>{ const g = lista.filter(r=>c5TurnoRef(r)===t); if (!g.length) return '';
+    return '<div class="c5-grp t'+t+'"><b>'+C5_TURNOS[t]+'</b><span>'+C5_FAIXAS[t]+' · '+g.length+' registro'+(g.length===1?'':'s')+'</span></div><div class="c5-grid">'+g.map(c5Cartao).join('')+'</div>'; }).join('');
 }
 function renderC5Galeria(){
   const body = document.getElementById('c5g-body'); if (!body) return;
@@ -2800,8 +2833,9 @@ function renderC5Galeria(){
   const P = c5Periodo(), lista = c5Filtrados(P), setores = c5Setores(state.cincoS);
   body.innerHTML = c5Barra(P)
     + '<div class="rend-top" style="margin-top:-4px;"><div class="filter-row wrap">'+[['todos','Todos'],['abertos','Em aberto'],['concluidos','Concluídos'],['anulados','Anulados']].map(p=>'<button class="filter-chip '+(state.c5Sit===p[0]?'active':'')+'" data-c5-act="sit" data-v="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'
+    + '<div class="filter-row wrap">'+[[0,'Todos os turnos'],[1,'1º turno'],[2,'2º turno'],[3,'3º turno']].map(p=>'<button class="filter-chip c5-chip'+(p[0]?' t'+p[0]:'')+(state.c5Turno===p[0]?' active':'')+'" data-c5-act="turno" data-v="'+p[0]+'">'+(p[0]?'<b>'+p[1]+'</b>':p[1])+'</button>').join('')+'<button class="filter-chip'+(state.c5Agrupar?' active':'')+'" data-c5-act="agrupar">Agrupar por turno</button></div>'
     + '<select id="c5-filtro-setor" style="max-width:260px;"><option value="">Todos os setores</option>'+setores.map(s=>'<option '+(c5Chave(s)===c5Chave(state.c5Setor)?'selected':'')+'>'+esc(s)+'</option>').join('')+'</select><span class="hint" style="margin:0;">'+lista.length+' registro'+(lista.length===1?'':'s')+'</span></div>'
-    + (lista.length ? '<div class="c5-grid">'+lista.slice(0,60).map(c5Cartao).join('')+'</div>'+(lista.length>60?'<p class="hint">Mostrando os 60 mais recentes. Use os filtros para ver os outros.</p>':'') : '<div class="rend-vazio">Nenhum 5S com esses filtros.</div>');
+    + (lista.length ? c5Grupos(lista.slice(0,60))+(lista.length>60?'<p class="hint">Mostrando os 60 mais recentes. Use os filtros para ver os outros.</p>':'') : '<div class="rend-vazio">Nenhum 5S com esses filtros.</div>');
   const sel = document.getElementById('c5-filtro-setor'); if (sel) sel.onchange = ()=>{ state.c5Setor = sel.value; renderC5Galeria(); };
   c5Hidratar(body);
 }
@@ -2821,10 +2855,10 @@ function c5Detalhe(id){
 function c5Exportar(){
   const P = c5Periodo(), fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '', noP = t => !isNaN(t) && t>=P.de && t<P.ate;
   const wb = XLSX.utils.book_new();
-  const linhas = [['Setor','O que estava errado','Aberto em','Aberto por','Concluído em','Concluído por','O que foi feito','Horas','Situação']];
+  const linhas = [['Setor','O que estava errado','Aberto em','Turno da abertura','Aberto por','Concluído em','Turno da conclusão','Concluído por','O que foi feito','Horas','Situação']];
   state.cincoS.filter(r=>noP(c5T(r.abertoEm)) || (r.concluidoEm && noP(c5T(r.concluidoEm))) || (!r.concluidoEm && !r.anulado)).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)).forEach(r=>{
-    linhas.push([r.setor, r.problema, fmt(r.abertoEm), r.abertoPorNome||'', fmt(r.concluidoEm), r.concluidoPorNome||'', r.acao||'', Math.round(c5Horas(r)*100)/100, r.anulado?'ANULADO: '+(r.anuladoMotivo||''):(r.concluidoEm?'concluído':'em aberto')]); });
-  const w1 = XLSX.utils.aoa_to_sheet(linhas); w1['!cols'] = [{wch:18},{wch:34},{wch:18},{wch:16},{wch:18},{wch:16},{wch:34},{wch:10},{wch:16}];
+    linhas.push([r.setor, r.problema, fmt(r.abertoEm), C5_TURNOS[c5Turno(r.abertoEm)], r.abertoPorNome||'', fmt(r.concluidoEm), r.concluidoEm?C5_TURNOS[c5Turno(r.concluidoEm)]:'', r.concluidoPorNome||'', r.acao||'', Math.round(c5Horas(r)*100)/100, r.anulado?'ANULADO: '+(r.anuladoMotivo||''):(r.concluidoEm?'concluído':'em aberto')]); });
+  const w1 = XLSX.utils.aoa_to_sheet(linhas); w1['!cols'] = [{wch:18},{wch:34},{wch:18},{wch:12},{wch:16},{wch:18},{wch:12},{wch:16},{wch:34},{wch:10},{wch:16}];
   XLSX.utils.book_append_sheet(wb, w1, '5S');
   const R = c5Resumo(state.cincoS, P.de, P.ate);
   const l2 = [['Setor','Concluídos','Abertos']].concat(R.porSetor.map(x=>[x.nome, x.concluidos, x.abertos]));
@@ -2846,6 +2880,8 @@ async function c5Clique(e){
     renderAll();
   }
   else if (a==='sit'){ state.c5Sit = b.dataset.v; renderAll(); }
+  else if (a==='turno'){ state.c5Turno = Number(b.dataset.v); renderAll(); }
+  else if (a==='agrupar'){ state.c5Agrupar = !state.c5Agrupar; renderAll(); }
   else if (a==='ver') c5Detalhe(id);
   else if (a==='galeria') setView('c5galeria');
   else if (a==='export') c5Exportar();

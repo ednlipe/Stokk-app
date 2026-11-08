@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
 const ini = src.indexOf('/* ================= 5S — núcleo'), fim = src.indexOf('/* ================= 5S — telas');
 assert(ini > 0 && fim > ini, 'núcleo do 5S não encontrado em src/App.jsx');
-const C = new Function(src.slice(ini, fim) + '; return { C5_DIAS_ALERTA, C5_MAX_FOTOS, c5Fotos, c5Validos, c5Abertos, c5Horas, c5Chave, c5Setores, c5Resumo };')();
+const C = new Function(src.slice(ini, fim) + '; return { C5_DIAS_ALERTA, C5_MAX_FOTOS, C5_TURNOS, c5Turno, c5TurnoRef, c5Fotos, c5Validos, c5Abertos, c5Horas, c5Chave, c5Setores, c5Resumo };')();
 // o painel do desktop usa uma cópia idêntica do núcleo
 const desk = fs.readFileSync(path.join(__dirname, '..', 'public', 'desktop', 'index.html'), 'utf8');
 const di = desk.indexOf('/* ================= 5S — núcleo'), df = desk.indexOf('/* ================= 5S — painel');
@@ -51,4 +51,17 @@ assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a', fotosAntesExtra: ['b', 'c'] }
 assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a' }, 'antes'), ['a']);                                  // registro antigo (update_018), sem extras
 assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a', fotoDepois: 'd', fotosDepoisExtra: ['e'] }, 'depois'), ['d', 'e']);
 assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a' }, 'depois'), []);                                    // em aberto: sem fotos do depois
+// turnos (cortes 07:10 / 15:10 / 23:10, no horário local da máquina)
+const hm = (h, m) => new Date(2026, 10, 5, h, m).toISOString();
+const casos = [[0,0,3],[7,9,3],[7,10,1],[12,0,1],[15,9,1],[15,10,2],[20,0,2],[23,9,2],[23,10,3],[23,59,3]];
+casos.forEach(([h, m, t]) => assert.strictEqual(C.c5Turno(hm(h, m)), t, h + ':' + m + ' deveria ser o ' + t + 'º turno'));
+assert.strictEqual(C.c5Turno(null), null); assert.strictEqual(C.c5Turno('lixo'), null);
+assert.strictEqual(C.C5_TURNOS[2], '2º turno');
+assert.strictEqual(C.c5TurnoRef({ abertoEm: hm(8, 0), concluidoEm: hm(16, 0) }), 2);                    // concluído: vale a conclusão
+assert.strictEqual(C.c5TurnoRef({ abertoEm: hm(8, 0) }), 1);                                           // em aberto: vale a abertura
+const RT = C.c5Resumo([
+  { id: 't1', setor: 'A', abertoEm: new Date(2026, 10, 5, 8, 0).toISOString(), abertoPorNome: 'x' },
+  { id: 't2', setor: 'A', abertoEm: new Date(2026, 10, 5, 23, 30).toISOString(), abertoPorNome: 'x', concluidoEm: new Date(2026, 10, 6, 6, 0).toISOString(), concluidoPorNome: 'y' },
+], new Date(2026, 10, 1).getTime(), new Date(2026, 11, 1).getTime(), new Date(2026, 10, 20).getTime());
+assert.deepStrictEqual(RT.porTurno, { 1: { abertos: 1, concluidos: 0 }, 2: { abertos: 0, concluidos: 0 }, 3: { abertos: 1, concluidos: 1 } });   // aberto 23:30 e concluído 06:00 = 3º turno
 console.log('cinco_s_core: todos os testes passaram');
