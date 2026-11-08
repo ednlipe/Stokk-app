@@ -308,3 +308,6 @@ label.g-chk input{width:20px;height:20px;flex:none;accent-color:var(--accent);ma
 .adm-chk input{width:20px;height:20px;}
 .adm-areas{margin-bottom:6px;}
 .adm-cred{font-size:15px;line-height:1.8;word-break:break-all;}
+/* botão Usuários (administrador): igual ao "trocar área", em vermelho, logo abaixo dele */
+#btn-usuarios{grid-column:2 / 4;grid-row:3;background:var(--danger);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:13px;font-weight:700;text-decoration:none;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;min-height:36px;text-align:center;}
+#btn-usuarios:active{opacity:.85;}
