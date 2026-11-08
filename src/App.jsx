@@ -5404,7 +5404,13 @@ function subscribeDiesel(){
    Cada registro: setor, problema, fotoAntes, abertoEm, concluidoEm (vazio = em aberto), fotoDepois, acao, anulado.
    Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
 const C5_DIAS_ALERTA = 7;
+const C5_MAX_FOTOS = 5;   // por lado (antes / depois): 1 principal + até 4 extras
 function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
+// todas as fotos de um lado, na ordem em que foram tiradas (a principal primeiro)
+function c5Fotos(r, lado){
+  const p = lado==='depois' ? r.fotoDepois : r.fotoAntes, ex = (lado==='depois' ? r.fotosDepoisExtra : r.fotosAntesExtra) || [];
+  return [p].concat(ex).filter(Boolean);
+}
 function c5Validos(rs){ return (rs||[]).filter(r=>!r.anulado); }
 function c5Abertos(rs){ return c5Validos(rs).filter(r=>!r.concluidoEm).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)); }
 // horas entre abrir e concluir; se ainda está em aberto, até agora
@@ -5501,35 +5507,58 @@ async function c5Hidratar(raiz){
   imgs.forEach(i=>{ const c = c5UrlCache.get(i.dataset.c5); if (c){ i.src = c.url; i.classList.remove('c5-sem'); } else { i.classList.add('c5-sem'); i.alt = 'foto indisponível'; } });
 }
 function c5Img(path, cls){ return '<img class="c5-img '+(cls||'')+'" data-c5="'+esc(path||'')+'" alt="" loading="lazy">'; }
-// campo de foto dentro de uma janela: tirar na hora (câmera) ou escolher da galeria; guarda a foto já reduzida
+// campo de fotos dentro de uma janela: tirar na hora (câmera) ou escolher da galeria, até C5_MAX_FOTOS; cada foto já fica reduzida
 function c5CampoFoto(id, rotulo){
-  return '<label class="field-label">'+esc(rotulo)+'</label><div class="c5-campo" id="'+id+'">'
-    + '<div class="c5-prev" id="'+id+'-prev"><span>Sem foto</span></div>'
-    + '<div class="btn-row"><label class="btn primary c5-btn">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden></label>'
-    + '<label class="btn ghost c5-btn" style="border:1px solid var(--border);">Galeria<input type="file" accept="image/*" hidden></label></div></div>';
+  return '<label class="field-label">'+esc(rotulo)+' <small class="hint" style="margin:0;">(até '+C5_MAX_FOTOS+' fotos)</small></label><div class="c5-campo" id="'+id+'">'
+    + '<div class="c5-lista" id="'+id+'-lista"></div>'
+    + '<div class="btn-row" id="'+id+'-btns"><label class="btn primary c5-btn">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden></label>'
+    + '<label class="btn ghost c5-btn" style="border:1px solid var(--border);">Galeria<input type="file" accept="image/*" multiple hidden></label></div></div>';
 }
 function c5LigarFoto(id, guarda){
-  const box = document.getElementById(id), prev = document.getElementById(id+'-prev');
-  box.querySelectorAll('input[type=file]').forEach(inp=>{
+  guarda.blobs = []; guarda.urls = [];
+  const lista = document.getElementById(id+'-lista'), btns = document.getElementById(id+'-btns');
+  const desenhar = ()=>{
+    lista.innerHTML = guarda.blobs.map((b,i)=>'<div class="c5-th"><img src="'+guarda.urls[i]+'" alt=""><button type="button" data-i="'+i+'" aria-label="Tirar esta foto">✕</button><small>'+Math.round(b.size/1024)+' KB</small></div>').join('')
+      || '<div class="c5-vazio">Sem foto</div>';
+    btns.style.display = guarda.blobs.length >= C5_MAX_FOTOS ? 'none' : '';
+    lista.querySelectorAll('button[data-i]').forEach(x=>{ x.onclick = ()=>{ const i = Number(x.dataset.i); URL.revokeObjectURL(guarda.urls[i]); guarda.blobs.splice(i,1); guarda.urls.splice(i,1); desenhar(); }; });
+  };
+  document.getElementById(id).querySelectorAll('input[type=file]').forEach(inp=>{
     inp.onchange = async ()=>{
-      const f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
-      prev.innerHTML = '<span>Reduzindo a foto…</span>';
-      try{
-        const blob = await c5Comprimir(f);
-        if (guarda.url) URL.revokeObjectURL(guarda.url);
-        guarda.blob = blob; guarda.url = URL.createObjectURL(blob);
-        prev.innerHTML = '<img src="'+guarda.url+'" alt=""><small>'+Math.round(blob.size/1024)+' KB</small>';
-      }catch(e){ console.error(e); guarda.blob = null; prev.innerHTML = '<span>Sem foto</span>'; toast(e.message||'Não consegui usar essa foto.', 3500); }
+      const arq = [...(inp.files||[])]; inp.value = ''; if (!arq.length) return;
+      const livres = C5_MAX_FOTOS - guarda.blobs.length;
+      if (arq.length > livres) toast('Só cabem '+C5_MAX_FOTOS+' fotos. Usei as '+livres+' primeiras.', 3500);
+      lista.insertAdjacentHTML('beforeend', '<div class="c5-vazio" id="'+id+'-esp">Reduzindo a foto…</div>');
+      for (const f of arq.slice(0, livres)){
+        try{ const blob = await c5Comprimir(f); guarda.blobs.push(blob); guarda.urls.push(URL.createObjectURL(blob)); }
+        catch(e){ console.error(e); toast(e.message||'Não consegui usar essa foto.', 3500); }
+      }
+      const esp = document.getElementById(id+'-esp'); if (esp) esp.remove();
+      desenhar();
     };
   });
+  desenhar();
 }
-function c5Caminho(id, quando, lado){ return state.area+'/'+c5Mes(quando)+'/'+id+'_'+lado+'.jpg'; }
+// caminho único por foto (se uma tentativa falhar no meio, a nova não esbarra nas fotos já enviadas)
+function c5Caminho(id, quando, lado, i){ return state.area+'/'+c5Mes(quando)+'/'+id+'_'+lado+(i?'_'+(i+1):'')+'_'+Date.now().toString(36)+'.jpg'; }
+async function c5EnviarVarias(id, quando, lado, blobs, progresso){
+  const caminhos = [];
+  for (let i = 0; i < blobs.length; i++){
+    if (progresso) progresso('Enviando foto '+(i+1)+' de '+blobs.length+'…');
+    const p = c5Caminho(id, quando, lado, i); await c5Enviar(p, blobs[i]); caminhos.push(p);
+  }
+  return caminhos;
+}
 
 /* ---- listas ---- */
+function c5Miniatura(r){
+  const n = c5Fotos(r,'antes').length;
+  return '<div class="c5-mini-box">'+c5Img(r.fotoAntes,'c5-mini')+(n>1?'<span class="c5-mais">'+n+' fotos</span>':'')+'</div>';
+}
 function c5CardAberto(r){
   const h = c5Horas(r), velho = h >= C5_DIAS_ALERTA*24;
   return '<div class="card c5-card '+(velho?'left-danger':'')+'">'
-    + '<div class="c5-linha" data-c5-act="ver" data-id="'+esc(r.id)+'">'+c5Img(r.fotoAntes,'c5-mini')
+    + '<div class="c5-linha" data-c5-act="ver" data-id="'+esc(r.id)+'">'+c5Miniatura(r)
     + '<div class="c5-txt"><b>'+esc(r.setor)+'</b>'+(velho?' '+dslChip('há '+c5Tempo(h),'danger'):'')+'<div>'+esc(r.problema)+'</div>'
     + '<div class="hint" style="margin:4px 0 0;">'+dslDataCurta(r.abertoEm)+(r.abertoPorNome?' · '+esc(r.abertoPorNome):'')+(velho?'':' · há '+c5Tempo(h))+'</div></div></div>'
     + '<div class="btn-row"><button class="btn primary" data-c5-act="concluir" data-id="'+esc(r.id)+'">Concluir (foto do depois)</button></div></div>';
@@ -5538,7 +5567,7 @@ function c5LinhaHist(r){
   return '<div class="list-item" data-c5-act="ver" data-id="'+esc(r.id)+'" style="cursor:pointer;'+(r.anulado?'opacity:.55;':'')+'">'
     + '<div class="c5-par">'+c5Img(r.fotoAntes,'c5-mini2')+(r.fotoDepois?c5Img(r.fotoDepois,'c5-mini2'):'')+'</div>'
     + '<div class="li-main"><div class="li-code" style="font-size:14px;'+(r.anulado?'text-decoration:line-through;':'')+'">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-    + '<div class="li-desc">'+esc(r.acao||r.problema)+'</div><div class="li-desc">'+dslDataCurta(r.concluidoEm||r.abertoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+'</div></div></div>';
+    + '<div class="li-desc">'+esc(r.acao||r.problema)+'</div><div class="li-desc">'+dslDataCurta(r.concluidoEm||r.abertoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+(c5Fotos(r,'antes').length+c5Fotos(r,'depois').length>2?' · '+(c5Fotos(r,'antes').length+c5Fotos(r,'depois').length)+' fotos':'')+'</div></div></div>';
 }
 function renderC5Lista(){
   const body = document.getElementById('c5lista-body'); if (!body) return;
@@ -5595,34 +5624,32 @@ function c5AbrirSheet(){
     const concluir = ja.checked, acao = (document.getElementById('c5-acao').value||'').trim();
     if (!setor){ toast('Informe o setor.'); return; }
     if (!problema){ toast('Descreva o que está errado.'); return; }
-    if (!antes.blob){ toast('Tire a foto do antes.'); return; }
+    if (!antes.blobs.length){ toast('Tire a foto do antes.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    if (concluir && !depois.blob){ toast('Tire a foto do depois.'); return; }
+    if (concluir && !depois.blobs.length){ toast('Tire a foto do depois.'); return; }
     if (concluir && !acao){ toast('Informe o que foi feito.'); return; }
     const id = 'cs_'+uid(); ok.disabled = true; ok.textContent = 'Enviando fotos…';
     try{
-      const pA = c5Caminho(id, quando, 'antes');
-      await c5Enviar(pA, antes.blob);
-      await db.collection('cinco_s').doc(id).set({ id, setor, problema, fotoAntes:pA, abertoEm:quando.toISOString(), abertoPor:state.user.id, abertoPorNome:state.user.nome });
+      const pA = await c5EnviarVarias(id, quando, 'antes', antes.blobs, t=>{ ok.textContent = t; });
+      await db.collection('cinco_s').doc(id).set({ id, setor, problema, fotoAntes:pA[0], ...(pA.length>1 ? { fotosAntesExtra:pA.slice(1) } : {}), abertoEm:quando.toISOString(), abertoPor:state.user.id, abertoPorNome:state.user.nome });
       if (concluir){
-        try{ await c5ConcluirGravar(id, depois.blob, acao, new Date()); toast('5S registrado e concluído.'); }
+        try{ await c5ConcluirGravar(id, depois.blobs, acao, new Date(), t=>{ ok.textContent = t; }); toast('5S registrado e concluído.'); }
         catch(e){ console.error(e); toast('5S aberto, mas não consegui concluir. Conclua pela lista.', 4500); }
       } else toast('5S aberto.');
       closeSheet(); if (db.refetchAll) await db.refetchAll();
     }catch(e){ console.error(e); toast('Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.', 4500); ok.disabled = false; ok.textContent = concluir ? 'Salvar e concluir' : 'Salvar em aberto'; }
   };
 }
-async function c5ConcluirGravar(id, blob, acao, quando){
-  const pD = c5Caminho(id, quando, 'depois');
-  await c5Enviar(pD, blob);
-  await db.collection('cinco_s').doc(id).update({ concluidoEm:quando.toISOString(), concluidoPorNome:state.user.nome, fotoDepois:pD, acao });
+async function c5ConcluirGravar(id, blobs, acao, quando, progresso){
+  const pD = await c5EnviarVarias(id, quando, 'depois', blobs, progresso);
+  await db.collection('cinco_s').doc(id).update({ concluidoEm:quando.toISOString(), concluidoPorNome:state.user.nome, fotoDepois:pD[0], ...(pD.length>1 ? { fotosDepoisExtra:pD.slice(1) } : {}), acao });
 }
 function c5ConcluirSheet(id){
   const r = state.cincoS.find(x=>x.id===id); if (!r || r.concluidoEm || r.anulado) return;
   const depois = {};
   openSheet('<h2 class="section-title" style="margin-top:0;">Concluir 5S · '+esc(r.setor)+'</h2>'
-    + '<p class="hint">Antes: '+esc(r.problema)+' · aberto em '+dslDataCurta(r.abertoEm)+'</p>'+c5Img(r.fotoAntes,'c5-grande')
+    + '<p class="hint">Antes: '+esc(r.problema)+' · aberto em '+dslDataCurta(r.abertoEm)+'</p><div class="c5-tira">'+c5Fotos(r,'antes').map(p=>c5Img(p,'c5-tira-img')).join('')+'</div>'
     + c5CampoFoto('c5-f-depois','Foto do DEPOIS')
     + '<label class="field-label">O que foi feito</label><input type="text" id="c5-acao" maxlength="500" placeholder="Ex.: guardou as ferramentas no painel">'
     + '<label class="field-label">Data e hora da conclusão</label><input type="datetime-local" id="c5-data" value="'+dslLocalInput(new Date())+'">'
@@ -5630,14 +5657,14 @@ function c5ConcluirSheet(id){
   c5Hidratar(document.getElementById('sheet-content')); c5LigarFoto('c5-f-depois', depois);
   document.getElementById('c5-ok').onclick = async ()=>{
     const acao = (document.getElementById('c5-acao').value||'').trim(), quando = new Date(document.getElementById('c5-data').value);
-    if (!depois.blob){ toast('Tire a foto do depois.'); return; }
+    if (!depois.blobs.length){ toast('Tire a foto do depois.'); return; }
     if (!acao){ toast('Informe o que foi feito.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() < c5T(r.abertoEm)){ toast('A conclusão não pode ser antes da abertura ('+dslDataCurta(r.abertoEm)+').', 3500); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando foto…';
+    const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando fotos…';
     try{
-      await c5ConcluirGravar(id, depois.blob, acao, quando);
+      await c5ConcluirGravar(id, depois.blobs, acao, quando, t=>{ b.textContent = t; });
       if (db.refetchAll) await db.refetchAll();
       const novo = state.cincoS.find(x=>x.id===id);
       if (novo && novo.concluidoEm){ closeSheet(); toast('5S concluído.'); }
@@ -5671,8 +5698,8 @@ function c5Detalhe(id){
   const l = (t,v)=> v ? '<div class="li-desc" style="margin:4px 0;"><b>'+t+':</b> '+esc(v)+'</div>' : '';
   openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</h2>'
     + l('O que estava errado',r.problema)+l('Aberto em',dslDataCurta(r.abertoEm)+(r.abertoPorNome?' por '+r.abertoPorNome:''))
-    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b></div>'+c5Img(r.fotoAntes,'c5-grande')
-    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b></div>'+c5Img(r.fotoDepois,'c5-grande')+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
+    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b>'+(c5Fotos(r,'antes').length>1?' · '+c5Fotos(r,'antes').length+' fotos':'')+'</div>'+c5Fotos(r,'antes').map(p=>c5Img(p,'c5-grande')).join('')
+    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b>'+(c5Fotos(r,'depois').length>1?' · '+c5Fotos(r,'depois').length+' fotos':'')+'</div>'+c5Fotos(r,'depois').map(p=>c5Img(p,'c5-grande')).join('')+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
       : '<div class="li-desc" style="margin:8px 0;"><b>Situação:</b> em aberto há '+c5Tempo(c5Horas(r))+'</div>')
     + (r.anulado?l('Motivo da anulação',r.anuladoMotivo):'') + (r.editadoEm?l('Corrigido em',dslDataCurta(r.editadoEm)):'')
     + (!r.concluidoEm&&!r.anulado?'<button class="btn primary" data-c5-act="concluir" data-id="'+esc(r.id)+'">Concluir (foto do depois)</button>':'')

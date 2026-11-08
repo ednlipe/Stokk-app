@@ -88,4 +88,4 @@ Views novas em `bi.*` (só registros não anulados, horário de Brasília): `equ
 View `bi.manutencao_ocorrencias` (só ocorrências não anuladas, horário de Brasília): equipamento, nome, tipo, categoria, motivo, descrição, abertura (data/hora e quem), liberação (data/hora, motivo, o que foi feito, quem pegou, quem registrou), `situacao` (Em aberto/Liberada) e `horas_parado` (se aberta, até agora). **Status:** não testado no Power BI.
 
 ### 5S (2026-11-07, update_018)
-View `bi.cinco_s` (só não anulados, horário de Brasília): `id`, `setor`, `problema`, `aberto_em`, `aberto_por_nome`, `concluido_em`, `concluido_por_nome`, `acao`, `horas_ate_concluir`, `situacao` (em aberto / concluído). Sem as fotos. Depois de rodar o `update_018`, atualize o modelo no Power BI.
+View `bi.cinco_s` (só não anulados, horário de Brasília): `id`, `setor`, `problema`, `aberto_em`, `aberto_por_nome`, `concluido_em`, `concluido_por_nome`, `acao`, `horas_ate_concluir`, `situacao` (em aberto / concluído). Sem as fotos (v1.6.1/update_019 acrescentou `fotos_antes` e `fotos_depois`, a quantidade de fotos). Depois de rodar o `update_018`/`019`, atualize o modelo no Power BI.

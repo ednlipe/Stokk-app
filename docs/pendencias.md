@@ -38,11 +38,12 @@
 
 ## 13.3 Pendências do 5S da Gestão Planta 1 (v1.6.0 — nada testado em produção)
 
+- **v1.6.1:** rodar também `update_019_cinco_s_fotos.sql` (várias fotos) e testar com 3 a 5 fotos reais no celular (tempo de envio em rede móvel; com 10 fotos por registro o espaço sobe para ≈ 1–2 MB).
 - Rodar `update_018_cinco_s.sql`, liberar `gestao_p1` em `usuario_areas` e testar no uso real: abrir com foto no celular, concluir depois, desktop (galeria e resumo), anular/corrigir como supervisor.
 - **Notificação do 5S (pedido do usuário, adiada):** avisar todos da Planta 1 quando um 5S for aberto/concluído, e avisar supervisor de 5S aberto há muito tempo. Faz parte do trabalho de push, junto com o item abaixo.
 - **Push no navegador/iPhone (adiado):** exige PWA (manifesto, ícone, service worker), Firebase web (config + chave VAPID, públicas) e salvar o token de cada aparelho; no iPhone só funciona com iOS 16.4+ e o site adicionado à Tela de Início.
 - **Sem fila offline:** sem internet a foto não é enviada (o app avisa e deixa tentar de novo). Se a Planta 1 tiver pontos sem sinal, vale uma fila local (IndexedDB) para enviar depois.
-- **Espaço:** ≈ 0,3–0,6 MB por 5S com as duas fotos; plano grátis = 1 GB (≈ 2–3 mil registros). Acompanhar em Supabase → Storage; depois, plano pago ou arquivar fotos antigas (o app não apaga foto).
+- **Espaço:** ≈ 0,3–0,6 MB por 5S com uma foto em cada lado (até ≈ 2 MB com 5 + 5); plano grátis = 1 GB (≈ 2–3 mil registros). Acompanhar em Supabase → Storage; depois, plano pago ou arquivar fotos antigas (o app não apaga foto).
 - Miniaturas: o app mostra a própria foto reduzida (~200 KB) em tamanho pequeno nas listas; se ficar pesado em rede móvel, gerar miniaturas.
 - A foto pode ser da galeria (não só da câmera); a data da foto não é conferida (vale a data informada).
 - `.rar`: o projeto vem de `stokk-vite.rar`; no repositório entra só a pasta (sem `node_modules`, `dist` nem `android/build`).

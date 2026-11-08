@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
 const ini = src.indexOf('/* ================= 5S — núcleo'), fim = src.indexOf('/* ================= 5S — telas');
 assert(ini > 0 && fim > ini, 'núcleo do 5S não encontrado em src/App.jsx');
-const C = new Function(src.slice(ini, fim) + '; return { C5_DIAS_ALERTA, c5Validos, c5Abertos, c5Horas, c5Chave, c5Setores, c5Resumo };')();
+const C = new Function(src.slice(ini, fim) + '; return { C5_DIAS_ALERTA, C5_MAX_FOTOS, c5Fotos, c5Validos, c5Abertos, c5Horas, c5Chave, c5Setores, c5Resumo };')();
 // o painel do desktop usa uma cópia idêntica do núcleo
 const desk = fs.readFileSync(path.join(__dirname, '..', 'public', 'desktop', 'index.html'), 'utf8');
 const di = desk.indexOf('/* ================= 5S — núcleo'), df = desk.indexOf('/* ================= 5S — painel');
@@ -45,4 +45,10 @@ assert.strictEqual(R.porPessoa.find(x => x.nome === 'Zé'), undefined);         
 assert.strictEqual([...R.concluidosPorDia.values()].reduce((s, x) => s + x, 0), 2);
 // período vazio e lista vazia não quebram
 const V = C.c5Resumo([], de, ate, AGORA); assert.strictEqual(V.tempoMedioH, null); assert.strictEqual(V.abertosAgora, 0);
+// várias fotos: a principal vem primeiro, depois as extras; vazio não conta
+assert.strictEqual(C.C5_MAX_FOTOS, 5);
+assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a', fotosAntesExtra: ['b', 'c'] }, 'antes'), ['a', 'b', 'c']);
+assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a' }, 'antes'), ['a']);                                  // registro antigo (update_018), sem extras
+assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a', fotoDepois: 'd', fotosDepoisExtra: ['e'] }, 'depois'), ['d', 'e']);
+assert.deepStrictEqual(C.c5Fotos({ fotoAntes: 'a' }, 'depois'), []);                                    // em aberto: sem fotos do depois
 console.log('cinco_s_core: todos os testes passaram');

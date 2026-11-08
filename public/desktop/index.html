@@ -173,6 +173,9 @@ main .view#view-c5resumo.active,main .view#view-c5galeria.active{max-width:1400p
 .c5-img.c5-sem{opacity:.35;}
 .c5-img.c5-grande{max-height:60vh;object-fit:contain;min-height:0;height:auto;}
 .c5-ph{display:flex;align-items:center;justify-content:center;height:100%;min-height:170px;color:var(--text-muted);font-size:13px;}
+.c5-mais{position:absolute;right:6px;bottom:6px;font-style:normal;font-size:11px;background:rgba(0,0,0,.65);color:#fff;padding:2px 7px;border-radius:4px;}
+.c5-galfotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;}
+.c5-galfotos .c5-img.c5-grande{max-height:260px;}
 .c5-info{padding:12px 14px;} .c5-acao{color:var(--ok);margin-top:2px;}
 .dsl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
 .dsl-acoes .btn{width:auto;padding:9px 14px;margin:0;font-size:13px;}
@@ -1135,7 +1138,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.6.0 · 07/11';
+const APP_VERSAO = '1.6.1 · 07/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -2659,7 +2662,13 @@ function subscribeDiesel(){
    Cada registro: setor, problema, fotoAntes, abertoEm, concluidoEm (vazio = em aberto), fotoDepois, acao, anulado.
    Só entra nas contas o que não foi anulado. Aberto "antigo" = em aberto há mais de C5_DIAS_ALERTA dias. */
 const C5_DIAS_ALERTA = 7;
+const C5_MAX_FOTOS = 5;   // por lado (antes / depois): 1 principal + até 4 extras
 function c5T(iso){ return iso ? new Date(iso).getTime() : NaN; }
+// todas as fotos de um lado, na ordem em que foram tiradas (a principal primeiro)
+function c5Fotos(r, lado){
+  const p = lado==='depois' ? r.fotoDepois : r.fotoAntes, ex = (lado==='depois' ? r.fotosDepoisExtra : r.fotosAntesExtra) || [];
+  return [p].concat(ex).filter(Boolean);
+}
 function c5Validos(rs){ return (rs||[]).filter(r=>!r.anulado); }
 function c5Abertos(rs){ return c5Validos(rs).filter(r=>!r.concluidoEm).sort((a,b)=>c5T(a.abertoEm)-c5T(b.abertoEm)); }
 // horas entre abrir e concluir; se ainda está em aberto, até agora
@@ -2733,10 +2742,11 @@ async function c5Hidratar(raiz){
   });
 }
 function c5Img(path, cls){ return '<img class="c5-img '+(cls||'')+'" data-c5="'+esc(path||'')+'" alt="" loading="lazy">'; }
+function c5Mais(r, lado){ const n = c5Fotos(r, lado).length; return n>1 ? '<em class="c5-mais">'+n+' fotos</em>' : ''; }
 function c5Cartao(r){
   const h = c5Horas(r), aberto = !r.concluidoEm, velho = aberto && h >= C5_DIAS_ALERTA*24;
   return '<div class="c5-card'+(r.anulado?' anulado':'')+(velho?' velho':'')+'" data-c5-act="ver" data-id="'+esc(r.id)+'">'
-    + '<div class="c5-par"><div><span>ANTES</span>'+c5Img(r.fotoAntes)+'</div><div><span>DEPOIS</span>'+(r.fotoDepois?c5Img(r.fotoDepois):'<div class="c5-ph">'+(r.anulado?'—':'em aberto')+'</div>')+'</div></div>'
+    + '<div class="c5-par"><div><span>ANTES</span>'+c5Img(r.fotoAntes)+c5Mais(r,'antes')+'</div><div><span>DEPOIS</span>'+(r.fotoDepois?c5Img(r.fotoDepois)+c5Mais(r,'depois'):'<div class="c5-ph">'+(r.anulado?'—':'em aberto')+'</div>')+'</div></div>'
     + '<div class="c5-info"><b>'+esc(r.setor)+'</b>'+(r.anulado?' '+dslChip('anulado','danger'):(aberto?' '+dslChip(velho?'aberto há '+c5Tempo(h):'em aberto',velho?'danger':'info'):' '+dslChip('concluído','ok')))
     + '<div>'+esc(r.problema)+'</div>'+(r.acao?'<div class="c5-acao">→ '+esc(r.acao)+'</div>':'')
     + '<div class="hint" style="margin:6px 0 0;">'+dslDataCurta(r.abertoEm)+(r.abertoPorNome?' · '+esc(r.abertoPorNome):'')+(r.concluidoEm?' → '+dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' · '+esc(r.concluidoPorNome):'')+' ('+c5Tempo(h)+')':'')+'</div></div></div>';
@@ -2798,11 +2808,11 @@ function renderC5Galeria(){
 function c5Detalhe(id){
   const r = state.cincoS.find(x=>x.id===id); if (!r) return;
   const l = (t,v)=> v ? '<div class="li-desc" style="margin:4px 0;"><b>'+t+':</b> '+esc(v)+'</div>' : '';
-  const foto = p => '<a data-c5-link target="_blank" rel="noopener">'+c5Img(p,'c5-grande')+'</a>';
+  const fotos = lado => '<div class="c5-galfotos">'+c5Fotos(r, lado).map(p=>'<a data-c5-link target="_blank" rel="noopener">'+c5Img(p,'c5-grande')+'</a>').join('')+'</div>';
   openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(r.setor)+(r.anulado?' '+dslChip('anulado','danger'):'')+'</h2>'
     + l('O que estava errado',r.problema)+l('Aberto em',dslDataCurta(r.abertoEm)+(r.abertoPorNome?' por '+r.abertoPorNome:''))
-    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b> <small>(clique na foto para ampliar)</small></div>'+foto(r.fotoAntes)
-    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b></div>'+foto(r.fotoDepois)+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
+    + '<div class="li-desc" style="margin:8px 0 4px;"><b>ANTES</b>'+(c5Fotos(r,'antes').length>1?' · '+c5Fotos(r,'antes').length+' fotos':'')+' <small>(clique na foto para ampliar)</small></div>'+fotos('antes')
+    + (r.concluidoEm ? '<div class="li-desc" style="margin:12px 0 4px;"><b>DEPOIS</b>'+(c5Fotos(r,'depois').length>1?' · '+c5Fotos(r,'depois').length+' fotos':'')+'</div>'+fotos('depois')+l('O que foi feito',r.acao)+l('Concluído em',dslDataCurta(r.concluidoEm)+(r.concluidoPorNome?' por '+r.concluidoPorNome:''))+l('Tempo',c5Tempo(c5Horas(r)))
       : '<div class="li-desc" style="margin:8px 0;"><b>Situação:</b> em aberto há '+c5Tempo(c5Horas(r))+'</div>')
     + (r.anulado?l('Motivo da anulação',r.anuladoMotivo):'') + (r.editadoEm?l('Corrigido em',dslDataCurta(r.editadoEm)):'')
     + (dslEhSup()&&!r.anulado?'<button class="btn ghost" data-g-act="anular" data-t="cinco_s" data-id="'+esc(r.id)+'" style="border:1px solid var(--border);">Anular 5S</button>':''));
