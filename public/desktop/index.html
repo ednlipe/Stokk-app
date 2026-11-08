@@ -1148,7 +1148,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.6.2 · 07/11';
+const APP_VERSAO = '1.7.0 · 07/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();

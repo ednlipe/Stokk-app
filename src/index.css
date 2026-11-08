@@ -290,3 +290,21 @@ label.g-chk input{width:20px;height:20px;flex:none;accent-color:var(--accent);ma
 .c5-mais{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.65);color:#fff;border-radius:4px;padding:1px 6px;font-size:10.5px;}
 .c5-tira{display:flex;gap:6px;overflow-x:auto;margin-bottom:6px;}
 .c5-tira-img{height:150px;width:auto;flex:none;}
+
+/* USUÁRIOS (administrador) */
+.adm-topo{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.adm-h{font-family:var(--font-head);text-transform:uppercase;margin:0;font-size:20px;}
+.adm-sh{font-family:var(--font-head);text-transform:uppercase;margin:0 0 10px;}
+.adm-card{cursor:pointer;}
+.adm-off{opacity:.6;}
+.adm-nome{font-weight:700;font-size:15.5px;}
+.adm-eu{font-size:11px;font-weight:600;color:var(--text-muted);margin-left:6px;text-transform:uppercase;}
+.adm-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.adm-chip{font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);}
+.adm-chip-adm{border-color:var(--accent);color:var(--accent);font-weight:700;}
+.adm-chip-off{border-color:var(--danger);color:var(--danger);}
+.adm-chip-area{background:transparent;}
+.adm-chk{display:flex;align-items:center;gap:10px;padding:10px 4px;font-size:15px;border-bottom:1px solid var(--border);}
+.adm-chk input{width:20px;height:20px;}
+.adm-areas{margin-bottom:6px;}
+.adm-cred{font-size:15px;line-height:1.8;word-break:break-all;}

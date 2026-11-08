@@ -130,6 +130,10 @@ Ambiente novo (`state.area === 'gestao_p1'`; `ABAS_DA_AREA`/`ABA_INICIAL` genera
 - Funções: `renderC5Resumo`, `renderC5Lista`, `c5AbrirSheet`, `c5ConcluirSheet`, `c5EditarSheet`, `c5Detalhe`, `c5Exportar`, `c5Clique`, `subscribeCinco`, `completarAntigos` (ramo `cinco_s`: traz os abertos antigos se a leitura bater no limite de 5000).
 - **Status:** testado no navegador com Supabase simulado (supervisor e operador: abrir, concluir, abrir e concluir, corrigir, anular, foto de 7,8 MB reduzida para ~90 KB) e o SQL em Postgres local; **não testado** com o Supabase real, com câmera real no APK nem com fotos reais de celular.
 
+### 7.12 Usuários (v1.7.0, só administrador)
+Link **usuários** no topo (em qualquer área; `state.user.admin = profile.admin === true`), abre `#view-usuarios` (sem aba embaixo; "← voltar" volta para a aba inicial da área). Lista todas as contas com chips (admin, papel, bloqueado, áreas). Toque numa conta: nome, papel, áreas (caixas), **Salvar**; **Redefinir senha** (campo + "Gerar"); **Bloquear/Reativar acesso**. **+ Novo usuário:** nome, e-mail (login), senha inicial (gerada, editável), papel, áreas; ao criar mostra login e senha **uma vez** com botão copiar. Tudo via `admChamar(acao, dados)` → Edge Function `admin-usuarios` (`listar`/`criar`/`atualizar`/`senha`); erro de função não publicada vira aviso na tela. Funções: `admRender`, `admClique`, `admNovoSheet`, `admEditarSheet`, `admResultadoSheet`, `montarBotaoUsuarios`.
+- **Status:** testado no navegador com a função simulada (criar, duplicado, editar, bloquear, senha, travas de si mesmo, função ausente) e a lógica da função com banco simulado; não testado no Supabase real.
+
 ## 8. Leitura de etiquetas e leitores
 
 ### 8.1 Formato da etiqueta

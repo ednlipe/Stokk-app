@@ -84,6 +84,15 @@ O app reduz a foto no aparelho (lado maior 1280 px, JPEG ~72%, alvo ≤ 300 KB; 
 
 Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_depois`; as extras (até 4 por lado, total 5 + 5) ficam em `fotos_antes_extra` (gravadas ao abrir, nunca mudam) e `fotos_depois_extra` (só entram ao concluir). Checks: no máximo 4 extras, todas na pasta da própria área (`cinco_s_caminhos_ok`), e extras do depois só com o registro concluído. O gatilho `cinco_s_proteger` foi recriado para tratar as extras (as do antes não mudam; anulação preserva tudo). A view `bi.cinco_s` ganhou `fotos_antes` e `fotos_depois` (quantidade).
 
+### 4.3.5 Administração de usuários (`update_020`)
+
+| Item | Conteúdo |
+|---|---|
+| `profiles.admin` | `boolean not null default false`. Quem é admin (conta ativa) vê a tela **Usuários** no app. **Só muda pelo SQL Editor/painel** (ex.: `update public.profiles set admin = true, role = 'supervisor', ativo = true where id = (select id from auth.users where email = '...');`). |
+| `proteger_profiles` | Recriada: com `auth.uid()` não nulo (qualquer login do app) bloqueia mudança de `role`, `ativo`, `id`, `area` **e `admin`**. A Edge Function usa a chave de serviço (`auth.uid()` nulo), por isso consegue alterar. |
+| `eh_admin()` | `security definer`; conta ativa com `admin = true`. |
+| `admin_acoes` | Registro de tudo que o admin fez pela tela (`quando`, `admin_id`, `admin_nome`, `acao` = criar/atualizar/bloquear/reativar/senha, `alvo_id`, `alvo_email`, `detalhe` jsonb). **Nunca guarda senha.** RLS: só admin lê; ninguém grava pelo app (só a função). |
+
 ### 4.4 Migrações (rodar no SQL Editor, nesta ordem)
 | Arquivo | O que faz |
 |---|---|
@@ -102,6 +111,7 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `update_013_multiarea.sql` | **Várias áreas por usuário:** tabela `usuario_areas(user_id, area)` (RLS: só lê as próprias linhas; sem escrita pelo app), função `areas_do_usuario()` (text[]), políticas de `volumes`/`movimentos`/`sessoes`/`producoes`/`armazens_area` recriadas com `area = any ((select public.areas_do_usuario())::text[])` (o cast `::text[]` é obrigatório) e gatilho `proteger_area_registro` (`trg_proteger_area`) que impede mudar a `area` de um registro pelo app. Rodar depois do 012. **Status:** testado só em Postgres local. |
 | `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
 | `update_019_cinco_s_fotos.sql` | **5S com várias fotos:** colunas `cinco_s.fotos_antes_extra` e `fotos_depois_extra` (até 4 cada), função `cinco_s_caminhos_ok`, checks, gatilho `cinco_s_proteger` recriado, política de insert ajustada, `grant update (fotos_depois_extra)`, `bi.cinco_s` com quantidade de fotos. Rodar depois do 018. |
+| `update_020_admin.sql` | `profiles.admin`, `proteger_profiles` protege também `admin`, `eh_admin()`, tabela `admin_acoes` (tela Usuários, v1.7.0). |
 | `update_018_cinco_s.sql` | **Gestão Planta 1 / 5S:** área `gestao_p1`; tabela `cinco_s` (RLS por área, gatilho `cinco_s_proteger`); bucket privado `cinco-s` no Storage com políticas por área; Realtime; view `bi.cinco_s`. Não depende do 015/016/017. Depois de rodar, libere a área para quem for usar (`usuario_areas`). |
 | `update_017_localizacao.sql` | **Gestão / Localização + correção de ocorrência:** tabela `equipamento_locais` (RLS por área; registra qualquer conta da Gestão; anula o supervisor), colunas `ocorrencias.editada_em/editada_por`, gatilho `ocorrencia_proteger` atualizado (permite corrigir categoria/motivo/descrição enquanto aberta), Realtime, views `bi.equipamento_locais` e `bi.equipamento_local_atual`. Rodar depois do 016. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |
 | `update_016_paradas.sql` | **Gestão / Paradas e manutenção:** tabela `ocorrencias` (RLS por área, abertura por qualquer conta da Gestão, liberação e anulação só do supervisor), uma em aberto por equipamento, gatilho `ocorrencia_proteger`, Realtime, view `bi.manutencao_ocorrencias`. Rodar depois do 015. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |

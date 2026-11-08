@@ -201,6 +201,8 @@ const APP_HTML = `
     <!-- GESTÃO PLANTA 1 · 5S -->
     <section class="view" id="view-c5resumo"><div id="c5resumo-body"></div></section>
     <section class="view" id="view-c5lista"><div id="c5lista-body"></div></section>
+    <!-- USUÁRIOS (só administrador; sem aba embaixo) -->
+    <section class="view" id="view-usuarios"><div id="usuarios-body"></div></section>
   </main>
 
   <nav class="bottom">
@@ -646,11 +648,12 @@ async function onAuthed(user){
     state.areas = areas; state.area = escolhida;
     areaNome = (areas.find(a=>a.id===escolhida)||{}).nome || '';
   }
-  state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador', area: state.area, areaNome };
+  state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador', area: state.area, areaNome, admin: !!(profile && profile.admin === true) };
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='flex';
   applyRoleUI();
   montarBotaoArea();
+  montarBotaoUsuarios();
   esconderAbasPorArea();
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
@@ -1248,6 +1251,7 @@ function renderView(name){
   else if (name==='gequip') renderGEquip();
   else if (name==='c5resumo') renderC5Resumo();
   else if (name==='c5lista') renderC5Lista();
+  else if (name==='usuarios'){ admRender(); if (!admEstado().usuarios && !admEstado().carregando && !admEstado().erro) admCarregar(); }
 }
 
 /* ================= DASHBOARD ================= */
@@ -5737,6 +5741,172 @@ document.getElementById('sheet-content').addEventListener('click', c5Clique);
 function subscribeCinco(){
   const c = db.collection('cinco_s'); c.orderBy('abertoEm','desc'); c.limit(5000);
   c.onSnapshot(snap=>{ state.cincoS = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
+}
+
+/* ================= USUÁRIOS (só para o administrador) =================
+   Tela para criar login, bloquear/reativar, trocar papel, escolher as áreas e redefinir senha.
+   Tudo passa pela Edge Function "admin-usuarios", que confere no servidor se quem chama é administrador
+   (profiles.admin, marcado só pelo SQL). O botão só aparece para quem é admin, mas a trava de verdade é no servidor. */
+const ADM_FUNCAO = 'admin-usuarios';
+function admEstado(){ return state.adm || (state.adm = { usuarios:null, areas:[], erro:'', carregando:false }); }
+function admEhAdmin(){ return !!(state.user && state.user.admin); }
+async function admChamar(acao, dados){
+  let r;
+  try{ r = await sb.functions.invoke(ADM_FUNCAO, { body: Object.assign({ acao }, dados||{}) }); }
+  catch(e){ throw new Error('Não consegui falar com o servidor (sem internet?).'); }
+  if (r.error){
+    const st = r.error.context && r.error.context.status;
+    if (st === 404 || /not.?found|Failed to send|FunctionsFetchError|FunctionsRelayError/i.test(String(r.error.name||'')+' '+String(r.error.message||'')))
+      throw new Error('Sem resposta da função "admin-usuarios": sem internet ou ela ainda não foi publicada no Supabase.');
+    throw new Error(r.error.message || 'Erro ao falar com o servidor.');
+  }
+  if (!r.data) throw new Error('Resposta vazia do servidor.');
+  if (r.data.erro) throw new Error(r.data.erro);
+  return r.data;
+}
+async function admCarregar(){
+  const E = admEstado(); if (E.carregando) return;
+  E.carregando = true; E.erro = ''; admRender();
+  try{ const d = await admChamar('listar'); E.usuarios = d.usuarios||[]; E.areas = d.areas||[]; }
+  catch(e){ E.erro = e.message; }
+  E.carregando = false; admRender();
+}
+function admNomeArea(id){ const a = admEstado().areas.find(x=>x.id===id); return a ? a.nome : id; }
+function admSenhaAleatoria(){
+  const al = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = '';
+  try{ const v = new Uint32Array(10); crypto.getRandomValues(v); v.forEach(n=>{ s += al[n % al.length]; }); }
+  catch(e){ for (let i=0;i<10;i++) s += al[Math.floor(Math.random()*al.length)]; }
+  return s;
+}
+function admRender(){
+  const body = document.getElementById('usuarios-body'); if (!body) return;
+  const E = admEstado();
+  const topo = '<div class="adm-topo"><button class="link-btn" data-adm-act="voltar">← voltar</button><h2 class="adm-h">Usuários</h2></div>';
+  if (!admEhAdmin()){ body.innerHTML = topo + '<div class="card">Só o administrador vê esta tela.</div>'; return; }
+  if (E.carregando && !E.usuarios){ body.innerHTML = topo + '<div class="card">Carregando…</div>'; return; }
+  if (E.erro && !E.usuarios){
+    body.innerHTML = topo + '<div class="card left-danger"><b>Não foi possível abrir.</b><p class="hint" style="margin:6px 0 10px;">'+esc(E.erro)+'</p>'
+      + '<button class="btn" data-adm-act="recarregar">Tentar de novo</button></div>';
+    return;
+  }
+  const us = E.usuarios || [];
+  body.innerHTML = topo
+    + '<div class="btn-row" style="margin-bottom:12px;"><button class="btn primary" data-adm-act="novo">+ Novo usuário</button><button class="btn ghost small" data-adm-act="recarregar" style="border:1px solid var(--border);">'+(E.carregando?'…':'Atualizar')+'</button></div>'
+    + (E.erro ? '<div class="card left-danger">'+esc(E.erro)+'</div>' : '')
+    + '<p class="hint" style="margin:0 0 10px;">'+us.length+' conta(s). Toque numa para mudar áreas, papel, bloquear ou trocar a senha. Contas nunca são apagadas: bloqueie.</p>'
+    + us.map(u=>'<div class="card adm-card'+(u.ativo?'':' adm-off')+'" data-adm-act="editar" data-id="'+esc(u.id)+'">'
+      + '<div class="adm-nome">'+esc(u.nome||'(sem nome)')+(u.id===state.user.id?' <span class="adm-eu">você</span>':'')+'</div>'
+      + '<div class="hint" style="margin:2px 0 8px;">'+esc(u.email||'')+'</div>'
+      + '<div class="adm-chips">'
+      + (u.admin?'<span class="adm-chip adm-chip-adm">admin</span>':'')
+      + '<span class="adm-chip">'+(u.role==='supervisor'?'supervisor':'operador')+'</span>'
+      + (u.ativo?'':'<span class="adm-chip adm-chip-off">bloqueado</span>')
+      + (u.areas.length ? u.areas.map(a=>'<span class="adm-chip adm-chip-area">'+esc(admNomeArea(a))+'</span>').join('') : '<span class="adm-chip adm-chip-off">sem área</span>')
+      + '</div></div>').join('');
+}
+function admChecksAreas(sel, travadas){
+  return admEstado().areas.filter(a=>a.ativa || sel.includes(a.id)).map(a=>
+    '<label class="adm-chk"><input type="checkbox" data-adm-area="'+esc(a.id)+'"'+(sel.includes(a.id)?' checked':'')+(travadas&&travadas.includes(a.id)?' disabled':'')+'> '+esc(a.nome)+(a.ativa?'':' (desativada)')+'</label>').join('');
+}
+function admAreasMarcadas(){ return [...document.querySelectorAll('#sheet-content [data-adm-area]')].filter(i=>i.checked).map(i=>i.getAttribute('data-adm-area')); }
+function admNovoSheet(){
+  const E = admEstado();
+  openSheet('<h3 class="adm-sh">Novo usuário</h3>'
+    + '<label class="field-label">Nome</label><input type="text" id="adm-nome" maxlength="80" placeholder="Nome e sobrenome">'
+    + '<label class="field-label">E-mail (é o login)</label><input type="text" id="adm-email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="pessoa@empresa.com">'
+    + '<label class="field-label">Senha inicial (passe para a pessoa)</label>'
+    + '<div class="btn-row" style="margin-bottom:9px;"><input type="text" id="adm-senha" autocapitalize="off" autocomplete="off" value="'+esc(admSenhaAleatoria())+'" style="margin:0;"><button class="btn ghost small" data-adm-act="gerar" data-alvo="adm-senha" style="border:1px solid var(--border);">Gerar</button></div>'
+    + '<label class="field-label">Papel</label><select id="adm-role"><option value="operador">Operador</option><option value="supervisor">Supervisor</option></select>'
+    + '<label class="field-label" style="margin-top:10px;">Áreas que pode acessar</label><div class="adm-areas">'+admChecksAreas([])+'</div>'
+    + '<button class="btn primary" data-adm-act="criar" style="margin-top:12px;">Criar usuário</button>');
+}
+function admResultadoSheet(titulo, email, senha){
+  const txt = 'STOKK\nLogin: '+email+'\nSenha: '+senha;
+  openSheet('<h3 class="adm-sh">'+esc(titulo)+'</h3>'
+    + '<p class="hint" style="margin:0 0 10px;">Passe estes dados para a pessoa. <b>A senha não aparece de novo</b> depois que você fechar esta tela.</p>'
+    + '<div class="card adm-cred"><div>Login: <b>'+esc(email)+'</b></div><div>Senha: <b>'+esc(senha)+'</b></div></div>'
+    + '<button class="btn primary" data-adm-act="copiar" data-txt="'+esc(txt)+'">Copiar login e senha</button>'
+    + '<button class="btn ghost" data-adm-act="fechar" style="border:1px solid var(--border);">Fechar</button>');
+}
+function admEditarSheet(id){
+  const E = admEstado(); const u = (E.usuarios||[]).find(x=>x.id===id); if (!u) return;
+  const eu = u.id === state.user.id;
+  const travaPapel = eu || u.admin;
+  openSheet('<h3 class="adm-sh">'+esc(u.nome||'Usuário')+'</h3><div class="hint" style="margin:-4px 0 10px;">'+esc(u.email)+(u.ativo?'':' · <b>bloqueado</b>')+'</div>'
+    + '<input type="hidden" id="adm-id" value="'+esc(u.id)+'">'
+    + '<label class="field-label">Nome</label><input type="text" id="adm-nome" maxlength="80" value="'+esc(u.nome)+'">'
+    + '<label class="field-label">Papel</label><select id="adm-role"'+(travaPapel?' disabled':'')+'><option value="operador"'+(u.role!=='supervisor'?' selected':'')+'>Operador</option><option value="supervisor"'+(u.role==='supervisor'?' selected':'')+'>Supervisor</option></select>'
+    + (travaPapel?'<p class="hint" style="margin:4px 0 0;">'+(eu?'Você não muda o seu próprio papel.':'Outro administrador só muda pelo SQL.')+'</p>':'')
+    + '<label class="field-label" style="margin-top:10px;">Áreas que pode acessar</label><div class="adm-areas">'+admChecksAreas(u.areas, eu?u.areas:null)+'</div>'
+    + (eu?'<p class="hint" style="margin:4px 0 0;">Na sua conta você só acrescenta áreas, não tira.</p>':'')
+    + '<button class="btn primary" data-adm-act="salvar" style="margin-top:12px;">Salvar</button>'
+    + '<label class="field-label" style="margin-top:6px;">Nova senha</label>'
+    + '<div class="btn-row" style="margin-bottom:9px;"><input type="text" id="adm-senha" autocapitalize="off" autocomplete="off" placeholder="mínimo 8 caracteres" style="margin:0;"><button class="btn ghost small" data-adm-act="gerar" data-alvo="adm-senha" style="border:1px solid var(--border);">Gerar</button></div>'
+    + '<button class="btn" data-adm-act="senha">Redefinir senha</button>'
+    + ((eu||u.admin)?'':'<button class="btn '+(u.ativo?'danger':'ok')+'" data-adm-act="ativo" data-novo="'+(u.ativo?'0':'1')+'">'+(u.ativo?'Bloquear acesso':'Reativar acesso')+'</button>'));
+}
+async function admExecutar(btn, fn){
+  if (btn) btn.disabled = true;
+  try{ await fn(); }
+  catch(e){ toast(e.message || 'Erro.', 5000); }
+  finally{ if (btn) btn.disabled = false; }
+}
+function admClique(e){
+  const t = e.target.closest('[data-adm-act]'); if (!t || !admEhAdmin()) return;
+  const act = t.getAttribute('data-adm-act'); const E = admEstado();
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  if (act === 'voltar'){ setView(ABA_INICIAL[state.area] || 'dashboard'); }
+  else if (act === 'recarregar'){ admCarregar(); }
+  else if (act === 'novo'){ admNovoSheet(); }
+  else if (act === 'editar'){ admEditarSheet(t.getAttribute('data-id')); }
+  else if (act === 'fechar'){ closeSheet(); }
+  else if (act === 'gerar'){ const el = document.getElementById(t.getAttribute('data-alvo')); if (el) el.value = admSenhaAleatoria(); }
+  else if (act === 'copiar'){
+    const txt = t.getAttribute('data-txt')||'';
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(()=>toast('Copiado.'), ()=>toast('Não consegui copiar; anote os dados.'));
+  }
+  else if (act === 'criar'){
+    const dados = { nome: val('adm-nome').trim(), email: val('adm-email').trim(), senha: val('adm-senha'), role: val('adm-role'), areas: admAreasMarcadas() };
+    if (dados.nome.length < 2) return toast('Informe o nome.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(dados.email)) return toast('E-mail inválido.');
+    if (dados.senha.length < 8) return toast('A senha precisa ter pelo menos 8 caracteres.');
+    if (!dados.areas.length) return toast('Escolha pelo menos uma área.');
+    admExecutar(t, async ()=>{
+      const r = await admChamar('criar', dados);
+      admResultadoSheet('Usuário criado', r.email || dados.email, dados.senha);
+      admCarregar();
+    });
+  }
+  else if (act === 'salvar'){
+    const id = val('adm-id'); const u = (E.usuarios||[]).find(x=>x.id===id); if (!u) return;
+    const dados = { id, nome: val('adm-nome').trim(), areas: admAreasMarcadas() };
+    if (!document.getElementById('adm-role').disabled) dados.role = val('adm-role');
+    if (dados.nome.length < 2) return toast('Informe o nome.');
+    if (!dados.areas.length) return toast('Deixe pelo menos uma área.');
+    admExecutar(t, async ()=>{ await admChamar('atualizar', dados); closeSheet(); toast('Salvo.'); admCarregar(); });
+  }
+  else if (act === 'senha'){
+    const id = val('adm-id'); const u = (E.usuarios||[]).find(x=>x.id===id); const senha = val('adm-senha');
+    if (!u) return;
+    if (senha.length < 8) return toast('A senha precisa ter pelo menos 8 caracteres.');
+    admExecutar(t, async ()=>{ await admChamar('senha', { id, senha }); admResultadoSheet('Senha redefinida', u.email, senha); });
+  }
+  else if (act === 'ativo'){
+    const id = val('adm-id'); const u = (E.usuarios||[]).find(x=>x.id===id); if (!u) return;
+    const novo = t.getAttribute('data-novo') === '1';
+    if (!novo && !confirm('Bloquear '+(u.nome||u.email)+'? A pessoa não consegue mais entrar (nada é apagado).')) return;
+    admExecutar(t, async ()=>{ await admChamar('atualizar', { id, ativo: novo }); closeSheet(); toast(novo?'Acesso reativado.':'Acesso bloqueado.'); admCarregar(); });
+  }
+}
+function montarBotaoUsuarios(){
+  if (!admEhAdmin() || document.getElementById('btn-usuarios')) return;
+  const bar = document.querySelector('.topbar-actions'); if (!bar) return;
+  const b = document.createElement('button');
+  b.className = 'link-btn'; b.id = 'btn-usuarios'; b.title = 'Gerenciar usuários'; b.textContent = 'usuários';
+  bar.insertBefore(b, document.getElementById('btn-area') || document.getElementById('btn-theme-toggle') || document.getElementById('btn-logout'));
+  b.addEventListener('click', ()=>{ setView('usuarios'); });
+  document.getElementById('view-usuarios').addEventListener('click', admClique);
+  document.getElementById('sheet-content').addEventListener('click', admClique);
 }
 
 /* ================= XLSX EXPORT ================= */
