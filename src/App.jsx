@@ -203,6 +203,8 @@ const APP_HTML = `
     <section class="view" id="view-c5lista"><div id="c5lista-body"></div></section>
     <!-- USUÁRIOS (só administrador; sem aba embaixo) -->
     <section class="view" id="view-usuarios"><div id="usuarios-body"></div></section>
+    <!-- MENU DO AMBIENTE (teste, só site) -->
+    <section class="view" id="view-menu"><div id="menu-body"></div></section>
     <!-- STOKKBOOK (feed; sem aba embaixo) -->
     <section class="view" id="view-stokkbook"><div id="stokkbook-body"></div></section>
   </main>
@@ -357,6 +359,57 @@ const ABAS_P1 = ['c5resumo','c5lista'];
 // áreas com abas próprias: só mostram as suas; as demais áreas escondem todas essas abas
 const ABAS_DA_AREA = { gestao: ABAS_GESTAO, gestao_p1: ABAS_P1 };
 const ABA_INICIAL = { gestao: 'gdash', gestao_p1: 'c5resumo' };
+/* ================= MENU POR AMBIENTE (TESTE — só no site, não no APK) =================
+   Agrupa áreas num ambiente com menu: "Laminação Planta 1" -> Inventário (planta1), 5S (gestao_p1), Veículos móveis (gestao).
+   É só organização da tela: as permissões continuam por área (usuario_areas). O grupo só aparece para quem tem 2 ou mais
+   das áreas dele; trocar de módulo = trocar de área (recarrega, como o "trocar área"). No APK (Capacitor) nada muda. */
+const GRUPOS_MENU = [
+  { id:'lam', nome:'Laminação Planta 1', modulos:[
+    { area:'planta1',   nome:'Inventário',      icone:'📦', desc:'Estoque, bipar e conferência' },
+    { area:'gestao_p1', nome:'5S',              icone:'🧹', desc:'Antes e depois, resumo do mês' },
+    { area:'gestao',    nome:'Veículos móveis', icone:'🚜', desc:'Abastecimento, manutenção e localização' } ] },
+];
+// ---- MENU-CORE-INICIO (testado em tests/menu_core.test.cjs) ----
+function menuGrupos(areas, nativo, grupos){
+  if (nativo) return [];
+  return (grupos||[]).map(g=>({ id:g.id, nome:g.nome, modulos:g.modulos, meus:g.modulos.filter(m=>(areas||[]).some(a=>a.id===m.area)) }))
+    .filter(g=>g.meus.length >= 2);
+}
+// itens do seletor de área: as áreas de um grupo viram UM item (id = primeira área dele que a pessoa tem)
+function areasColapsadas(areas, nativo, grupos){
+  const gs = menuGrupos(areas, nativo, grupos), itens = [], visto = {};
+  (areas||[]).forEach(a=>{
+    const g = gs.find(x=>x.meus.some(m=>m.area === a.id));
+    if (!g){ itens.push({ id:a.id, nome:a.nome, membros:[a.id] }); return; }
+    if (visto[g.id]) return; visto[g.id] = true;
+    itens.push({ id:g.meus[0].area, nome:g.nome, membros:g.meus.map(m=>m.area), grupo:g.id });
+  });
+  return itens;
+}
+function rotuloAmbiente(grupo, area, nomeArea){
+  if (!grupo) return nomeArea || '';
+  const m = grupo.modulos.find(x=>x.area === area);
+  return grupo.nome + (m ? ' › '+m.nome : '');
+}
+// ---- MENU-CORE-FIM ----
+function menuGrupoAtual(){ return menuGrupos(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).find(g=>g.meus.some(m=>m.area === state.area)) || null; }
+function renderMenu(){
+  const body = document.getElementById('menu-body'), g = state.menuGrupo; if (!body || !g) return;
+  body.innerHTML = '<div class="menu-tit">'+esc(g.nome)+'</div><p class="hint" style="margin:0 0 14px;">Escolha o que quer abrir.</p>'
+    + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card'+(m.area===state.area?' atual':'')+'" data-menu-area="'+esc(m.area)+'">'
+      + '<span class="menu-ico">'+m.icone+'</span><span class="menu-nome">'+esc(m.nome)+'</span><span class="menu-desc">'+esc(m.desc||'')+'</span></button>').join('') + '</div>';
+  const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = g.nome;
+}
+function abrirModulo(area){
+  const g = state.menuGrupo; if (!g) return;
+  if (area === state.area){ setView(ABA_INICIAL[state.area] || 'dashboard'); return; }
+  const nome = (g.modulos.find(m=>m.area===area)||{}).nome || '';
+  salvarArea(state.user.id, area);
+  try{ sessionStorage.setItem('stokk_modulo_direto', '1'); }catch(e){}   // depois de recarregar, abre o módulo (não o menu)
+  mostrarTrocaArea(nome);
+  setTimeout(()=>location.reload(), 600);
+}
+
 function esconderAbasPorArea(){
   const propria = state.area ? ABAS_DA_AREA[state.area] : null;
   const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
@@ -383,7 +436,7 @@ function escolherAreaTela(areas, nomeUsuario){
     el.innerHTML = '<div style="max-width:420px;width:100%;margin:0 auto;">'
       + '<h2 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Escolha a área</h2>'
       + '<p class="hint" style="margin:0 0 16px;">'+esc(nomeUsuario)+', em qual área você vai trabalhar agora? Dá para trocar depois pelo botão no topo.</p>'
-      + areas.map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+esc(a.nome)+'</button>').join('')
+      + areasColapsadas(areas, Capacitor.isNativePlatform(), GRUPOS_MENU).map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+esc(a.nome)+'</button>').join('')
       + '<button class="btn ghost" id="area-sair">Sair</button></div>';
     document.body.appendChild(el);
     el.addEventListener('click', async e=>{
@@ -414,24 +467,26 @@ function esconderTrocaArea(){
   setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 300);
 }
 function montarBotaoArea(){
-  if (!state.areas || state.areas.length < 2 || document.getElementById('btn-area')) return;
+  if (!state.areas || areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).length < 2 || document.getElementById('btn-area')) return;
   const bar = document.querySelector('.topbar-actions'); if (!bar) return;
   const b = document.createElement('button');
   b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = 'trocar área';
   bar.insertBefore(b, document.getElementById('btn-theme-toggle') || document.getElementById('btn-logout'));
   b.addEventListener('click', ()=>{
-    const atual = state.areas.find(a=>a.id===state.area);
+    const itens = areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU);
+    const atual = itens.find(a=>a.membros.includes(state.area));
     openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Trocar de área</h3>'
       + '<p class="hint" style="margin:0 0 14px;">Área atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
-      + state.areas.map(a=>'<button class="btn '+(a.id===state.area?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+esc(a.nome)+(a.id===state.area?' · atual':'')+'</button>').join(''));
+      + itens.map(a=>'<button class="btn '+(a===atual?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+esc(a.nome)+(a===atual?' · atual':'')+'</button>').join(''));
   });
   document.getElementById('sheet-content').addEventListener('click', e=>{
     const t = e.target.closest('[data-troca-area]'); if (!t) return;
     const novo = t.getAttribute('data-troca-area');
     closeSheet();
-    if (novo === state.area) return;
+    const itemNovo = areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).find(a=>a.id===novo);
+    if (itemNovo && itemNovo.membros.includes(state.area)){ if (state.menuGrupo) setView('menu'); return; }   // já está nesse ambiente: abre o menu
     salvarArea(state.user.id, novo);
-    const nomeNovo = (state.areas.find(a=>a.id===novo)||{}).nome || '';
+    const nomeNovo = itemNovo ? itemNovo.nome : ((state.areas.find(a=>a.id===novo)||{}).nome || '');
     try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
     mostrarTrocaArea(nomeNovo);
     setTimeout(()=>location.reload(), 600);
@@ -649,6 +704,8 @@ async function onAuthed(user){
     salvarArea(user.id, escolhida);
     state.areas = areas; state.area = escolhida;
     areaNome = (areas.find(a=>a.id===escolhida)||{}).nome || '';
+    state.menuGrupo = menuGrupoAtual();
+    if (state.menuGrupo) areaNome = rotuloAmbiente(state.menuGrupo, escolhida, areaNome);
   }
   state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador', area: state.area, areaNome, admin: !!(profile && profile.admin === true) };
   document.getElementById('login-screen').style.display='none';
@@ -661,9 +718,14 @@ async function onAuthed(user){
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
   state.ready.db = true; state.ready.downloads = true;
-  document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
+  document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + (state.menuGrupo ? '<button type="button" class="link-btn sub-menu" id="btn-menu">☰ menu</button>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
-  setView(ABA_INICIAL[state.area] || 'dashboard');
+  if (state.menuGrupo){
+    document.getElementById('btn-menu').addEventListener('click', ()=>setView('menu'));
+    document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c) abrirModulo(c.getAttribute('data-menu-area')); });
+  }
+  let direto = false; try{ direto = sessionStorage.getItem('stokk_modulo_direto') === '1'; sessionStorage.removeItem('stokk_modulo_direto'); }catch(e){}
+  setView(state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard'));
   registrarPush(user.id);
   atuVerificar(true);
 }
@@ -1202,6 +1264,8 @@ function subscribeData(){
 /* ---------------- NAV / ROUTER ---------------- */
 function setView(name){
   state.view = name;
+  document.body.classList.toggle('em-menu', name === 'menu');
+  if (name !== 'menu' && state.menuGrupo){ const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = state.user.areaNome; }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   // a tela de Bipar (#view-scan) tem duas formas de aparecer: sozinha (aba "Bipar",
@@ -1255,6 +1319,7 @@ function renderView(name){
   else if (name==='gequip') renderGEquip();
   else if (name==='c5resumo') renderC5Resumo();
   else if (name==='c5lista') renderC5Lista();
+  else if (name==='menu') renderMenu();
   else if (name==='stokkbook'){ sbkRender(); sbkMarcarVisto(); sbkCarregar(true); }
   else if (name==='usuarios'){ admRender(); if (!admEstado().usuarios && !admEstado().carregando && !admEstado().erro) admCarregar(); }
 }
