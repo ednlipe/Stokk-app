@@ -33,3 +33,8 @@
 ### Assinatura e atualização do APK (v1.7.1)
 - O APK é assinado com uma chave fixa guardada só nos segredos do GitHub (e uma cópia offline com o dono). Nunca versionar `.jks` (já no `.gitignore`). Perder a chave = todos precisam desinstalar/reinstalar; vazar a chave = qualquer um pode publicar APK que o Android aceita como atualização (trocar a chave e reinstalar).
 - O app só baixa de `https://github.com/<repo>/releases/download/…`, confere o SHA-256 do `versao.json` e o Android ainda exige o toque em **Instalar** e que o APK tenha a mesma assinatura. Permissão `REQUEST_INSTALL_PACKAGES` no manifesto.
+
+### Stokkbook (v1.8.0)
+- O feed obedece à regra de áreas: `stokkbook_posts` só é lido por quem tem a `area` do post (e post oculto só por supervisor); as fotos continuam no bucket privado `cinco-s` (mesma regra de pasta/área, links temporários de 1 h).
+- Posts nascem só pelo gatilho do 5S (ninguém insere/apaga/edita texto pelo app). Reações: uma por pessoa, só a própria pode mexer; o nome vem do perfil, não do app.
+- Moderação: só supervisor oculta (com motivo, registrado quem/quando); nada é apagado. 5S anulado oculta o post.

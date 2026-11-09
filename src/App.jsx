@@ -203,6 +203,8 @@ const APP_HTML = `
     <section class="view" id="view-c5lista"><div id="c5lista-body"></div></section>
     <!-- USUÁRIOS (só administrador; sem aba embaixo) -->
     <section class="view" id="view-usuarios"><div id="usuarios-body"></div></section>
+    <!-- STOKKBOOK (feed; sem aba embaixo) -->
+    <section class="view" id="view-stokkbook"><div id="stokkbook-body"></div></section>
   </main>
 
   <nav class="bottom">
@@ -653,6 +655,7 @@ async function onAuthed(user){
   document.getElementById('app').style.display='flex';
   applyRoleUI();
   montarBotaoArea();
+  montarBotaoStokkbook();
   montarBotaoUsuarios();
   esconderAbasPorArea();
   db = createSupabaseDB();
@@ -1252,6 +1255,7 @@ function renderView(name){
   else if (name==='gequip') renderGEquip();
   else if (name==='c5resumo') renderC5Resumo();
   else if (name==='c5lista') renderC5Lista();
+  else if (name==='stokkbook'){ sbkRender(); sbkMarcarVisto(); sbkCarregar(true); }
   else if (name==='usuarios'){ admRender(); if (!admEstado().usuarios && !admEstado().carregando && !admEstado().erro) admCarregar(); }
 }
 
@@ -5655,9 +5659,9 @@ function c5AbrirSheet(){
     }catch(e){ console.error(e); toast('Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.', 4500); ok.disabled = false; ok.textContent = concluir ? 'Salvar e concluir' : 'Salvar em aberto'; }
   };
 }
-async function c5ConcluirGravar(id, blobs, acao, quando, progresso){
+async function c5ConcluirGravar(id, blobs, acao, quando, progresso, postar){
   const pD = await c5EnviarVarias(id, quando, 'depois', blobs, progresso);
-  await db.collection('cinco_s').doc(id).update({ concluidoEm:quando.toISOString(), concluidoPorNome:state.user.nome, fotoDepois:pD[0], ...(pD.length>1 ? { fotosDepoisExtra:pD.slice(1) } : {}), acao });
+  await db.collection('cinco_s').doc(id).update({ concluidoEm:quando.toISOString(), concluidoPorNome:state.user.nome, fotoDepois:pD[0], ...(pD.length>1 ? { fotosDepoisExtra:pD.slice(1) } : {}), ...(postar === false ? { postarStokkbook:false } : {}), acao });
 }
 function c5ConcluirSheet(id){
   const r = state.cincoS.find(x=>x.id===id); if (!r || r.concluidoEm || r.anulado) return;
@@ -5667,6 +5671,7 @@ function c5ConcluirSheet(id){
     + c5CampoFoto('c5-f-depois','Foto do DEPOIS')
     + '<label class="field-label">O que foi feito</label><input type="text" id="c5-acao" maxlength="500" placeholder="Ex.: guardou as ferramentas no painel">'
     + '<label class="field-label">Data e hora da conclusão</label><input type="datetime-local" id="c5-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="adm-chk"><input type="checkbox" id="c5-post" checked> Postar no Stokkbook 🎉</label>'
     + '<button class="btn primary" id="c5-ok">Concluir 5S</button>');
   c5Hidratar(document.getElementById('sheet-content')); c5LigarFoto('c5-f-depois', depois);
   document.getElementById('c5-ok').onclick = async ()=>{
@@ -5678,7 +5683,7 @@ function c5ConcluirSheet(id){
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
     const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando fotos…';
     try{
-      await c5ConcluirGravar(id, depois.blobs, acao, quando, t=>{ b.textContent = t; });
+      await c5ConcluirGravar(id, depois.blobs, acao, quando, t=>{ b.textContent = t; }, document.getElementById('c5-post').checked);
       if (db.refetchAll) await db.refetchAll();
       const novo = state.cincoS.find(x=>x.id===id);
       if (novo && novo.concluidoEm){ closeSheet(); toast('5S concluído.'); }
@@ -5742,6 +5747,167 @@ document.getElementById('sheet-content').addEventListener('click', c5Clique);
 function subscribeCinco(){
   const c = db.collection('cinco_s'); c.orderBy('abertoEm','desc'); c.limit(5000);
   c.onSnapshot(snap=>{ state.cincoS = snap.docs.map(d=>d.data()); renderAll(); }, err=>{ console.error(err); });
+}
+
+/* ================= STOKKBOOK (feed de reconhecimento) =================
+   Feed com o que acontece no app, hoje: 5S concluídos (o post nasce sozinho no banco quando a pessoa deixa a caixinha
+   "Postar no Stokkbook" marcada). Cada pessoa vê só as áreas que acessa. Reações: 👏 🎉 🚀 👍 (uma por pessoa).
+   Supervisor oculta (com motivo) e reexibe; nada se apaga. Tabelas: stokkbook_posts, stokkbook_reacoes (update_021). */
+const SBK_LIMITE = 60;
+const SBK_EMOJIS = [['palmas','👏'],['confete','🎉'],['foguete','🚀'],['joia','👍']];
+// ---- SBK-CORE-INICIO (testado em tests/stokkbook_core.test.cjs) ----
+function sbkResumoReacoes(reacoes, postId, meuId){
+  const por = {}; let meu = null;
+  (reacoes||[]).forEach(r=>{ if (r.post_id !== postId) return; por[r.emoji] = (por[r.emoji]||0) + 1; if (r.user_id === meuId) meu = r.emoji; });
+  return { por, meu, total: Object.keys(por).reduce((s,k)=>s+por[k],0) };
+}
+function sbkQuemReagiu(reacoes, postId, meuId){
+  const nomes = (reacoes||[]).filter(r=>r.post_id === postId).sort((a,b)=>String(a.criado_em||'').localeCompare(String(b.criado_em||'')))
+    .map(r=>r.user_id === meuId ? 'Você' : (r.user_nome||'Alguém'));
+  const eu = nomes.indexOf('Você'); if (eu > 0){ nomes.splice(eu,1); nomes.unshift('Você'); }
+  if (!nomes.length) return '';
+  if (nomes.length <= 3) return nomes.length === 1 ? nomes[0] : nomes.slice(0,-1).join(', ')+' e '+nomes[nomes.length-1];
+  return nomes.slice(0,2).join(', ')+' e mais '+(nomes.length-2);
+}
+function sbkNovos(posts, vistoMs, meuId){
+  return (posts||[]).filter(p=>!p.oculto && p.autor_id !== meuId && new Date(p.criado_em).getTime() > vistoMs).length;
+}
+function sbkQuando(iso, agoraMs){
+  const t = new Date(iso).getTime(), d = (agoraMs - t) / 60000;
+  if (!isFinite(d)) return '';
+  if (d < 1) return 'agora';
+  if (d < 60) return 'há '+Math.floor(d)+' min';
+  if (d < 1440) return 'há '+Math.floor(d/60)+' h';
+  if (d < 2880) return 'ontem';
+  return null;   // mais antigo: o chamador mostra data e hora
+}
+// ---- SBK-CORE-FIM ----
+function sbkEstado(){ return state.sbk || (state.sbk = { posts:[], reacoes:[], carregando:false, erro:'', pendente:false, carregou:false }); }
+function sbkVisto(){ try{ return Number(localStorage.getItem('stokkbook_visto:'+state.user.id)) || 0; }catch(e){ return 0; } }
+function sbkMarcarVisto(){ try{ localStorage.setItem('stokkbook_visto:'+state.user.id, String(Date.now())); }catch(e){} sbkSelo(); }
+function sbkSelo(){
+  const b = document.getElementById('btn-stokkbook'); if (!b) return;
+  const E = sbkEstado();
+  let visto = sbkVisto();
+  if (!visto){ visto = Date.now(); try{ localStorage.setItem('stokkbook_visto:'+state.user.id, String(visto)); }catch(e){} }   // 1ª vez: não enche de "novidades" antigas
+  const n = (state.view === 'stokkbook') ? 0 : sbkNovos(E.posts, visto, state.user.id);
+  b.innerHTML = 'Stokkbook' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');
+}
+function sbkMsgErro(e){
+  const m = String((e && e.message) || e || '');
+  if (/does not exist|schema cache|42P01|PGRST205/i.test(m)) return 'O Stokkbook ainda não foi ativado no banco (rodar o update_021_stokkbook.sql).';
+  return 'Não consegui carregar o Stokkbook: '+m;
+}
+async function sbkCarregar(silencioso){
+  const E = sbkEstado();
+  if (E.carregando){ E.pendente = true; return; }
+  E.carregando = true; if (!silencioso){ E.erro = ''; if (state.view === 'stokkbook') sbkRender(); }
+  try{
+    const p = await sb.from('stokkbook_posts').select('*').order('quando', { ascending:false }).limit(SBK_LIMITE);
+    if (p.error) throw p.error;
+    const ids = (p.data||[]).map(x=>x.id);
+    let re = [];
+    if (ids.length){
+      const r = await sb.from('stokkbook_reacoes').select('post_id,user_id,user_nome,emoji,criado_em').in('post_id', ids);
+      if (r.error) throw r.error; re = r.data || [];
+    }
+    E.posts = p.data || []; E.reacoes = re; E.erro = ''; E.carregou = true;
+  }catch(e){ if (!E.carregou) E.erro = sbkMsgErro(e); console.warn('stokkbook', e); }
+  E.carregando = false;
+  sbkSelo(); if (state.view === 'stokkbook') sbkRender();
+  if (E.pendente){ E.pendente = false; sbkCarregar(true); }
+}
+let sbkTimer = null;
+function subscribeStokkbook(){
+  if (state.sbkCanal) return;
+  state.sbkCanal = sb.channel('rt-stokkbook')
+    .on('postgres_changes', { event:'*', schema:'public', table:'stokkbook_posts' }, ()=>{ clearTimeout(sbkTimer); sbkTimer = setTimeout(()=>sbkCarregar(true), 500); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'stokkbook_reacoes' }, ()=>{ clearTimeout(sbkTimer); sbkTimer = setTimeout(()=>sbkCarregar(true), 500); })
+    .subscribe();
+}
+function sbkNomeArea(id){ const a = (state.areas||[]).find(x=>x.id===id); return a ? a.nome : id; }
+function sbkCartao(p){
+  const E = sbkEstado(), res = sbkResumoReacoes(E.reacoes, p.id, state.user.id);
+  const rel = sbkQuando(p.quando, Date.now());
+  const nome = p.autor_nome || 'Alguém';
+  const sup = state.user.role === 'supervisor';
+  const quem = sbkQuemReagiu(E.reacoes, p.id, state.user.id);
+  return '<div class="card sbk-card'+(p.oculto?' sbk-oculto':'')+'" data-id="'+p.id+'">'
+    + '<div class="sbk-head"><div class="sbk-av">'+esc(nome.trim().charAt(0).toUpperCase())+'</div><div class="sbk-quem">'
+    + '<div><b>'+esc(nome)+'</b> concluiu um 5S</div>'
+    + '<div class="hint" style="margin:0;">'+esc(p.setor||'')+' · '+esc(sbkNomeArea(p.area))+' · '+(rel || dslDataCurta(p.quando))+'</div></div></div>'
+    + (p.oculto ? '<div class="sbk-aviso">Oculto'+(p.oculto_motivo?': '+esc(p.oculto_motivo):'')+' (só supervisor vê)</div>' : '')
+    + '<div class="sbk-txt"><span class="hint" style="margin:0;">Problema:</span> '+esc(p.problema||'')+'<br><span class="hint" style="margin:0;">Feito:</span> <b>'+esc(p.acao||'')+'</b></div>'
+    + '<div class="sbk-fotos"><figure>'+c5Img(p.foto_antes,'sbk-foto')+'<figcaption>Antes'+(p.fotos_antes>1?' (+'+(p.fotos_antes-1)+')':'')+'</figcaption></figure>'
+    + '<figure>'+c5Img(p.foto_depois,'sbk-foto')+'<figcaption>Depois'+(p.fotos_depois>1?' (+'+(p.fotos_depois-1)+')':'')+'</figcaption></figure></div>'
+    + '<div class="sbk-react">'+SBK_EMOJIS.map(([k,e])=>'<button type="button" class="sbk-r'+(res.meu===k?' on':'')+'" data-sbk-act="reagir" data-id="'+p.id+'" data-emoji="'+k+'" aria-label="Reagir '+e+'">'+e+(res.por[k]?' <span>'+res.por[k]+'</span>':'')+'</button>').join('')+'</div>'
+    + (quem ? '<div class="hint sbk-quemr">'+esc(quem)+(res.total>1?' reagiram':' reagiu')+'</div>' : '')
+    + (sup ? '<div class="sbk-sup"><button type="button" class="link-btn" data-sbk-act="'+(p.oculto?'reexibir':'ocultar')+'" data-id="'+p.id+'">'+(p.oculto?'reexibir':'ocultar post')+'</button></div>' : '')
+    + '</div>';
+}
+function sbkRender(){
+  const body = document.getElementById('stokkbook-body'); if (!body) return;
+  const E = sbkEstado();
+  const topo = '<div class="adm-topo"><button class="link-btn" data-sbk-act="voltar">← voltar</button><h2 class="adm-h">Stokkbook</h2></div>';
+  if (E.erro && !E.carregou){ body.innerHTML = topo + '<div class="card left-danger"><p style="margin:0 0 10px;">'+esc(E.erro)+'</p><button class="btn" data-sbk-act="recarregar">Tentar de novo</button></div>'; return; }
+  if (!E.carregou){ body.innerHTML = topo + '<div class="card">Carregando…</div>'; return; }
+  if (!E.posts.length){ body.innerHTML = topo + '<div class="card"><b>Nada por aqui ainda.</b><p class="hint" style="margin:6px 0 0;">Quando alguém concluir um 5S (com a caixinha "Postar no Stokkbook" marcada), aparece aqui para todo mundo reagir 🎉</p></div>'; return; }
+  body.innerHTML = topo + E.posts.map(sbkCartao).join('');
+  c5Hidratar(body);
+}
+async function sbkReagir(postId, emoji){
+  const E = sbkEstado(), uid = state.user.id;
+  const meu = E.reacoes.find(r=>r.post_id === postId && r.user_id === uid);
+  try{
+    if (meu && meu.emoji === emoji){
+      E.reacoes = E.reacoes.filter(r=>r !== meu); sbkRender();
+      const r = await sb.from('stokkbook_reacoes').delete().eq('post_id', postId).eq('user_id', uid); if (r.error) throw r.error;
+    } else if (meu){
+      meu.emoji = emoji; sbkRender();
+      const r = await sb.from('stokkbook_reacoes').update({ emoji }).eq('post_id', postId).eq('user_id', uid); if (r.error) throw r.error;
+    } else {
+      E.reacoes.push({ post_id:postId, user_id:uid, user_nome:state.user.nome, emoji, criado_em:new Date().toISOString() }); sbkRender();
+      const r = await sb.from('stokkbook_reacoes').insert({ post_id:postId, emoji }); if (r.error) throw r.error;
+    }
+  }catch(e){ console.error(e); toast('Não consegui registrar a reação. Confira a internet.', 3500); sbkCarregar(true); }
+}
+function sbkOcultarSheet(id){
+  openSheet('<h3 class="adm-sh">Ocultar post</h3><p class="hint" style="margin:0 0 10px;">Ninguém além dos supervisores vê. Nada é apagado e dá para reexibir.</p>'
+    + '<label class="field-label">Motivo</label><input type="text" id="sbk-motivo" maxlength="200" placeholder="Ex.: foto imprópria">'
+    + '<button class="btn danger" data-sbk-act="ocultar-ok" data-id="'+id+'">Ocultar</button>');
+}
+async function sbkOcultar(id, oculto, motivo){
+  const campos = oculto ? { oculto:true, oculto_motivo:motivo } : { oculto:false };
+  const r = await sb.from('stokkbook_posts').update(campos).eq('id', id).select('id');
+  if (r.error) throw r.error;
+  if (!r.data || !r.data.length) throw new Error('Sem permissão (só supervisor da área).');
+}
+function sbkClique(e){
+  const img = e.target.closest('.sbk-foto');
+  if (img && img.dataset.c5){ openSheet('<img class="c5-img sbk-grande" data-c5="'+esc(img.dataset.c5)+'" alt="">'); c5Hidratar(document.getElementById('sheet-content')); return; }
+  const t = e.target.closest('[data-sbk-act]'); if (!t) return;
+  const act = t.getAttribute('data-sbk-act'), id = Number(t.getAttribute('data-id'));
+  if (act === 'voltar') setView(ABA_INICIAL[state.area] || 'dashboard');
+  else if (act === 'recarregar') sbkCarregar(false);
+  else if (act === 'reagir') sbkReagir(id, t.getAttribute('data-emoji'));
+  else if (act === 'ocultar') sbkOcultarSheet(id);
+  else if (act === 'ocultar-ok'){
+    const motivo = (document.getElementById('sbk-motivo').value||'').trim(); if (!motivo) return toast('Informe o motivo.');
+    t.disabled = true;
+    sbkOcultar(id, true, motivo).then(()=>{ closeSheet(); toast('Post oculto.'); sbkCarregar(true); }).catch(er=>{ t.disabled = false; toast(er.message||'Erro.', 4000); });
+  }
+  else if (act === 'reexibir') sbkOcultar(id, false).then(()=>{ toast('Post reexibido.'); sbkCarregar(true); }).catch(er=>toast(er.message||'Erro.', 4000));
+}
+function montarBotaoStokkbook(){
+  if (document.getElementById('btn-stokkbook')) return;
+  const bar = document.querySelector('.topbar-actions'); if (!bar) return;
+  const b = document.createElement('button');
+  b.className = 'link-btn'; b.id = 'btn-stokkbook'; b.textContent = 'Stokkbook';
+  bar.appendChild(b);
+  b.addEventListener('click', ()=>{ setView('stokkbook'); });
+  document.getElementById('view-stokkbook').addEventListener('click', sbkClique);
+  document.getElementById('sheet-content').addEventListener('click', sbkClique);
+  subscribeStokkbook(); sbkCarregar(true);
 }
 
 /* ================= USUÁRIOS (só para o administrador) =================

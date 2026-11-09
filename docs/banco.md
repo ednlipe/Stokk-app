@@ -93,6 +93,18 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `eh_admin()` | `security definer`; conta ativa com `admin = true`. |
 | `admin_acoes` | Registro de tudo que o admin fez pela tela (`quando`, `admin_id`, `admin_nome`, `acao` = criar/atualizar/bloquear/reativar/senha, `alvo_id`, `alvo_email`, `detalhe` jsonb). **Nunca guarda senha.** RLS: só admin lê; ninguém grava pelo app (só a função). |
 
+### 4.3.6 Stokkbook (`update_021`)
+
+| Item | Conteúdo |
+|---|---|
+| `cinco_s.postar_stokkbook` | `boolean not null default true`; a caixinha "Postar no Stokkbook" da tela de concluir (o app só envia a coluna quando desmarcada). `grant update` na coluna. |
+| `stokkbook_posts` | Um post por evento (`tipo` com check, hoje só `cinco_s`; `unique (tipo, ref_id)`). Copia textos e caminhos de foto do 5S (`area`, `autor_nome`, `setor`, `problema`, `acao`, `foto_antes`, `foto_depois`, `fotos_antes/depois`, `horas`, `quando`) + `oculto`, `oculto_motivo/por/em`. **Ninguém insere/apaga pelo app**: o gatilho `stokkbook_de_cinco_s` (AFTER UPDATE em `cinco_s`, security definer) cria o post ao concluir com a caixinha marcada e oculta o post se o 5S for anulado. |
+| RLS posts | select: `area` ∈ áreas da pessoa **e** (não oculto **ou** supervisor). update: só supervisor da área, só colunas `oculto`, `oculto_motivo` (gatilho `stokkbook_posts_proteger` exige motivo e grava quem/quando). |
+| `stokkbook_reacoes` | `(post_id, user_id)` PK (uma reação por pessoa), `emoji` ∈ palmas/confete/foguete/joia, `user_nome` preenchido pelo gatilho a partir de `profiles` (não confia no app). RLS: vê/reage quem vê o post; só mexe na própria reação. Grants de coluna: insert `(post_id, emoji)`, update `(emoji)`. |
+| Realtime | As duas tabelas na publicação `supabase_realtime`. |
+| Backfill | Os 5S já concluídos (não anulados, `postar_stokkbook` true) viram posts uma única vez. |
+| Novo tipo de evento (futuro, ex.: máquina) | Ampliar o `check` de `tipo`, criar o gatilho do evento (security definer, `on conflict do nothing`) e o texto do cartão em `sbkCartao`. |
+
 ### 4.4 Migrações (rodar no SQL Editor, nesta ordem)
 | Arquivo | O que faz |
 |---|---|
@@ -112,6 +124,7 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
 | `update_019_cinco_s_fotos.sql` | **5S com várias fotos:** colunas `cinco_s.fotos_antes_extra` e `fotos_depois_extra` (até 4 cada), função `cinco_s_caminhos_ok`, checks, gatilho `cinco_s_proteger` recriado, política de insert ajustada, `grant update (fotos_depois_extra)`, `bi.cinco_s` com quantidade de fotos. Rodar depois do 018. |
 | `update_020_admin.sql` | `profiles.admin`, `proteger_profiles` protege também `admin`, `eh_admin()`, tabela `admin_acoes` (tela Usuários, v1.7.0). |
+| `update_021_stokkbook.sql` | Stokkbook: posts e reações do feed, `cinco_s.postar_stokkbook` (v1.8.0). Depende do 018/019. |
 | `update_018_cinco_s.sql` | **Gestão Planta 1 / 5S:** área `gestao_p1`; tabela `cinco_s` (RLS por área, gatilho `cinco_s_proteger`); bucket privado `cinco-s` no Storage com políticas por área; Realtime; view `bi.cinco_s`. Não depende do 015/016/017. Depois de rodar, libere a área para quem for usar (`usuario_areas`). |
 | `update_017_localizacao.sql` | **Gestão / Localização + correção de ocorrência:** tabela `equipamento_locais` (RLS por área; registra qualquer conta da Gestão; anula o supervisor), colunas `ocorrencias.editada_em/editada_por`, gatilho `ocorrencia_proteger` atualizado (permite corrigir categoria/motivo/descrição enquanto aberta), Realtime, views `bi.equipamento_locais` e `bi.equipamento_local_atual`. Rodar depois do 016. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |
 | `update_016_paradas.sql` | **Gestão / Paradas e manutenção:** tabela `ocorrencias` (RLS por área, abertura por qualquer conta da Gestão, liberação e anulação só do supervisor), uma em aberto por equipamento, gatilho `ocorrencia_proteger`, Realtime, view `bi.manutencao_ocorrencias`. Rodar depois do 015. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |
