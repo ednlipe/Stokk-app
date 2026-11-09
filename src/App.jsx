@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import * as XLSXLib from 'xlsx';
 import { createClient } from '@supabase/supabase-js';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin, CapacitorHttp } from '@capacitor/core';
 
 /* Marcação original do app STOKK (idêntica ao index.html single-file).
    Injetada via dangerouslySetInnerHTML porque a lógica abaixo manipula
@@ -662,6 +662,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
   registrarPush(user.id);
+  atuVerificar(true);
 }
 
 /* ================= PUSH (somente no app Android) =================
@@ -5908,6 +5909,84 @@ function montarBotaoUsuarios(){
   document.getElementById('view-usuarios').addEventListener('click', admClique);
   document.getElementById('sheet-content').addEventListener('click', admClique);
 }
+
+/* ================= ATUALIZAÇÃO DO APK (só no app Android) =================
+   O GitHub publica, a cada build assinada, a Release "apk-latest" com STOKK.apk e versao.json
+   ({versao, codigo, url, sha256, notas}). Ao abrir o app (e ao voltar para ele, no máx. 1x a cada 30 min) compara
+   o "codigo" (versionCode) com o instalado. Só se for MAIOR aparece o aviso; "Depois" some até fechar o app.
+   Quem baixa e abre o instalador é o plugin nativo Atualizador (AtualizadorPlugin.java). */
+const ATU_REPO = (typeof __REPO__ !== 'undefined') ? __REPO__ : '';
+const Atualizador = registerPlugin('Atualizador');
+// ---- ATU-CORE-INICIO (testado em tests/atualizacao_core.test.cjs) ----
+function atuJsonOk(j, repo){
+  return !!j && typeof j === 'object' && !!repo
+    && Number.isFinite(Number(j.codigo)) && typeof j.versao === 'string'
+    && typeof j.url === 'string' && j.url.indexOf('https://github.com/'+repo+'/releases/download/') === 0
+    && typeof j.sha256 === 'string' && /^[0-9a-fA-F]{64}$/.test(j.sha256);
+}
+function atuNovaVersao(instaladoCodigo, remoto){
+  const a = Number(instaladoCodigo), b = remoto ? Number(remoto.codigo) : NaN;
+  return Number.isFinite(a) && Number.isFinite(b) && b > a;
+}
+// ---- ATU-CORE-FIM ----
+function atuEstado(){ return state.atu || (state.atu = { ultima:0, remoto:null, dispensada:0, baixando:false }); }
+async function atuVerificar(forcar){
+  if (!Capacitor.isNativePlatform() || !ATU_REPO) return;
+  const S = atuEstado(), agora = Date.now();
+  if (S.baixando || (!forcar && agora - S.ultima < 30*60*1000)) return;
+  if (!document.getElementById('overlay').classList.contains('hidden')) return;   // já tem uma janela aberta: tenta na próxima
+  S.ultima = agora;
+  try{
+    const inst = await Atualizador.info();
+    const r = await CapacitorHttp.get({ url:'https://github.com/'+ATU_REPO+'/releases/download/apk-latest/versao.json?t='+agora, headers:{'Cache-Control':'no-cache'} });
+    let j = r && r.data; if (typeof j === 'string'){ try{ j = JSON.parse(j); }catch(e){ j = null; } }
+    if (!r || r.status !== 200 || !atuJsonOk(j, ATU_REPO) || !atuNovaVersao(inst.codigo, j)) return;
+    if (S.dispensada === Number(j.codigo)) return;
+    S.remoto = j; S.instalada = inst;
+    atuAbrir();
+  }catch(e){ console.warn('verificar atualização', e); }
+}
+function atuAbrir(){
+  const S = atuEstado(), j = S.remoto, inst = S.instalada || {};
+  openSheet('<h3 class="adm-sh">Nova versão disponível</h3>'
+    + '<p class="hint" style="margin:0 0 10px;">Versão <b>'+esc(j.versao)+'</b> (você está na '+esc(inst.versao||'')+').'+(j.notas?'<br>'+esc(j.notas):'')+'</p>'
+    + '<div id="atu-msg" class="hint" style="margin:0 0 10px;">O app baixa sozinho e depois o Android pede para você tocar em <b>Instalar</b>.</div>'
+    + '<div class="atu-barra" id="atu-barra" style="display:none;"><div id="atu-fill"></div></div>'
+    + '<button class="btn primary" data-atu-act="atualizar" id="atu-go">Atualizar agora</button>'
+    + '<button class="btn ghost" data-atu-act="depois" id="atu-depois" style="border:1px solid var(--border);">Depois</button>');
+}
+async function atuAtualizar(){
+  const S = atuEstado(), j = S.remoto; if (!j || S.baixando) return;
+  const msg = t => { const el = document.getElementById('atu-msg'); if (el) el.innerHTML = t; };
+  const go = document.getElementById('atu-go'), dep = document.getElementById('atu-depois');
+  try{
+    const inst = await Atualizador.info();
+    if (!inst.pode){
+      msg('O Android precisa de uma permissão <b>uma única vez</b>: na tela que vai abrir, ligue <b>"Permitir deste app"</b>, volte para o STOKK e toque em Atualizar de novo.');
+      await Atualizador.abrirPermissao(); return;
+    }
+  }catch(e){ msg('Erro: '+esc(e.message||e)); return; }
+  S.baixando = true; if (go) go.disabled = true; if (dep) dep.disabled = true;
+  const barra = document.getElementById('atu-barra'), fill = document.getElementById('atu-fill'); if (barra) barra.style.display = 'block';
+  msg('Baixando…');
+  let h = null;
+  try{
+    h = await Atualizador.addListener('progresso', e=>{ if (fill) fill.style.width = (e.pct||0)+'%'; msg('Baixando… '+(e.pct||0)+'%'); });
+    await Atualizador.baixarEInstalar({ url:j.url, sha256:j.sha256 });
+    msg('Pronto. Na tela do Android, toque em <b>Instalar</b>.');
+  }catch(e){
+    msg('Não deu certo: '+esc(String(e.message||e).replace(/\.$/,''))+'. Toque em Atualizar para tentar de novo.');
+  }finally{
+    S.baixando = false; if (go){ go.disabled = false; go.textContent = 'Atualizar agora'; } if (dep) dep.disabled = false;
+    try{ if (h) h.remove(); }catch(e){}
+  }
+}
+document.getElementById('sheet-content').addEventListener('click', e=>{
+  const t = e.target.closest('[data-atu-act]'); if (!t) return;
+  if (t.getAttribute('data-atu-act') === 'depois'){ const S = atuEstado(); if (S.remoto) S.dispensada = Number(S.remoto.codigo); closeSheet(); }
+  else atuAtualizar();
+});
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && state.user) atuVerificar(false); });
 
 /* ================= XLSX EXPORT ================= */
 const COL_LABELS = {

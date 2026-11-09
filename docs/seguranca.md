@@ -29,3 +29,7 @@
 - Travas: não apaga conta (bloqueia com `ativo = false`); admin não bloqueia nem rebaixa a si mesmo, nem tira áreas da própria conta; papel/bloqueio de **outro admin** só pelo SQL.
 - Senha inicial definida pelo admin (mostrada uma vez na tela para repassar); a senha não é gravada em `admin_acoes`. Mínimo de 8 caracteres.
 - Toda ação vai para `admin_acoes`.
+
+### Assinatura e atualização do APK (v1.7.1)
+- O APK é assinado com uma chave fixa guardada só nos segredos do GitHub (e uma cópia offline com o dono). Nunca versionar `.jks` (já no `.gitignore`). Perder a chave = todos precisam desinstalar/reinstalar; vazar a chave = qualquer um pode publicar APK que o Android aceita como atualização (trocar a chave e reinstalar).
+- O app só baixa de `https://github.com/<repo>/releases/download/…`, confere o SHA-256 do `versao.json` e o Android ainda exige o toque em **Instalar** e que o APK tenha a mesma assinatura. Permissão `REQUEST_INSTALL_PACKAGES` no manifesto.

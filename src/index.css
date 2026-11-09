@@ -311,3 +311,7 @@ label.g-chk input{width:20px;height:20px;flex:none;accent-color:var(--accent);ma
 /* botão Usuários (administrador): igual ao "trocar área", em vermelho, logo abaixo dele */
 #btn-usuarios{grid-column:2 / 4;grid-row:3;background:var(--danger);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:13px;font-weight:700;text-decoration:none;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;min-height:36px;text-align:center;}
 #btn-usuarios:active{opacity:.85;}
+
+/* aviso de nova versão do APK */
+.atu-barra{height:10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden;margin:0 0 12px;}
+#atu-fill{height:100%;width:0;background:var(--accent);transition:width .2s;}

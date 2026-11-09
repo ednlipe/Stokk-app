@@ -7,6 +7,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
+permissions:
+  contents: write   # publicar o APK na Release "apk-latest"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -42,12 +45,56 @@ jobs:
       - name: Dar permissão de execução ao Gradle
         run: chmod +x android/gradlew
 
-      - name: Gerar o APK (debug — pronto pra instalar direto no celular)
+      - name: Preparar a chave de assinatura (segredos do GitHub)
+        id: chave
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/stokk.jks"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/stokk.jks" >> "$GITHUB_ENV"
+            echo "assinado=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "assinado=false" >> "$GITHUB_OUTPUT"
+            echo "Sem a chave nos segredos: vai sair só o APK de teste (debug), sem aviso de atualização."
+          fi
+
+      - name: Gerar o APK assinado (release)
+        if: steps.chave.outputs.assinado == 'true'
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - name: Gerar o APK de teste (debug, sem chave)
+        if: steps.chave.outputs.assinado != 'true'
         working-directory: android
         run: ./gradlew assembleDebug
 
-      - name: Publicar o APK gerado
+      - name: Publicar o APK de teste
+        if: steps.chave.outputs.assinado != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: STOKK-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar o APK assinado + versao.json (Release apk-latest)
+        if: steps.chave.outputs.assinado == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk STOKK.apk
+          export S=$(sha256sum STOKK.apk | cut -d' ' -f1)
+          export V=$(node -p "require('./package.json').version")
+          export C=$(grep -oP 'versionCode \K[0-9]+' android/app/build.gradle | head -1)
+          export U="https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/STOKK.apk"
+          export N=$(printf '%s' "$MSG" | head -n1 | cut -c1-200)
+          node -e "require('fs').writeFileSync('versao.json', JSON.stringify({versao:process.env.V, codigo:Number(process.env.C), url:process.env.U, sha256:process.env.S, notas:process.env.N}, null, 2))"
+          cat versao.json
+          gh release delete apk-latest --cleanup-tag --yes || true
+          gh release create apk-latest STOKK.apk versao.json --target "$GITHUB_SHA" \
+            --title "STOKK — APK mais recente (v$V)" \
+            --notes "APK assinado, gerado automaticamente. O app compara o versao.json com a versão instalada e avisa quando há uma mais nova."

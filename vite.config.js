@@ -11,6 +11,8 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_BUILD__: JSON.stringify(BUILD),
+    // "dono/repositório" do GitHub (no Actions vem pronto): o app procura aqui o aviso de nova versão do APK
+    __REPO__: JSON.stringify(process.env.GITHUB_REPOSITORY || ''),
   },
   // Quando builda pro GitHub Pages (site fica em usuario.github.io/Stokk-app/),
   // os arquivos precisam ser referenciados com esse prefixo. No APK e no dev

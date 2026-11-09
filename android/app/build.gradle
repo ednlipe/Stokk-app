@@ -7,8 +7,8 @@ android {
         applicationId "com.stokk.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18
-        versionName "1.7.0"
+        versionCode 19
+        versionName "1.7.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,25 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Chave de assinatura FIXA (vem dos segredos do GitHub pelo android.yml). Sem ela o Android não deixa
+    // atualizar o app por cima do instalado. Nunca versionar o .jks.
+    signingConfigs {
+        release {
+            def ks = System.getenv("KEYSTORE_PATH")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+    lint {
+        checkReleaseBuilds = false
+    }
     buildTypes {
         release {
+            if (System.getenv("KEYSTORE_PATH")) { signingConfig signingConfigs.release }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
