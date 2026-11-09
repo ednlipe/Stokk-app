@@ -386,6 +386,11 @@ function areasColapsadas(areas, nativo, grupos){
   });
   return itens;
 }
+function ambientesLista(areas, nativo, grupos){
+  const itens = areasColapsadas(areas, nativo, grupos);
+  if (!nativo) itens.push({ id:'__stokkbook', nome:'Stokkbook', membros:[], especial:true });   // no site o Stokkbook é um ambiente à parte
+  return itens;
+}
 function rotuloAmbiente(grupo, area, nomeArea){
   if (!grupo) return nomeArea || '';
   const m = grupo.modulos.find(x=>x.area === area);
@@ -398,7 +403,6 @@ function renderMenu(){
   body.innerHTML = '<div class="menu-tit">'+esc(g.nome)+'</div><p class="hint" style="margin:0 0 14px;">Escolha o que quer abrir.</p>'
     + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card" data-menu-area="'+esc(m.area)+'">'
       + '<span class="menu-ico">'+m.icone+'</span><span class="menu-nome">'+esc(m.nome)+'</span><span class="menu-desc">'+esc(m.desc||'')+'</span></button>').join('')
-    + '<button type="button" class="menu-card menu-sbk" data-menu-ir="stokkbook"><span class="menu-ico">🎉</span><span class="menu-nome">Stokkbook <span class="sbk-selo" id="menu-sbk-selo"'+(state.sbkNovos?'':' style="display:none"')+'>'+(state.sbkNovos>9?'9+':(state.sbkNovos||''))+'</span></span><span class="menu-desc">O que o pessoal está fazendo</span></button>'
     + '</div>'
     + (admEhAdmin() ? '<div class="menu-adm"><button type="button" class="link-btn" data-menu-ir="usuarios">⚙ Administração: usuários</button></div>' : '');
   const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = g.nome;
@@ -439,12 +443,16 @@ function escolherAreaTela(areas, nomeUsuario){
     el.innerHTML = '<div style="max-width:420px;width:100%;margin:0 auto;">'
       + '<h2 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Escolha a área</h2>'
       + '<p class="hint" style="margin:0 0 16px;">'+esc(nomeUsuario)+', em qual área você vai trabalhar agora? Dá para trocar depois pelo botão no topo.</p>'
-      + areasColapsadas(areas, Capacitor.isNativePlatform(), GRUPOS_MENU).map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+esc(a.nome)+'</button>').join('')
+      + ambientesLista(areas, Capacitor.isNativePlatform(), GRUPOS_MENU).map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+(a.especial?'🎉 ':'')+esc(a.nome)+'</button>').join('')
       + '<button class="btn ghost" id="area-sair">Sair</button></div>';
     document.body.appendChild(el);
     el.addEventListener('click', async e=>{
       const b = e.target.closest('[data-area]');
-      if (b){ el.remove(); resolve(b.getAttribute('data-area')); return; }
+      if (b){
+        let id = b.getAttribute('data-area');
+        if (id === '__stokkbook'){ try{ sessionStorage.setItem('stokk_abrir_stokkbook','1'); }catch(er){} id = areas[0].id; }   // Stokkbook não é uma área do banco: abre o app numa área qualquer e vai direto ao feed
+        el.remove(); resolve(id); return;
+      }
       if (e.target.closest('#area-sair')){ await sb.auth.signOut(); location.reload(); }
     });
   });
@@ -470,24 +478,26 @@ function esconderTrocaArea(){
   setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 300);
 }
 function montarBotaoArea(){
-  if (!state.areas || areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).length < 2 || document.getElementById('btn-area')) return;
+  if (!state.areas || ambientesLista(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).length < 2 || document.getElementById('btn-area')) return;
   const bar = document.querySelector('.topbar-actions'); if (!bar) return;
   const b = document.createElement('button');
-  b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = 'trocar área';
+  b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = Capacitor.isNativePlatform() ? 'trocar área' : 'trocar ambiente';
   bar.insertBefore(b, document.getElementById('btn-theme-toggle') || document.getElementById('btn-logout'));
   b.addEventListener('click', ()=>{
-    const itens = areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU);
-    const atual = itens.find(a=>a.membros.includes(state.area));
-    openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Trocar de área</h3>'
-      + '<p class="hint" style="margin:0 0 14px;">Área atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
-      + itens.map(a=>'<button class="btn '+(a===atual?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+esc(a.nome)+(a===atual?' · atual':'')+'</button>').join(''));
+    const itens = ambientesLista(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU);
+    const noStokk = !Capacitor.isNativePlatform() && state.view === 'stokkbook';
+    const atual = noStokk ? itens.find(a=>a.especial) : itens.find(a=>a.membros.includes(state.area));
+    openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">'+(Capacitor.isNativePlatform()?'Trocar de área':'Trocar de ambiente')+'</h3>'
+      + '<p class="hint" style="margin:0 0 14px;">'+(Capacitor.isNativePlatform()?'Área':'Ambiente')+' atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
+      + itens.map(a=>'<button class="btn '+(a===atual?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+(a.especial?'🎉 ':'')+esc(a.nome)+(a.especial&&state.sbkNovos&&a!==atual?' <span class="sbk-selo">'+(state.sbkNovos>9?'9+':state.sbkNovos)+'</span>':'')+(a===atual?' · atual':'')+'</button>').join(''));
   });
   document.getElementById('sheet-content').addEventListener('click', e=>{
     const t = e.target.closest('[data-troca-area]'); if (!t) return;
     const novo = t.getAttribute('data-troca-area');
     closeSheet();
+    if (novo === '__stokkbook'){ setView('stokkbook'); return; }
     const itemNovo = areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).find(a=>a.id===novo);
-    if (itemNovo && itemNovo.membros.includes(state.area)){ if (state.menuGrupo) setView('menu'); return; }   // já está nesse ambiente: abre o menu
+    if (itemNovo && itemNovo.membros.includes(state.area)){ setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')); return; }   // já está nesse ambiente: volta para ele
     salvarArea(state.user.id, novo);
     const nomeNovo = itemNovo ? itemNovo.nome : ((state.areas.find(a=>a.id===novo)||{}).nome || '');
     try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
@@ -733,7 +743,9 @@ async function onAuthed(user){
     document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c){ abrirModulo(c.getAttribute('data-menu-area')); return; } const ir = e.target.closest('[data-menu-ir]'); if (ir) setView(ir.getAttribute('data-menu-ir')); });
   }
   let direto = false; try{ direto = sessionStorage.getItem('stokk_modulo_direto') === '1'; sessionStorage.removeItem('stokk_modulo_direto'); }catch(e){}
-  setView(state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard'));
+  let irStokk = false; try{ irStokk = sessionStorage.getItem('stokk_abrir_stokkbook') === '1'; sessionStorage.removeItem('stokk_abrir_stokkbook'); }catch(e){}
+  if (!Capacitor.isNativePlatform()) document.body.classList.add('web-amb');   // no site o Stokkbook é um ambiente (não fica no topo)
+  setView(irStokk && !Capacitor.isNativePlatform() ? 'stokkbook' : (state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')));
   registrarPush(user.id);
   atuVerificar(true);
 }
@@ -1272,8 +1284,9 @@ function subscribeData(){
 /* ---------------- NAV / ROUTER ---------------- */
 function setView(name){
   state.view = name;
-  document.body.classList.toggle('em-menu', name === 'menu');
-  if (name !== 'menu' && state.menuGrupo){ const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = state.user.areaNome; }
+  const web = !Capacitor.isNativePlatform();
+  document.body.classList.toggle('em-menu', name === 'menu' || (web && name === 'stokkbook'));
+  if (web && state.user){ const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = name === 'stokkbook' ? 'Stokkbook 🎉' : (name === 'menu' && state.menuGrupo ? state.menuGrupo.nome : state.user.areaNome); }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   // a tela de Bipar (#view-scan) tem duas formas de aparecer: sozinha (aba "Bipar",
@@ -5866,6 +5879,7 @@ function sbkSelo(){
   const n = (state.view === 'stokkbook') ? 0 : sbkNovos(E.posts, visto, state.user.id);
   b.innerHTML = 'Stokkbook' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');
   state.sbkNovos = n;
+  const ba = document.getElementById('btn-area'); if (ba && !Capacitor.isNativePlatform()) ba.innerHTML = 'trocar ambiente' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');   // número laranja no botão de trocar ambiente
   const ms = document.getElementById('menu-sbk-selo'); if (ms){ ms.textContent = n>9?'9+':n; ms.style.display = n ? '' : 'none'; }
 }
 function sbkMsgErro(e){
