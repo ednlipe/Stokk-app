@@ -342,13 +342,14 @@ label.g-chk input{width:20px;height:20px;flex:none;accent-color:var(--accent);ma
 /* MENU DO AMBIENTE (teste, só site) */
 .em-menu nav.bottom{display:none;}
 .em-menu #app{padding-bottom:0;}
-.sub-menu{display:inline-block;margin-top:4px;font-size:13px;font-weight:700;text-decoration:none;color:var(--accent);padding:2px 0;}
 .menu-tit{font-family:var(--font-head);text-transform:uppercase;font-size:22px;font-weight:700;margin:4px 0 4px;}
-.menu-grade{display:grid;grid-template-columns:1fr;gap:12px;}
-@media (min-width:560px){.menu-grade{grid-template-columns:1fr 1fr 1fr;}}
-.menu-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:18px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:inherit;cursor:pointer;}
+.menu-grade{display:grid;grid-template-columns:1fr 1fr;gap:12px;grid-auto-rows:1fr;}
+@media (min-width:700px){.menu-grade{grid-template-columns:1fr 1fr 1fr 1fr;}}
+.menu-card{min-height:150px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:18px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:inherit;cursor:pointer;}
 .menu-card:active{opacity:.85;}
-.menu-card.atual{border-color:var(--accent);}
 .menu-ico{font-size:34px;line-height:1;}
 .menu-nome{font-family:var(--font-head);text-transform:uppercase;font-size:19px;font-weight:700;margin-top:4px;}
 .menu-desc{font-size:13px;color:var(--text-muted);}
+body.com-menu #btn-stokkbook,body.com-menu #btn-usuarios{display:none;}
+.menu-sbk{border-color:#2f6fed;}
+.menu-adm{margin-top:18px;text-align:center;}

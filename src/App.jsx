@@ -396,8 +396,11 @@ function menuGrupoAtual(){ return menuGrupos(state.areas, Capacitor.isNativePlat
 function renderMenu(){
   const body = document.getElementById('menu-body'), g = state.menuGrupo; if (!body || !g) return;
   body.innerHTML = '<div class="menu-tit">'+esc(g.nome)+'</div><p class="hint" style="margin:0 0 14px;">Escolha o que quer abrir.</p>'
-    + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card'+(m.area===state.area?' atual':'')+'" data-menu-area="'+esc(m.area)+'">'
-      + '<span class="menu-ico">'+m.icone+'</span><span class="menu-nome">'+esc(m.nome)+'</span><span class="menu-desc">'+esc(m.desc||'')+'</span></button>').join('') + '</div>';
+    + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card" data-menu-area="'+esc(m.area)+'">'
+      + '<span class="menu-ico">'+m.icone+'</span><span class="menu-nome">'+esc(m.nome)+'</span><span class="menu-desc">'+esc(m.desc||'')+'</span></button>').join('')
+    + '<button type="button" class="menu-card menu-sbk" data-menu-ir="stokkbook"><span class="menu-ico">🎉</span><span class="menu-nome">Stokkbook <span class="sbk-selo" id="menu-sbk-selo"'+(state.sbkNovos?'':' style="display:none"')+'>'+(state.sbkNovos>9?'9+':(state.sbkNovos||''))+'</span></span><span class="menu-desc">O que o pessoal está fazendo</span></button>'
+    + '</div>'
+    + (admEhAdmin() ? '<div class="menu-adm"><button type="button" class="link-btn" data-menu-ir="usuarios">⚙ Administração: usuários</button></div>' : '');
   const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = g.nome;
 }
 function abrirModulo(area){
@@ -718,11 +721,16 @@ async function onAuthed(user){
   db = createSupabaseDB();
   downloads = createBrowserDownloads();
   state.ready.db = true; state.ready.downloads = true;
-  document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + (state.menuGrupo ? '<button type="button" class="link-btn sub-menu" id="btn-menu">☰ menu</button>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
+  document.getElementById('topbar-sub').innerHTML = (function(){ const u = state.user.nome + ' · ' + (state.user.role==='supervisor'?'supervisor':'operador') + ' · v' + APP_VERSAO; return (state.user.areaNome ? '<span class="sub-area">'+esc(state.user.areaNome)+'</span>' : '') + '<span class="sub-user">'+esc(u)+'</span>'; })();
   subscribeData();
   if (state.menuGrupo){
-    document.getElementById('btn-menu').addEventListener('click', ()=>setView('menu'));
-    document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c) abrirModulo(c.getAttribute('data-menu-area')); });
+    document.body.classList.add('com-menu');   // esconde Stokkbook/Usuários do topo: eles viram cartões do menu
+    const nb = document.createElement('button'); nb.id = 'nav-menu';
+    nb.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Menu';
+    document.querySelector('nav.bottom').insertBefore(nb, document.querySelector('nav.bottom').firstChild);
+    nb.addEventListener('click', ()=>setView('menu'));
+    const bt = document.getElementById('btn-area'); if (bt) bt.textContent = 'trocar ambiente';
+    document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c){ abrirModulo(c.getAttribute('data-menu-area')); return; } const ir = e.target.closest('[data-menu-ir]'); if (ir) setView(ir.getAttribute('data-menu-ir')); });
   }
   let direto = false; try{ direto = sessionStorage.getItem('stokk_modulo_direto') === '1'; sessionStorage.removeItem('stokk_modulo_direto'); }catch(e){}
   setView(state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard'));
@@ -5857,6 +5865,8 @@ function sbkSelo(){
   if (!visto){ visto = Date.now(); try{ localStorage.setItem('stokkbook_visto:'+state.user.id, String(visto)); }catch(e){} }   // 1ª vez: não enche de "novidades" antigas
   const n = (state.view === 'stokkbook') ? 0 : sbkNovos(E.posts, visto, state.user.id);
   b.innerHTML = 'Stokkbook' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');
+  state.sbkNovos = n;
+  const ms = document.getElementById('menu-sbk-selo'); if (ms){ ms.textContent = n>9?'9+':n; ms.style.display = n ? '' : 'none'; }
 }
 function sbkMsgErro(e){
   const m = String((e && e.message) || e || '');
@@ -5952,7 +5962,7 @@ function sbkClique(e){
   if (img && img.dataset.c5){ openSheet('<img class="c5-img sbk-grande" data-c5="'+esc(img.dataset.c5)+'" alt="">'); c5Hidratar(document.getElementById('sheet-content')); return; }
   const t = e.target.closest('[data-sbk-act]'); if (!t) return;
   const act = t.getAttribute('data-sbk-act'), id = Number(t.getAttribute('data-id'));
-  if (act === 'voltar') setView(ABA_INICIAL[state.area] || 'dashboard');
+  if (act === 'voltar') setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard'));
   else if (act === 'recarregar') sbkCarregar(false);
   else if (act === 'reagir') sbkReagir(id, t.getAttribute('data-emoji'));
   else if (act === 'ocultar') sbkOcultarSheet(id);
@@ -6087,7 +6097,7 @@ function admClique(e){
   const t = e.target.closest('[data-adm-act]'); if (!t || !admEhAdmin()) return;
   const act = t.getAttribute('data-adm-act'); const E = admEstado();
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  if (act === 'voltar'){ setView(ABA_INICIAL[state.area] || 'dashboard'); }
+  if (act === 'voltar'){ setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')); }
   else if (act === 'recarregar'){ admCarregar(); }
   else if (act === 'novo'){ admNovoSheet(); }
   else if (act === 'editar'){ admEditarSheet(t.getAttribute('data-id')); }
