@@ -328,7 +328,7 @@ const state = {
   armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || '',
   equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [],   // ambiente Gestão (diesel)
   ocorrencias: [], paradasErr: null,   // paradas e manutenção (update_016)
-  locais: [], locaisErr: null, glocalBusca: '',   // localização dos equipamentos (update_017)
+  locais: [], locaisErr: null, glocalBusca: '', glTurnosN: 14,   // localização dos equipamentos (update_017)
   cincoS: [], cincoErr: null,   // 5S da Gestão Planta 1 (update_018)
   dieselErr: {}
 };
@@ -5133,6 +5133,68 @@ function gTanqueForm(tid){
   };
 }
 
+// ---- LOC-CORE-INICIO (regras de turno e de linha do tempo dos locais; testado em tests/locais_core.test.cjs) ----
+const LOC_TURNOS = { 1:{ nome:'1º turno', faixa:'07:10 – 15:10' }, 2:{ nome:'2º turno', faixa:'15:10 – 23:10' }, 3:{ nome:'3º turno', faixa:'23:10 – 07:10' } };
+const LOC_SETORES = ['Pátio de Tarugo','Expedição'];
+const LOC_SEM_SETOR = 'Sem setor';
+function locT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
+// janela do turno que contém o instante ms (cortes 07:10 / 15:10 / 23:10; o 3º turno que começa às 23:10 pertence ao dia em que começou)
+function locTurnoJanela(ms){
+  const d = new Date(ms), m = d.getHours()*60 + d.getMinutes();
+  const t = m >= 430 && m < 910 ? 1 : (m >= 910 && m < 1390 ? 2 : 3);
+  const dia = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (t === 3 && m < 430) dia.setDate(dia.getDate()-1);
+  const y = dia.getFullYear(), mo = dia.getMonth(), da = dia.getDate();
+  const ini = t === 1 ? new Date(y,mo,da,7,10) : (t === 2 ? new Date(y,mo,da,15,10) : new Date(y,mo,da,23,10));
+  const fim = t === 1 ? new Date(y,mo,da,15,10) : (t === 2 ? new Date(y,mo,da,23,10) : new Date(y,mo,da+1,7,10));
+  return { turno:t, ini:ini.getTime(), fim:fim.getTime() };
+}
+// os n turnos mais recentes (o primeiro é o que está em andamento)
+function locTurnosRecentes(agoraMs, n){
+  const out = []; let j = locTurnoJanela(agoraMs);
+  for (let i = 0; i < n; i++){ out.push(j); j = locTurnoJanela(j.ini - 1); }
+  return out;
+}
+// trechos de um equipamento: cada registro vale do seu início até o MENOR entre o fim informado e o início do próximo registro
+function locSegmentos(locais, equipId){
+  const L = (locais||[]).filter(l=>l && !l.anulado && l.equipamentoId === equipId)
+    .sort((a,b)=>locT(a.dataHora)-locT(b.dataHora) || locT(a.timestamp)-locT(b.timestamp));
+  return L.map((l,i)=>{
+    const prox = i+1 < L.length ? locT(L[i+1].dataHora) : Infinity;
+    const fimInf = l.dataFim ? locT(l.dataFim) : Infinity;
+    return { reg:l, ini:locT(l.dataHora), fim:Math.min(prox, fimInf) };
+  });
+}
+// situação "ao vivo": vivo = o último registro ainda não terminou
+function locAoVivo(locais, equipId, agoraMs){
+  const s = locSegmentos(locais, equipId); if (!s.length) return { reg:null, vivo:false, fim:null };
+  const u = s[s.length-1];
+  return { reg:u.reg, vivo:u.fim > agoraMs, fim:u.fim === Infinity ? null : u.fim };
+}
+// onde o equipamento esteve entre ini e fim (corta no instante atual se o turno ainda não acabou). "vazio" = sem registro.
+function locLinhaTurno(locais, equipId, ini, fim, agoraMs){
+  const lim = Math.min(fim, agoraMs), out = []; let cursor = ini;
+  locSegmentos(locais, equipId).forEach(s=>{
+    const de = Math.max(s.ini, ini), ate = Math.min(s.fim, lim);
+    if (ate <= de) return;
+    if (de > cursor) out.push({ vazio:true, de:cursor, ate:de });
+    out.push({ reg:s.reg, de, ate, antes:s.ini < ini, depois:s.fim > lim && lim === fim, emAndamento:s.fim > agoraMs && lim === agoraMs });
+    cursor = ate;
+  });
+  if (cursor < lim) out.push({ vazio:true, de:cursor, ate:lim });
+  return out;
+}
+function locTemRegistro(linha){ return (linha||[]).some(x=>!x.vazio); }
+// equipamentos ativos agrupados por setor (setores conhecidos primeiro; "Sem setor" por último)
+function locPorSetor(equips){
+  const m = new Map();
+  (equips||[]).filter(e=>e && e.ativo !== false).forEach(e=>{ const s = String(e.setor||'').trim() || LOC_SEM_SETOR; if (!m.has(s)) m.set(s, []); m.get(s).push(e); });
+  const ordem = k => { const i = LOC_SETORES.indexOf(k); return i >= 0 ? i : (k === LOC_SEM_SETOR ? 999 : 100); };
+  return [...m.entries()].sort((a,b)=>ordem(a[0])-ordem(b[0]) || a[0].localeCompare(b[0]))
+    .map(([setor, eqs])=>({ setor, equips:eqs.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))) }));
+}
+// ---- LOC-CORE-FIM ----
+
 /* ---- Localização dos equipamentos (update_017) ----
    Qualquer pessoa da Gestão informa onde o equipamento está (texto livre). O local atual é o último registro válido;
    os anteriores ficam como histórico. Nada se apaga: o supervisor anula com motivo. */
@@ -5141,28 +5203,50 @@ function gLocalAvisoBanco(){
     + '<p class="hint" style="margin:6px 0 0;">Rode o arquivo <b>update_017_localizacao.sql</b> no SQL Editor do Supabase e atualize a página.</p></div>';
 }
 function dslHaTempo(iso){ const h = (Date.now()-dslT(iso))/3600000; return h < 1 ? 'agora há pouco' : 'há '+dslFmtHoras(h); }
-function gLocalLinha(e){
-  const l = dslLocalAtual(e.id, state.locais), oa = dslOcorrenciaAberta(e.id, state.ocorrencias);
-  return '<div class="list-item" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;"><div class="li-main">'
-    + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+'</div>'
-    + (l ? '<div style="font-size:15px;margin:3px 0 1px;"><b>'+esc(l.local)+'</b></div><div class="li-desc">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>'
-           : '<div class="li-desc" style="margin:3px 0;">Local ainda não informado</div>')
+function locDiaCurto(ms){ return new Date(ms).toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}).replace('.',''); }
+function locHora(ms){ return new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function gLocalLinha(e, agora){
+  const v = locAoVivo(state.locais, e.id, agora), oa = dslOcorrenciaAberta(e.id, state.ocorrencias), l = v.reg;
+  let corpo;
+  if (l && v.vivo) corpo = '<div class="loc-onde"><b>'+esc(l.local)+'</b></div><div class="li-desc">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
+  else if (l) corpo = '<div class="li-desc" style="margin:3px 0;">Sem atividade agora · último: <b>'+esc(l.local)+'</b>'+(v.fim?' (até '+dslDataCurta(v.fim)+')':'')+'</div>';
+  else corpo = '<div class="li-desc" style="margin:3px 0;">Local ainda não informado</div>';
+  return '<div class="list-item loc-linha'+(v.vivo?' vivo':'')+'" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;">'
+    + '<span class="loc-ponto'+(v.vivo?' vivo':'')+'" title="'+(v.vivo?'ao vivo':'sem atividade')+'"></span><div class="li-main">'
+    + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+(v.vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div>'
+    + corpo
     + (oa?'<div style="margin-top:4px;">'+dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger')+'</div>':'')
     + '</div><div class="li-side"><button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
 }
 function gLocalLista(){
   const box = document.getElementById('gl-lista'); if (!box) return;
-  const q = String(state.glocalBusca||'').trim().toLowerCase();
-  const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
-    .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(l?l.local:'')).toLowerCase().includes(q); });
-  box.innerHTML = eqs.map(gLocalLinha).join('') || '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>';
+  const agora = Date.now(), q = String(state.glocalBusca||'').trim().toLowerCase();
+  const j = locTurnoJanela(agora), T = LOC_TURNOS[j.turno];
+  const faixa = '<div class="loc-faixa t'+j.turno+'"><b>'+T.nome+'</b><span>'+T.faixa+' · termina em '+dslFmtHoras((j.fim-agora)/3600000)+'</span></div>';
+  const eqs = state.equipamentos.filter(e=>e.ativo!==false)
+    .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(e.setor||'')+' '+(l?l.local:'')).toLowerCase().includes(q); });
+  const grupos = locPorSetor(eqs);
+  box.innerHTML = faixa + (grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2><div class="card" style="padding:0 14px;">'+g.equips.map(e=>gLocalLinha(e, agora)).join('')+'</div>').join('')
+    || '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>');
+  gLocalTurnos();
   const rec = document.getElementById('gl-recentes'); if (!rec) return;
   const sup = dslEhSup();
   rec.innerHTML = state.locais.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)||dslT(b.timestamp)-dslT(a.timestamp)).slice(0,25).map(l=>
     '<div class="list-item" style="'+(l.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(l.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(l.equipamentoId,l.equipamentoCodigo))+' → '+esc(l.local)+(l.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-    + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
+    + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.dataFim?' → '+dslDataCurta(l.dataFim):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
     + (sup&&!l.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(l.id)+'">anular</button></div>':'')+'</div>').join('')
     || '<p class="hint">Nenhuma localização informada ainda.</p>';
+}
+// lista de turnos (do mais recente para o mais antigo); tocar abre o relatório do turno
+function gLocalTurnos(){
+  const box = document.getElementById('gl-turnos'); if (!box) return;
+  const agora = Date.now(), n = state.glTurnosN || 14, eqs = state.equipamentos.filter(e=>e.ativo!==false);
+  box.innerHTML = locTurnosRecentes(agora, n).map(j=>{
+    const atual = agora >= j.ini && agora < j.fim, T = LOC_TURNOS[j.turno];
+    const com = eqs.filter(e=>locTemRegistro(locLinhaTurno(state.locais, e.id, j.ini, j.fim, agora))).length;
+    return '<div class="loc-turno t'+j.turno+'" data-g-act="turno-ver" data-ini="'+j.ini+'"><div><b>'+T.nome+'</b><span>'+esc(locDiaCurto(j.ini))+' · '+T.faixa+'</span></div>'
+      + '<div class="loc-turno-d">'+(atual?'<em>em andamento</em>':'')+'<small>'+com+' de '+eqs.length+' equip. com registro</small></div></div>';
+  }).join('') + '<button class="btn ghost small" data-g-act="turnos-mais" style="border:1px solid var(--border);width:auto;margin-top:8px;">Ver turnos mais antigos</button>';
 }
 function renderGLocal(){
   const body = document.getElementById('glocal-body'); if (!body) return;
@@ -5170,12 +5254,51 @@ function renderGLocal(){
   if (state.locaisErr){ body.innerHTML = gLocalAvisoBanco(); return; }
   if (!document.getElementById('gl-lista')){
     body.innerHTML = '<div class="btn-row" style="margin-bottom:10px;"><button class="btn primary" data-g-act="local-nova" data-e="">+ Atualizar local</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
-      + '<input type="search" id="gl-busca" placeholder="Buscar equipamento ou local…" value="'+esc(state.glocalBusca||'')+'">'
-      + '<h2 class="section-title">Onde estão agora</h2><div class="card" id="gl-lista" style="padding:0 14px;"></div>'
+      + '<input type="search" id="gl-busca" placeholder="Buscar equipamento, setor ou local…" value="'+esc(state.glocalBusca||'')+'">'
+      + '<h2 class="section-title">Onde estão agora</h2><div id="gl-lista"></div>'
+      + '<h2 class="section-title">Turnos</h2><p class="hint" style="margin:-4px 0 8px;">Toque num turno para ver onde cada equipamento esteve.</p><div id="gl-turnos"></div>'
       + '<h2 class="section-title">Últimas atualizações</h2><div class="card" id="gl-recentes" style="padding:0 14px;"></div>';
     document.getElementById('gl-busca').addEventListener('input', ev=>{ state.glocalBusca = ev.target.value; gLocalLista(); });
   }
   gLocalLista();
+}
+// relatório de um turno: por setor, cada equipamento com a linha do tempo de onde esteve
+function gTurnoDados(iniMs){
+  const j = locTurnoJanela(Number(iniMs)+1), agora = Date.now();
+  const eqs = state.equipamentos.map(e=>({ e, linha:locLinhaTurno(state.locais, e.id, j.ini, j.fim, agora) })).filter(x=>x.e.ativo!==false || locTemRegistro(x.linha));
+  const grupos = locPorSetor(eqs.map(x=>Object.assign({}, x.e, { ativo:true })));
+  const linhaDe = {}; eqs.forEach(x=>{ linhaDe[x.e.id] = x.linha; });
+  return { j, agora, grupos, linhaDe, atual: agora >= j.ini && agora < j.fim };
+}
+function gTurnoVer(iniMs){
+  const D = gTurnoDados(iniMs), T = LOC_TURNOS[D.j.turno];
+  const item = x=>{
+    const h = locHora(x.de)+' → '+(x.emAndamento?'agora':locHora(x.ate));
+    if (x.vazio) return '<div class="loc-tl-i vazio"><span class="loc-h">'+h+'</span><span>sem registro</span></div>';
+    const l = x.reg, min = (x.ate-x.de)/3600000;
+    const notas = [dslFmtHoras(min), l.usuarioNome?esc(l.usuarioNome):'', x.antes?'já estava aqui desde '+dslDataCurta(l.dataHora):'', x.depois?'continuou depois do turno':'', x.emAndamento?'em andamento':''].filter(Boolean).join(' · ');
+    return '<div class="loc-tl-i'+(x.emAndamento?' vivo':'')+'"><span class="loc-h">'+h+'</span><div><b>'+esc(l.local)+'</b>'+(l.obs?' <span class="li-desc">'+esc(l.obs)+'</span>':'')+'<div class="li-desc">'+notas+'</div></div></div>';
+  };
+  const corpo = D.grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2>'+g.equips.map(e=>{
+    const linha = D.linhaDe[e.id] || [];
+    return '<div class="card loc-eq"><b>'+esc(e.codigo)+' — '+esc(e.nome)+'</b>'+(locTemRegistro(linha)?'<div class="loc-tl">'+linha.map(item).join('')+'</div>':'<div class="hint" style="margin:6px 0 0;">Sem registro neste turno.</div>')+'</div>';
+  }).join('')).join('') || '<p class="hint">Nenhum equipamento cadastrado.</p>';
+  openSheet('<div class="loc-faixa t'+D.j.turno+'" style="margin:0 0 10px;"><b>'+T.nome+'</b><span>'+esc(locDiaCurto(D.j.ini))+' · '+T.faixa+(D.atual?' · em andamento':'')+'</span></div>'
+    + corpo
+    + '<button class="btn ghost small" data-g-act="turno-xlsx" data-ini="'+D.j.ini+'" style="border:1px solid var(--border);width:auto;margin-top:12px;">Exportar Excel</button>');
+}
+function gTurnoExportar(iniMs){
+  const D = gTurnoDados(iniMs), T = LOC_TURNOS[D.j.turno], dia = new Date(D.j.ini);
+  const fmt = ms => new Date(ms).toLocaleString('pt-BR');
+  const rows = [];
+  D.grupos.forEach(g=>g.equips.forEach(e=>{
+    const linha = D.linhaDe[e.id] || [];
+    if (!locTemRegistro(linha)){ rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:'', de:'', ate:'', minutos:'', usuario:'', obs:'', situacao:'sem registro no turno' }); return; }
+    linha.forEach(x=>rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:x.vazio?'(sem registro)':x.reg.local, de:fmt(x.de), ate:x.emAndamento?'em andamento':fmt(x.ate),
+      minutos:Math.round((x.ate-x.de)/60000), usuario:x.vazio?'':(x.reg.usuarioNome||''), obs:x.vazio?'':(x.reg.obs||''), situacao:x.vazio?'sem registro':(x.antes?'já estava aqui ao começar':(x.depois?'continuou depois do turno':'')) }));
+  }));
+  const p = n=>String(n).padStart(2,'0');
+  exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
 }
 function gLocalSheet(equipId){
   const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
@@ -5186,9 +5309,11 @@ function gLocalSheet(equipId){
     + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
     + '<label class="field-label">Onde está atuando</label><input type="text" id="gl-local" maxlength="120" list="gl-sug" placeholder="Ex.: Pátio 2, carregando sucata" autocomplete="off"><datalist id="gl-sug">'+sug.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>'
     + '<label class="field-label">Observação (opcional)</label><input type="text" id="gl-obs" maxlength="200">'
-    + '<label class="field-label">Desde</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label">Fim (opcional)</label><input type="datetime-local" id="gl-fim" value="">'
+    + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” nesse local até você registrar o próximo. Os registros anteriores continuam guardados.</div>'
     + '<button class="btn primary" id="gl-ok">Salvar local</button>');
-  const mostra = ()=>{ const l = dslLocalAtual(document.getElementById('gl-equip').value, state.locais); document.getElementById('gl-atual').textContent = l ? 'Local atual: '+l.local+' (desde '+dslDataCurta(l.dataHora)+')' : ''; };
+  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : 'Último local: ')+v.reg.local+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
   document.getElementById('gl-equip').addEventListener('change', mostra); mostra();
   document.getElementById('gl-ok').onclick = async ()=>{
     const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = (document.getElementById('gl-local').value||'').trim(), quando = new Date(document.getElementById('gl-data').value);
@@ -5196,13 +5321,17 @@ function gLocalSheet(equipId){
     if (!local){ toast('Informe onde o equipamento está.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
+    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
+    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
+    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const atual = dslLocalAtual(eq.id, state.locais);
     if (atual && atual.local.trim().toLowerCase()===local.toLowerCase() && !confirm('O equipamento já está registrado em "'+atual.local+'".\n\nRegistrar mesmo assim?')) return;
     const b = document.getElementById('gl-ok'); b.disabled = true;
     try{
       const id = 'lo_'+uid();
-      await db.collection('equipamento_locais').doc(id).set({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, obs:(document.getElementById('gl-obs').value||'').trim()||null,
-        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() });
+      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, obs:(document.getElementById('gl-obs').value||'').trim()||null,
+        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, fim ? { dataFim:fim.toISOString() } : {}));
       closeSheet(); toast(eq.codigo+' → '+local); if (db.refetchAll) await db.refetchAll();
     }catch(e){ console.error(e); b.disabled = false; }
   };
@@ -5215,7 +5344,7 @@ function gLocalHist(id){
     + '<button class="btn primary" data-g-act="local-nova" data-e="'+esc(id)+'">Atualizar local</button>'
     + '<h2 class="section-title">Por onde passou</h2><div class="card" style="padding:0 14px;">'
     + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(x.local)+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
+      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
       + (sup&&!x.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
     + '</div>');
 }
@@ -5295,6 +5424,10 @@ function gManutAbrirSheet(equipId){
     if (!desc){ toast('Descreva o que está acontecendo.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
+    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
+    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
+    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const id = 'oc_'+uid(), b = document.getElementById('mo-ok'); b.disabled = true;
     try{
       await db.collection('ocorrencias').doc(id).set({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, categoria:document.getElementById('mo-cat').value,
@@ -5321,6 +5454,10 @@ function gManutLiberarSheet(id){
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() < dslT(o.abertaEm)){ toast('A liberação não pode ser antes da abertura ('+dslDataCurta(o.abertaEm)+').', 3500); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
+    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
+    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
+    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const b = document.getElementById('ml-ok'); b.disabled = true;
     try{
       await db.collection('ocorrencias').doc(id).update({ liberadaEm:quando.toISOString(), liberadaPorNome:state.user.nome, motivoLiberacao:document.getElementById('ml-motivo').value, servicoRealizado:serv, recebidoPor:quem });
@@ -5413,6 +5550,7 @@ function gEquipForm(id){
     + '<label class="field-label">Código</label><input type="text" id="ge-cod" maxlength="20" value="'+esc(e?e.codigo:'')+'" placeholder="Ex.: PC01, CAM01">'
     + '<label class="field-label">Nome</label><input type="text" id="ge-nome" maxlength="60" value="'+esc(e?e.nome:'')+'" placeholder="Ex.: Pá carregadeira">'
     + '<label class="field-label">Tipo</label><select id="ge-tipo">'+Object.keys(DSL_TIPOS).map(k=>'<option value="'+k+'" '+(e&&e.tipo===k?'selected':'')+'>'+DSL_TIPOS[k]+'</option>').join('')+'</select>'
+    + '<label class="field-label">Setor responsável</label><select id="ge-setor"><option value="">Sem setor</option>'+LOC_SETORES.concat(e&&e.setor&&!LOC_SETORES.includes(e.setor)?[e.setor]:[]).map(s=>'<option value="'+esc(s)+'" '+(e&&e.setor===s?'selected':'')+'>'+esc(s)+'</option>').join('')+'</select>'
     + '<label class="field-label">Mede em</label><select id="ge-med" '+(tem?'disabled':'')+'><option value="h" '+(e&&e.medidor==='h'?'selected':'')+'>Horímetro (horas)</option><option value="km" '+(e&&e.medidor==='km'?'selected':'')+'>Odômetro (km)</option></select>'
     + (tem?'<div class="hint" style="margin:-4px 0 10px;">Não dá para trocar a unidade de quem já tem abastecimentos.</div>':'')
     + '<label class="field-label">Área de uso</label><div id="ge-areas" style="margin-bottom:10px;">'+DSL_AREAS_USO.map(a=>'<label class="g-chk"><input type="checkbox" data-area-uso="'+a[0]+'" '+(e&&(e.areaUso||[]).includes(a[0])?'checked':'')+'> '+a[1]+'</label>').join('')+'</div>'
@@ -5429,6 +5567,8 @@ function gEquipForm(id){
     const dados = { codigo, nome, tipo: document.getElementById('ge-tipo').value, medidor: document.getElementById('ge-med').value,
       areaUso: [...document.querySelectorAll('[data-area-uso]')].filter(c=>c.checked).map(c=>c.getAttribute('data-area-uso')),
       diasAlerta: dias, alertaDiasUteis: document.getElementById('ge-uteis').checked, alertaAtivo: document.getElementById('ge-alerta').checked };
+    const setor = document.getElementById('ge-setor').value || null;
+    if (setor !== ((e && e.setor) || null)) dados.setor = setor;   // só manda se mudou (o campo vem do update_022)
     const b = document.getElementById('ge-ok'); b.disabled = true;
     try{
       if (e){ dados.ativo = document.getElementById('ge-ativo').checked; await db.collection('equipamentos').doc(e.id).update(dados); }
@@ -5480,6 +5620,9 @@ async function gClique(e){
     else if (a==='manut-editar') gManutEditarSheet(id);
     else if (a==='local-nova') gLocalSheet(b.dataset.e||'');
     else if (a==='local-hist') gLocalHist(id);
+    else if (a==='turno-ver') gTurnoVer(b.dataset.ini);
+    else if (a==='turno-xlsx') gTurnoExportar(b.dataset.ini);
+    else if (a==='turnos-mais'){ state.glTurnosN = (state.glTurnosN||14)+21; gLocalTurnos(); }
     else if (a==='equip') gEquipDetalhe(id);
     else if (a==='equip-novo') gEquipForm(null);
     else if (a==='equip-edit') gEquipForm(id);
@@ -5731,6 +5874,10 @@ function c5AbrirSheet(){
     if (!antes.blobs.length){ toast('Tire a foto do antes.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
+    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
+    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
+    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     if (concluir && !depois.blobs.length){ toast('Tire a foto do depois.'); return; }
     if (concluir && !acao){ toast('Informe o que foi feito.'); return; }
     const id = 'cs_'+uid(); ok.disabled = true; ok.textContent = 'Enviando fotos…';
@@ -5767,6 +5914,10 @@ function c5ConcluirSheet(id){
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() < c5T(r.abertoEm)){ toast('A conclusão não pode ser antes da abertura ('+dslDataCurta(r.abertoEm)+').', 3500); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
+    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
+    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
+    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
+    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando fotos…';
     try{
       await c5ConcluirGravar(id, depois.blobs, acao, quando, t=>{ b.textContent = t; }, document.getElementById('c5-post').checked);
