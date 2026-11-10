@@ -93,6 +93,9 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `eh_admin()` | `security definer`; conta ativa com `admin = true`. |
 | `admin_acoes` | Registro de tudo que o admin fez pela tela (`quando`, `admin_id`, `admin_nome`, `acao` = criar/atualizar/bloquear/reativar/senha, `alvo_id`, `alvo_email`, `detalhe` jsonb). **Nunca guarda senha.** RLS: só admin lê; ninguém grava pelo app (só a função). |
 
+### 4.3.7 Locais por setor e turno (`update_022`)
+`equipamento_locais.data_fim` (nulo = em andamento) e `equipamentos.setor` (texto, até 60). O **fim efetivo** de um registro é o MENOR entre `data_fim` e o início do próximo registro válido do mesmo equipamento (calculado no app; o histórico continua só inserção, nada é fechado por gatilho). Operador/supervisor não editam `data_fim` depois (só anulação). `grant update (setor)` para o supervisor. O SQL preenche `setor` só onde está vazio, pelo nome (empilhadeira → Expedição; carregadeira/caminhão/cavalo/meteor → Pátio de Tarugo). Views: `bi.equipamento_locais` ganhou `fim` e `setor`; `bi.equipamento_local_atual` ganhou `setor`.
+
 ### 4.3.6 Stokkbook (`update_021`)
 
 | Item | Conteúdo |
@@ -124,6 +127,7 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
 | `update_019_cinco_s_fotos.sql` | **5S com várias fotos:** colunas `cinco_s.fotos_antes_extra` e `fotos_depois_extra` (até 4 cada), função `cinco_s_caminhos_ok`, checks, gatilho `cinco_s_proteger` recriado, política de insert ajustada, `grant update (fotos_depois_extra)`, `bi.cinco_s` com quantidade de fotos. Rodar depois do 018. |
 | `update_020_admin.sql` | `profiles.admin`, `proteger_profiles` protege também `admin`, `eh_admin()`, tabela `admin_acoes` (tela Usuários, v1.7.0). |
+| `update_022_locais_turnos.sql` | Locais por turno: `equipamento_locais.data_fim` (opcional), `equipamentos.setor`, views BI com fim/setor. Depende do 015/017. |
 | `update_021_stokkbook.sql` | Stokkbook: posts e reações do feed, `cinco_s.postar_stokkbook` (v1.8.0). Depende do 018/019. |
 | `update_018_cinco_s.sql` | **Gestão Planta 1 / 5S:** área `gestao_p1`; tabela `cinco_s` (RLS por área, gatilho `cinco_s_proteger`); bucket privado `cinco-s` no Storage com políticas por área; Realtime; view `bi.cinco_s`. Não depende do 015/016/017. Depois de rodar, libere a área para quem for usar (`usuario_areas`). |
 | `update_017_localizacao.sql` | **Gestão / Localização + correção de ocorrência:** tabela `equipamento_locais` (RLS por área; registra qualquer conta da Gestão; anula o supervisor), colunas `ocorrencias.editada_em/editada_por`, gatilho `ocorrencia_proteger` atualizado (permite corrigir categoria/motivo/descrição enquanto aberta), Realtime, views `bi.equipamento_locais` e `bi.equipamento_local_atual`. Rodar depois do 016. **Status: testado num Postgres 16 local (rodou 2×, regras de acesso conferidas com perfis diferentes); não rodado em produção.** |

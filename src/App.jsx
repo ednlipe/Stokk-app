@@ -328,7 +328,7 @@ const state = {
   armazemPadrao: localStorage.getItem('stokk_armazem_padrao') || '',
   equipamentos: [], tanques: [], entradas: [], abastecimentos: [], medicoes: [],   // ambiente Gestão (diesel)
   ocorrencias: [], paradasErr: null,   // paradas e manutenção (update_016)
-  locais: [], locaisErr: null, glocalBusca: '', glTurnosN: 14,   // localização dos equipamentos (update_017)
+  locais: [], locaisErr: null, glocalBusca: '', glDia: '',   // localização dos equipamentos (update_017)
   cincoS: [], cincoErr: null,   // 5S da Gestão Planta 1 (update_018)
   dieselErr: {}
 };
@@ -397,7 +397,10 @@ function rotuloAmbiente(grupo, area, nomeArea){
   return grupo.nome + (m ? ' › '+m.nome : '');
 }
 // ---- MENU-CORE-FIM ----
-function menuGrupoAtual(){ return menuGrupos(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).find(g=>g.meus.some(m=>m.area === state.area)) || null; }
+// menu por ambiente + Stokkbook como ambiente: valem no site e no APK (antes eram só do site, em teste)
+const MENU_NO_APK = true;
+function modoSite(){ return MENU_NO_APK || !Capacitor.isNativePlatform(); }
+function menuGrupoAtual(){ return menuGrupos(state.areas, !modoSite(), GRUPOS_MENU).find(g=>g.meus.some(m=>m.area === state.area)) || null; }
 function renderMenu(){
   const body = document.getElementById('menu-body'), g = state.menuGrupo; if (!body || !g) return;
   body.innerHTML = '<div class="menu-tit">'+esc(g.nome)+'</div><p class="hint" style="margin:0 0 14px;">Escolha o que quer abrir.</p>'
@@ -443,7 +446,7 @@ function escolherAreaTela(areas, nomeUsuario){
     el.innerHTML = '<div style="max-width:420px;width:100%;margin:0 auto;">'
       + '<h2 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">Escolha a área</h2>'
       + '<p class="hint" style="margin:0 0 16px;">'+esc(nomeUsuario)+', em qual área você vai trabalhar agora? Dá para trocar depois pelo botão no topo.</p>'
-      + ambientesLista(areas, Capacitor.isNativePlatform(), GRUPOS_MENU).map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+(a.especial?'🎉 ':'')+esc(a.nome)+'</button>').join('')
+      + ambientesLista(areas, !modoSite(), GRUPOS_MENU).map(a=>'<button class="btn primary" data-area="'+esc(a.id)+'">'+(a.especial?'🎉 ':'')+esc(a.nome)+'</button>').join('')
       + '<button class="btn ghost" id="area-sair">Sair</button></div>';
     document.body.appendChild(el);
     el.addEventListener('click', async e=>{
@@ -478,17 +481,17 @@ function esconderTrocaArea(){
   setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 300);
 }
 function montarBotaoArea(){
-  if (!state.areas || ambientesLista(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).length < 2 || document.getElementById('btn-area')) return;
+  if (!state.areas || ambientesLista(state.areas, !modoSite(), GRUPOS_MENU).length < 2 || document.getElementById('btn-area')) return;
   const bar = document.querySelector('.topbar-actions'); if (!bar) return;
   const b = document.createElement('button');
-  b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = Capacitor.isNativePlatform() ? 'trocar área' : 'trocar ambiente';
+  b.className = 'link-btn'; b.id = 'btn-area'; b.title = 'Trocar de área'; b.textContent = !modoSite() ? 'trocar área' : 'trocar ambiente';
   bar.insertBefore(b, document.getElementById('btn-theme-toggle') || document.getElementById('btn-logout'));
   b.addEventListener('click', ()=>{
-    const itens = ambientesLista(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU);
-    const noStokk = !Capacitor.isNativePlatform() && state.view === 'stokkbook';
+    const itens = ambientesLista(state.areas, !modoSite(), GRUPOS_MENU);
+    const noStokk = modoSite() && state.view === 'stokkbook';
     const atual = noStokk ? itens.find(a=>a.especial) : itens.find(a=>a.membros.includes(state.area));
-    openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">'+(Capacitor.isNativePlatform()?'Trocar de área':'Trocar de ambiente')+'</h3>'
-      + '<p class="hint" style="margin:0 0 14px;">'+(Capacitor.isNativePlatform()?'Área':'Ambiente')+' atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
+    openSheet('<h3 style="font-family:var(--font-head);text-transform:uppercase;margin:0 0 6px;">'+(!modoSite()?'Trocar de área':'Trocar de ambiente')+'</h3>'
+      + '<p class="hint" style="margin:0 0 14px;">'+(!modoSite()?'Área':'Ambiente')+' atual: <b>'+esc(atual?atual.nome:'')+'</b>. Os dados mostrados e gravados passam a ser os da área escolhida.</p>'
       + itens.map(a=>'<button class="btn '+(a===atual?'ok':'')+'" data-troca-area="'+esc(a.id)+'">'+(a.especial?'🎉 ':'')+esc(a.nome)+(a.especial&&state.sbkNovos&&a!==atual?' <span class="sbk-selo">'+(state.sbkNovos>9?'9+':state.sbkNovos)+'</span>':'')+(a===atual?' · atual':'')+'</button>').join(''));
   });
   document.getElementById('sheet-content').addEventListener('click', e=>{
@@ -496,7 +499,7 @@ function montarBotaoArea(){
     const novo = t.getAttribute('data-troca-area');
     closeSheet();
     if (novo === '__stokkbook'){ setView('stokkbook'); return; }
-    const itemNovo = areasColapsadas(state.areas, Capacitor.isNativePlatform(), GRUPOS_MENU).find(a=>a.id===novo);
+    const itemNovo = areasColapsadas(state.areas, !modoSite(), GRUPOS_MENU).find(a=>a.id===novo);
     if (itemNovo && itemNovo.membros.includes(state.area)){ setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')); return; }   // já está nesse ambiente: volta para ele
     salvarArea(state.user.id, novo);
     const nomeNovo = itemNovo ? itemNovo.nome : ((state.areas.find(a=>a.id===novo)||{}).nome || '');
@@ -744,8 +747,8 @@ async function onAuthed(user){
   }
   let direto = false; try{ direto = sessionStorage.getItem('stokk_modulo_direto') === '1'; sessionStorage.removeItem('stokk_modulo_direto'); }catch(e){}
   let irStokk = false; try{ irStokk = sessionStorage.getItem('stokk_abrir_stokkbook') === '1'; sessionStorage.removeItem('stokk_abrir_stokkbook'); }catch(e){}
-  if (!Capacitor.isNativePlatform()) document.body.classList.add('web-amb');   // no site o Stokkbook é um ambiente (não fica no topo)
-  setView(irStokk && !Capacitor.isNativePlatform() ? 'stokkbook' : (state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')));
+  if (modoSite()) document.body.classList.add('web-amb');   // no site o Stokkbook é um ambiente (não fica no topo)
+  setView(irStokk && modoSite() ? 'stokkbook' : (state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')));
   registrarPush(user.id);
   atuVerificar(true);
 }
@@ -1284,7 +1287,7 @@ function subscribeData(){
 /* ---------------- NAV / ROUTER ---------------- */
 function setView(name){
   state.view = name;
-  const web = !Capacitor.isNativePlatform();
+  const web = modoSite();
   document.body.classList.toggle('em-menu', name === 'menu' || (web && name === 'stokkbook'));
   if (web && state.user){ const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = name === 'stokkbook' ? 'Stokkbook 🎉' : (name === 'menu' && state.menuGrupo ? state.menuGrupo.nome : state.user.areaNome); }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -1312,6 +1315,7 @@ function setView(name){
   }
   if (name!=='producao'){ state.scanOverride = null; document.getElementById('view-scan').classList.remove('modo-producao'); }
   document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.nav===name));
+  atualizarSelosAbas();
   if (name!=='scan' && name!=='inventario' && name!=='producao' && state.scanning) stopScanner();
   if (name==='scan'){ setTimeout(()=>{ focusScanInput(); }, 50); renderConfProgress(); }
   renderView(name);
@@ -1320,7 +1324,59 @@ document.querySelectorAll('[data-nav]').forEach(el=>{
   el.addEventListener('click', ()=>setView(el.dataset.nav));
 });
 
-function renderAll(){ renderView(state.view); }
+// ---- NAV-CORE-INICIO (selo laranja de novidades nas abas de baixo; testado em tests/nav_core.test.cjs) ----
+// itens: [{ t: instante em ms, por: id de quem fez }]. Conta o que é MAIS NOVO que a última vez que a pessoa viu a aba e não foi ela quem fez.
+function navNovidades(itens, eu, desdeMs){
+  return (itens||[]).filter(i=>i && i.t > desdeMs && i.por !== eu).length;
+}
+// ---- NAV-CORE-FIM ----
+function navTempo(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
+// o que conta como "novidade" em cada aba (só as que têm registros feitos por outras pessoas)
+function navItens(aba){
+  const reg = (arr)=>(arr||[]).filter(x=>x && !x.anulado).map(x=>({ t:navTempo(x.timestamp||x.dataHora), por:x.usuarioId }));
+  if (aba === 'gabast') return reg(state.abastecimentos);
+  if (aba === 'glocal') return reg(state.locais);
+  if (aba === 'gtanque') return reg(state.entradas).concat(reg(state.medicoes));
+  if (aba === 'gmanut'){
+    const out = [];
+    (state.ocorrencias||[]).filter(o=>o && !o.anulado).forEach(o=>{
+      out.push({ t:navTempo(o.abertaEm), por:o.abertaPor });
+      if (o.liberadaEm) out.push({ t:navTempo(o.liberadaRegistroEm || o.liberadaEm), por:o.liberadaPor });
+    });
+    return out;
+  }
+  if (aba === 'c5lista'){
+    const out = [];
+    (state.cincoS||[]).filter(r=>r && !r.anulado).forEach(r=>{
+      out.push({ t:navTempo(r.abertoEm), por:r.abertoPor });
+      if (r.concluidoEm) out.push({ t:navTempo(r.concluidoEm), por:r.concluidoPor });
+    });
+    return out;
+  }
+  return [];
+}
+function navChave(aba){ return 'stokk_aba_visto:'+state.user.id+':'+state.area+':'+aba; }
+function navLer(aba){ try { const v = localStorage.getItem(navChave(aba)); return v ? Number(v) : null; } catch(e){ return null; } }
+function navGravar(aba, ms){ try { localStorage.setItem(navChave(aba), String(ms)); } catch(e){} }
+// põe/tira o número laranja em cada aba; a aba aberta no momento conta como vista; na 1ª vez nada é "novo"
+function atualizarSelosAbas(){
+  if (!state.user) return;
+  ['gabast','gmanut','glocal','gtanque','c5lista'].forEach(aba=>{
+    const btn = document.querySelector('nav.bottom button[data-nav="'+aba+'"]'); if (!btn) return;
+    let n = 0;
+    if (state.view === aba) navGravar(aba, Date.now());
+    else {
+      let desde = navLer(aba);
+      if (desde == null){ desde = Date.now(); navGravar(aba, desde); }
+      n = navNovidades(navItens(aba), state.user.id, desde);
+    }
+    let b = btn.querySelector('.nav-selo');
+    if (!n){ if (b) b.remove(); return; }
+    if (!b){ b = document.createElement('span'); b.className = 'nav-selo'; btn.appendChild(b); }
+    b.textContent = n > 99 ? '99+' : String(n);
+  });
+}
+function renderAll(){ renderView(state.view); atualizarSelosAbas(); }
 function renderView(name){
   if (name==='dashboard') renderDashboard();
   else if (name==='scan') renderConfProgress();
@@ -5155,6 +5211,11 @@ function locTurnosRecentes(agoraMs, n){
   for (let i = 0; i < n; i++){ out.push(j); j = locTurnoJanela(j.ini - 1); }
   return out;
 }
+// os turnos que COMEÇAM no dia civil de diaMs (o 3º começa às 23:10 e termina no dia seguinte), só os que já começaram
+function locTurnosDoDia(diaMs, agoraMs){
+  const d = new Date(diaMs), y = d.getFullYear(), m = d.getMonth(), da = d.getDate();
+  return [new Date(y,m,da,8,0), new Date(y,m,da,16,0), new Date(y,m,da,23,30)].map(x=>locTurnoJanela(x.getTime())).filter(j=>j.ini <= agoraMs);
+}
 // trechos de um equipamento: cada registro vale do seu início até o MENOR entre o fim informado e o início do próximo registro
 function locSegmentos(locais, equipId){
   const L = (locais||[]).filter(l=>l && !l.anulado && l.equipamentoId === equipId)
@@ -5238,15 +5299,26 @@ function gLocalLista(){
     || '<p class="hint">Nenhuma localização informada ainda.</p>';
 }
 // lista de turnos (do mais recente para o mais antigo); tocar abre o relatório do turno
+function locDiaStr(ms){ const d = new Date(ms), p = n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function gLocalTurnos(){
   const box = document.getElementById('gl-turnos'); if (!box) return;
-  const agora = Date.now(), n = state.glTurnosN || 14, eqs = state.equipamentos.filter(e=>e.ativo!==false);
-  box.innerHTML = locTurnosRecentes(agora, n).map(j=>{
-    const atual = agora >= j.ini && agora < j.fim, T = LOC_TURNOS[j.turno];
-    const com = eqs.filter(e=>locTemRegistro(locLinhaTurno(state.locais, e.id, j.ini, j.fim, agora))).length;
-    return '<div class="loc-turno t'+j.turno+'" data-g-act="turno-ver" data-ini="'+j.ini+'"><div><b>'+T.nome+'</b><span>'+esc(locDiaCurto(j.ini))+' · '+T.faixa+'</span></div>'
-      + '<div class="loc-turno-d">'+(atual?'<em>em andamento</em>':'')+'<small>'+com+' de '+eqs.length+' equip. com registro</small></div></div>';
-  }).join('') + '<button class="btn ghost small" data-g-act="turnos-mais" style="border:1px solid var(--border);width:auto;margin-top:8px;">Ver turnos mais antigos</button>';
+  const agora = Date.now(), hoje = locDiaStr(agora), ontem = locDiaStr(agora-86400000);
+  const dia = state.glDia || hoje, [y,m,d] = dia.split('-').map(Number), diaMs = new Date(y,m-1,d,12,0).getTime();
+  const eqs = state.equipamentos.filter(e=>e.ativo!==false);
+  const rot = dia === hoje ? 'Hoje' : (dia === ontem ? 'Ontem' : 'Outro dia');
+  const turnos = locTurnosDoDia(diaMs, agora);
+  box.innerHTML = '<div class="loc-dias"><button class="loc-dia'+(dia===hoje?' on':'')+'" data-g-act="turnos-dia" data-d="'+hoje+'">Hoje</button>'
+    + '<button class="loc-dia'+(dia===ontem?' on':'')+'" data-g-act="turnos-dia" data-d="'+ontem+'">Ontem</button>'
+    + '<label class="loc-dia'+(rot==='Outro dia'?' on':'')+'">Outro dia <input type="date" id="gl-dia" max="'+hoje+'" value="'+dia+'"></label></div>'
+    + '<div class="loc-dia-tit">'+rot+' · '+esc(locDiaCurto(diaMs))+'</div>'
+    + (turnos.map(j=>{
+      const atual = agora >= j.ini && agora < j.fim, T = LOC_TURNOS[j.turno];
+      const com = eqs.filter(e=>locTemRegistro(locLinhaTurno(state.locais, e.id, j.ini, j.fim, agora))).length;
+      return '<div class="loc-turno t'+j.turno+'" data-g-act="turno-ver" data-ini="'+j.ini+'"><div><b>'+T.nome+'</b><span>'+T.faixa+(j.turno===3?' (termina '+esc(locDiaCurto(j.fim))+')':'')+'</span></div>'
+        + '<div class="loc-turno-d">'+(atual?'<em>em andamento</em>':'')+'<small>'+com+' de '+eqs.length+' equip. com registro</small></div></div>';
+    }).join('') || '<p class="hint">Nenhum turno nesse dia.</p>');
+  const inp = document.getElementById('gl-dia');
+  if (inp) inp.addEventListener('change', ()=>{ if (inp.value && inp.value <= hoje){ state.glDia = inp.value; gLocalTurnos(); } });
 }
 function renderGLocal(){
   const body = document.getElementById('glocal-body'); if (!body) return;
@@ -5256,7 +5328,7 @@ function renderGLocal(){
     body.innerHTML = '<div class="btn-row" style="margin-bottom:10px;"><button class="btn primary" data-g-act="local-nova" data-e="">+ Atualizar local</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
       + '<input type="search" id="gl-busca" placeholder="Buscar equipamento, setor ou local…" value="'+esc(state.glocalBusca||'')+'">'
       + '<h2 class="section-title">Onde estão agora</h2><div id="gl-lista"></div>'
-      + '<h2 class="section-title">Turnos</h2><p class="hint" style="margin:-4px 0 8px;">Toque num turno para ver onde cada equipamento esteve.</p><div id="gl-turnos"></div>'
+      + '<h2 class="section-title">Turnos</h2><p class="hint" style="margin:-4px 0 8px;">Escolha o dia e toque num turno para ver onde cada equipamento esteve.</p><div id="gl-turnos"></div>'
       + '<h2 class="section-title">Últimas atualizações</h2><div class="card" id="gl-recentes" style="padding:0 14px;"></div>';
     document.getElementById('gl-busca').addEventListener('input', ev=>{ state.glocalBusca = ev.target.value; gLocalLista(); });
   }
@@ -5622,7 +5694,7 @@ async function gClique(e){
     else if (a==='local-hist') gLocalHist(id);
     else if (a==='turno-ver') gTurnoVer(b.dataset.ini);
     else if (a==='turno-xlsx') gTurnoExportar(b.dataset.ini);
-    else if (a==='turnos-mais'){ state.glTurnosN = (state.glTurnosN||14)+21; gLocalTurnos(); }
+    else if (a==='turnos-dia'){ state.glDia = b.dataset.d; gLocalTurnos(); }
     else if (a==='equip') gEquipDetalhe(id);
     else if (a==='equip-novo') gEquipForm(null);
     else if (a==='equip-edit') gEquipForm(id);
@@ -6030,7 +6102,7 @@ function sbkSelo(){
   const n = (state.view === 'stokkbook') ? 0 : sbkNovos(E.posts, visto, state.user.id);
   b.innerHTML = 'Stokkbook' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');
   state.sbkNovos = n;
-  const ba = document.getElementById('btn-area'); if (ba && !Capacitor.isNativePlatform()) ba.innerHTML = 'trocar ambiente' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');   // número laranja no botão de trocar ambiente
+  const ba = document.getElementById('btn-area'); if (ba && modoSite()) ba.innerHTML = 'trocar ambiente' + (n ? ' <span class="sbk-selo">'+(n>9?'9+':n)+'</span>' : '');   // número laranja no botão de trocar ambiente
   const ms = document.getElementById('menu-sbk-selo'); if (ms){ ms.textContent = n>9?'9+':n; ms.style.display = n ? '' : 'none'; }
 }
 function sbkMsgErro(e){

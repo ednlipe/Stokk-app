@@ -368,8 +368,9 @@ body.web-amb #btn-stokkbook{display:none;}
 .loc-linha{gap:12px;}
 .loc-ponto{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--text-muted);background:transparent;box-sizing:border-box;}
 .loc-ponto.vivo{border-color:var(--ok);background:var(--ok);animation:loc-pulso 3.2s ease-in-out infinite;}
-@keyframes loc-pulso{0%{box-shadow:0 0 0 0 rgba(76,154,106,.55);opacity:1;} 55%{box-shadow:0 0 0 9px rgba(76,154,106,0);opacity:.75;} 100%{box-shadow:0 0 0 0 rgba(76,154,106,0);opacity:1;}}
-@media (prefers-reduced-motion:reduce){.loc-ponto.vivo{animation:none;box-shadow:0 0 0 3px rgba(76,154,106,.3);}}
+@keyframes loc-pulso{0%{box-shadow:0 0 0 0 rgba(76,154,106,.7);opacity:1;} 55%{box-shadow:0 0 0 11px rgba(76,154,106,0);opacity:.6;} 100%{box-shadow:0 0 0 0 rgba(76,154,106,0);opacity:1;}}
+@media (prefers-reduced-motion:reduce){.loc-ponto.vivo{animation:loc-respira 3.2s ease-in-out infinite;}}   /* mesmo com "reduzir animações" no Windows/celular o ponto continua avisando que está ao vivo (só varia a transparência, sem expandir) */
+@keyframes loc-respira{0%,100%{opacity:1;box-shadow:0 0 0 3px rgba(76,154,106,.35);} 50%{opacity:.35;box-shadow:0 0 0 3px rgba(76,154,106,.1);}}
 .loc-aovivo{display:inline-block;margin-left:6px;vertical-align:middle;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ok);background:var(--ok-dim);border-radius:20px;padding:2px 7px;}
 .loc-onde{font-size:15px;margin:3px 0 1px;}
 /* relatório de turno */
@@ -382,3 +383,13 @@ body.web-amb #btn-stokkbook{display:none;}
 .loc-tl-i.vazio{opacity:.6;font-style:italic;font-size:13px;}
 .loc-tl-i.vivo{border-left-color:var(--ok);}
 .loc-h{flex:none;min-width:98px;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--text-muted);}
+
+.loc-dias{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.loc-dia{font:inherit;font-size:13px;text-transform:uppercase;letter-spacing:.4px;padding:8px 14px;border-radius:20px;border:1px solid var(--border);background:var(--card,transparent);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.loc-dia.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
+.loc-dia input{font:inherit;font-size:13px;border:0;background:transparent;color:inherit;padding:0;width:auto;margin:0;}
+.loc-dia-tit{font-size:13px;color:var(--text-muted);margin:2px 0 8px;text-transform:capitalize;}
+
+/* selo laranja de novidades nas abas de baixo */
+nav.bottom button{position:relative;}
+.nav-selo{position:absolute;top:3px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 4px;border-radius:9px;box-sizing:border-box;background:var(--accent);color:var(--accent-ink);border:2px solid var(--surface);font:700 10px/14px var(--font-head);letter-spacing:0;text-align:center;pointer-events:none;}
