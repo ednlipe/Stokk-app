@@ -582,6 +582,9 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
 #view-locais:fullscreen .nao-parede{display:none;}
 #view-locais:fullscreen .loc-ponto{width:20px;height:20px;} #view-locais:fullscreen .wall-setor{font-size:30px;} #view-locais:fullscreen .wall-head .loc-faixa{font-size:20px;padding:10px 18px;}
 
+.loc-ativ{font-weight:400;color:var(--text-muted);font-size:.92em;}
+.loc-btns{display:flex;flex-direction:column;gap:6px;align-items:stretch;}
+.loc-atalhos .link-btn{font-size:inherit;}
 </style>
 </head>
 <body>
@@ -1193,7 +1196,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.9.0 · 10/11';
+const APP_VERSAO = '1.9.2 · 10/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -2350,41 +2353,56 @@ function gManutDetalhe(id){
     + (!o.liberadaEm&&!o.anulado&&dslEhSup()?'<button class="btn primary" data-g-act="manut-liberar" data-id="'+esc(o.id)+'">Liberar equipamento</button><button class="btn" data-g-act="manut-editar" data-id="'+esc(o.id)+'">Corrigir motivo / descrição</button>':'')
     + (dslEhSup()&&!o.anulado?'<button class="btn ghost" data-g-act="anular" data-t="ocorrencias" data-id="'+esc(o.id)+'" style="border:1px solid var(--border);">Anular ocorrência</button>':''));
 }
-function gLocalSheet(equipId){
+function gLocalSheet(equipId, cont, inicioMs){
   const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   if (!eqs.length){ toast('Nenhum equipamento cadastrado.', 3000); return; }
-  const sug = [...new Set(dslValidos(state.locais).map(l=>String(l.local).trim()))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
-  openSheet('<h2 class="section-title" style="margin-top:0;">Atualizar local</h2>'
+  const uniq = campo => [...new Set(dslValidos(state.locais).map(l=>String(l[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
+  const lista = (id, arr) => '<datalist id="'+id+'">'+arr.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>';
+  const ult = cont && equipId ? locAoVivo(state.locais, equipId, Date.now()).reg : null;   // "Continuar": já vem com o mesmo local, atividade e solicitante
+  const jAtual = locTurnoJanela(Date.now()), jAnt = locTurnoJanela(jAtual.ini - 1);
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+(ult?'Continuar no mesmo':'Atualizar local')+'</h2>'
     + '<label class="field-label">Equipamento</label><select id="gl-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
     + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
-    + '<label class="field-label">Onde está atuando</label><input type="text" id="gl-local" maxlength="120" list="gl-sug" placeholder="Ex.: Pátio 2, carregando sucata" autocomplete="off"><datalist id="gl-sug">'+sug.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>'
-    + '<label class="field-label">Observação (opcional)</label><input type="text" id="gl-obs" maxlength="200">'
-    + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label">Local</label><select id="gl-local"><option value="">Escolha o local…</option>'+LOC_LOCAIS.map(x=>'<option value="'+esc(x)+'" '+(ult&&ult.local===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
+    + '<label class="field-label">Atividade</label><input type="text" id="gl-ativ" maxlength="200" list="gl-sug-a" placeholder="Ex.: carregando tarugo, limpando pátio" autocomplete="off" value="'+esc(ult?ult.atividade||'':'')+'">'+lista('gl-sug-a', uniq('atividade'))
+    + '<label class="field-label">Solicitante (opcional)</label><input type="text" id="gl-solic" maxlength="120" list="gl-sug-s" placeholder="Quem pediu o serviço" autocomplete="off" value="'+esc(ult?ult.solicitante||'':'')+'">'+lista('gl-sug-s', uniq('solicitante'))
+    + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date(inicioMs||Date.now()))+'">'
+    + '<div class="hint loc-atalhos" style="margin:-4px 0 10px;">Esqueceu de lançar? Ajuste a hora: <button type="button" class="link-btn" id="gl-t-agora">agora</button> · <button type="button" class="link-btn" id="gl-t-atual">início deste turno ('+locHora(jAtual.ini)+')</button> · <button type="button" class="link-btn" id="gl-t-ant">início do turno anterior ('+locHora(jAnt.ini)+')</button></div>'
     + '<label class="field-label">Fim (opcional)</label><input type="datetime-local" id="gl-fim" value="">'
-    + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” nesse local até você registrar o próximo. Os registros anteriores continuam guardados.</div>'
-    + '<button class="btn primary" id="gl-ok">Salvar local</button>');
-  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : 'Último local: ')+v.reg.local+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
+    + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” até o próximo registro ou até a troca de turno. Os registros anteriores continuam guardados.</div>'
+    + '<button class="btn primary" id="gl-ok">Salvar</button>'
+    + '<button class="btn ghost" id="gl-ok2" style="border:1px solid var(--border);margin-top:8px;">Salvar e adicionar outro trecho</button>');
+  const poeHora = ms => { document.getElementById('gl-data').value = dslLocalInput(new Date(ms)); };
+  document.getElementById('gl-t-agora').onclick = ()=>poeHora(Date.now());
+  document.getElementById('gl-t-atual').onclick = ()=>poeHora(jAtual.ini);
+  document.getElementById('gl-t-ant').onclick = ()=>poeHora(jAnt.ini);
+  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : (v.auto ? 'Sem registro neste turno. Último: ' : 'Último registro: '))+locTexto(v.reg)+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
   document.getElementById('gl-equip').addEventListener('change', mostra); mostra();
-  document.getElementById('gl-ok').onclick = async ()=>{
-    const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = (document.getElementById('gl-local').value||'').trim(), quando = new Date(document.getElementById('gl-data').value);
+  const salvar = async (outro)=>{
+    const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = document.getElementById('gl-local').value, quando = new Date(document.getElementById('gl-data').value);
+    const atividade = (document.getElementById('gl-ativ').value||'').trim(), solicitante = (document.getElementById('gl-solic').value||'').trim();
     if (!eq){ toast('Escolha o equipamento.'); return; }
-    if (!local){ toast('Informe onde o equipamento está.'); return; }
+    if (!LOC_LOCAIS.includes(local)){ toast('Escolha o local.'); return; }
+    if (!atividade){ toast('Informe a atividade.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
     const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
     if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
     if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
     if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
-    const atual = dslLocalAtual(eq.id, state.locais);
-    if (atual && atual.local.trim().toLowerCase()===local.toLowerCase() && !confirm('O equipamento já está registrado em "'+atual.local+'".\n\nRegistrar mesmo assim?')) return;
-    const b = document.getElementById('gl-ok'); b.disabled = true;
+    const v = locAoVivo(state.locais, eq.id, Date.now());
+    if (v.vivo && v.reg.local === local && String(v.reg.atividade||'').trim().toLowerCase() === atividade.toLowerCase() && !confirm('O equipamento já está registrado em "'+locTexto(v.reg)+'".\n\nRegistrar mesmo assim?')) return;
+    const b1 = document.getElementById('gl-ok'), b2 = document.getElementById('gl-ok2'); b1.disabled = b2.disabled = true;
     try{
       const id = 'lo_'+uid();
-      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, obs:(document.getElementById('gl-obs').value||'').trim()||null,
-        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, fim ? { dataFim:fim.toISOString() } : {}));
-      closeSheet(); toast(eq.codigo+' → '+local); if (db.refetchAll) await db.refetchAll();
-    }catch(e){ console.error(e); b.disabled = false; }
+      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, atividade,
+        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, solicitante ? { solicitante } : {}, fim ? { dataFim:fim.toISOString() } : {}));
+      toast(eq.codigo+' → '+local+' · '+atividade); if (db.refetchAll) await db.refetchAll();
+      if (outro){ gLocalSheet(eq.id, false, fim ? fim.getTime() : null); } else closeSheet();
+    }catch(e){ console.error(e); b1.disabled = b2.disabled = false; }
   };
+  document.getElementById('gl-ok').onclick = ()=>salvar(false);
+  document.getElementById('gl-ok2').onclick = ()=>salvar(true);
 }
 function gLocalHist(id){
   const e = dslEquipPorId(id); if (!e) return;
@@ -2393,8 +2411,8 @@ function gLocalHist(id){
   openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(e.codigo)+' — '+esc(e.nome)+'</h2>'
     + '<button class="btn primary" data-g-act="local-nova" data-e="'+esc(id)+'">Atualizar local</button>'
     + '<h2 class="section-title">Por onde passou</h2><div class="card" style="padding:0 14px;">'
-    + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(x.local)+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
+    + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(locTexto(x))+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.solicitante?' · pedido por '+esc(x.solicitante):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
       + (sup&&!x.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
     + '</div>');
 }
@@ -2434,7 +2452,7 @@ async function gCliqueDesk(e){
   else if (a==='manut-liberar') gManutLiberarSheet(id);
   else if (a==='manut-editar') gManutEditarSheet(id);
   else if (a==='manut-ver') gManutDetalhe(id);
-  else if (a==='local-nova') gLocalSheet(b.dataset.e||'');
+  else if (a==='local-nova') gLocalSheet(b.dataset.e||'', !!b.dataset.cont);
   else if (a==='local-hist') gLocalHist(id);
   else if (a==='turno-ver') gTurnoVer(b.dataset.ini);
   else if (a==='turno-xlsx') gTurnoExportar(b.dataset.ini);
@@ -2450,7 +2468,7 @@ function dslBlocoEquipamentos(){
   const linhas = lista.map(e=>{
     const l = dslLocalAtual(e.id, state.locais), oa = dslOcorrenciaAberta(e.id, state.ocorrencias);
     return '<tr style="'+(e.ativo===false?'opacity:.55;':'')+'"><td>'+esc(e.codigo)+' <span>'+esc(e.nome)+'</span></td><td>'+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</td>'
-      + '<td>'+(l?'<b>'+esc(l.local)+'</b> <span>'+dslHaTempo(l.dataHora)+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</span>':'<span>não informado</span>')+'</td>'
+      + '<td>'+(l?'<b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+' <span>'+dslHaTempo(l.dataHora)+(l.solicitante?' · pedido por '+esc(l.solicitante):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</span>':'<span>não informado</span>')+'</td>'
       + '<td>'+(e.ativo===false?dslChip('inativo'):oa?dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger'):dslChip('operando','ok'))+'</td>'
       + '<td><button class="link-btn" data-g-act="local-nova" data-e="'+esc(e.id)+'">atualizar local</button>'
       + '<button class="link-btn" data-g-act="local-hist" data-id="'+esc(e.id)+'">histórico</button>'
@@ -2471,6 +2489,9 @@ Object.assign(state, { glDia: '' });
 const LOC_TURNOS = { 1:{ nome:'1º turno', faixa:'07:10 – 15:10' }, 2:{ nome:'2º turno', faixa:'15:10 – 23:10' }, 3:{ nome:'3º turno', faixa:'23:10 – 07:10' } };
 const LOC_SETORES = ['Pátio de Tarugo','Expedição'];
 const LOC_SEM_SETOR = 'Sem setor';
+const LOC_LOCAIS = ['Planta 1','Planta 2','Trefila'];   // locais escolhidos no formulário (registros antigos com texto livre continuam aparecendo)
+// "Planta 1 · carregando tarugo": o local e o que está sendo feito
+function locTexto(l){ return !l ? '' : String(l.local||'') + (l.atividade ? ' · '+l.atividade : ''); }
 function locT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
 // janela do turno que contém o instante ms (cortes 07:10 / 15:10 / 23:10; o 3º turno que começa às 23:10 pertence ao dia em que começou)
 function locTurnoJanela(ms){
@@ -2494,21 +2515,22 @@ function locTurnosDoDia(diaMs, agoraMs){
   const d = new Date(diaMs), y = d.getFullYear(), m = d.getMonth(), da = d.getDate();
   return [new Date(y,m,da,8,0), new Date(y,m,da,16,0), new Date(y,m,da,23,30)].map(x=>locTurnoJanela(x.getTime())).filter(j=>j.ini <= agoraMs);
 }
-// trechos de um equipamento: cada registro vale do seu início até o MENOR entre o fim informado e o início do próximo registro
+// trechos de um equipamento: cada registro vale do seu início até o MENOR entre (o fim informado OU, se não houver fim, o fim do turno em que começou)
+// e o início do próximo registro. Ou seja: sem fim informado, o registro NÃO atravessa a troca de turno; quem voltar a lançar põe o início na hora certa.
 function locSegmentos(locais, equipId){
   const L = (locais||[]).filter(l=>l && !l.anulado && l.equipamentoId === equipId)
     .sort((a,b)=>locT(a.dataHora)-locT(b.dataHora) || locT(a.timestamp)-locT(b.timestamp));
   return L.map((l,i)=>{
-    const prox = i+1 < L.length ? locT(L[i+1].dataHora) : Infinity;
-    const fimInf = l.dataFim ? locT(l.dataFim) : Infinity;
-    return { reg:l, ini:locT(l.dataHora), fim:Math.min(prox, fimInf) };
+    const ini = locT(l.dataHora), prox = i+1 < L.length ? locT(L[i+1].dataHora) : Infinity;
+    const fimInf = l.dataFim ? locT(l.dataFim) : locTurnoJanela(ini).fim;
+    return { reg:l, ini, fim:Math.min(prox, fimInf), auto:!l.dataFim };
   });
 }
-// situação "ao vivo": vivo = o último registro ainda não terminou
+// situação "ao vivo": vivo = o último registro ainda não terminou (auto = não tinha fim informado: termina sozinho na troca de turno)
 function locAoVivo(locais, equipId, agoraMs){
-  const s = locSegmentos(locais, equipId); if (!s.length) return { reg:null, vivo:false, fim:null };
+  const s = locSegmentos(locais, equipId).filter(x=>x.ini <= agoraMs); if (!s.length) return { reg:null, vivo:false, fim:null, auto:false };
   const u = s[s.length-1];
-  return { reg:u.reg, vivo:u.fim > agoraMs, fim:u.fim === Infinity ? null : u.fim };
+  return { reg:u.reg, vivo:u.fim > agoraMs, fim:u.fim, auto:u.auto };
 }
 // onde o equipamento esteve entre ini e fim (corta no instante atual se o turno ainda não acabou). "vazio" = sem registro.
 function locLinhaTurno(locais, equipId, ini, fim, agoraMs){
@@ -2532,6 +2554,27 @@ function locPorSetor(equips){
   return [...m.entries()].sort((a,b)=>ordem(a[0])-ordem(b[0]) || a[0].localeCompare(b[0]))
     .map(([setor, eqs])=>({ setor, equips:eqs.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))) }));
 }
+// partes [ini,fim) de um período, cortadas à meia-noite e nos cortes de turno (07:10, 15:10, 23:10)
+function locCortes(de, ate){
+  const out = []; let cur = de;
+  while (cur < ate){
+    const d = new Date(cur), y = d.getFullYear(), m = d.getMonth(), da = d.getDate();
+    const pts = [new Date(y,m,da,7,10), new Date(y,m,da,15,10), new Date(y,m,da,23,10), new Date(y,m,da+1,0,0)].map(x=>x.getTime()).filter(t=>t > cur);
+    const prox = Math.min(pts[0], ate); out.push([cur, prox]); cur = prox;
+  }
+  return out;
+}
+// linhas no formato da planilha "Controle de uso de equipamento": cada registro vira uma linha por dia e por turno.
+// aberto = ainda em andamento agora (o término fica em branco)
+function locLinhasPlanilha(locais, equipId, ini, fim, agoraMs){
+  const out = [];
+  locSegmentos(locais, equipId).forEach(s=>{
+    const de = Math.max(s.ini, ini), ate = Math.min(s.fim, fim, agoraMs);
+    if (ate <= de) return;
+    locCortes(de, ate).forEach(([a, b])=>out.push({ reg:s.reg, de:a, ate:b, aberto:s.fim > agoraMs && b === agoraMs }));
+  });
+  return out;
+}
 // ---- LOC-CORE-FIM ----
 function locDiaCurto(ms){ return new Date(ms).toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}).replace('.',''); }
 function locHora(ms){ return new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
@@ -2549,8 +2592,8 @@ function gTurnoVer(iniMs){
     const h = locHora(x.de)+' → '+(x.emAndamento?'agora':locHora(x.ate));
     if (x.vazio) return '<div class="loc-tl-i vazio"><span class="loc-h">'+h+'</span><span>sem registro</span></div>';
     const l = x.reg, min = (x.ate-x.de)/3600000;
-    const notas = [dslFmtHoras(min), l.usuarioNome?esc(l.usuarioNome):'', x.antes?'já estava aqui desde '+dslDataCurta(l.dataHora):'', x.depois?'continuou depois do turno':'', x.emAndamento?'em andamento':''].filter(Boolean).join(' · ');
-    return '<div class="loc-tl-i'+(x.emAndamento?' vivo':'')+'"><span class="loc-h">'+h+'</span><div><b>'+esc(l.local)+'</b>'+(l.obs?' <span class="li-desc">'+esc(l.obs)+'</span>':'')+'<div class="li-desc">'+notas+'</div></div></div>';
+    const notas = [dslFmtHoras(min), l.solicitante?'pedido por '+esc(l.solicitante):'', l.usuarioNome?esc(l.usuarioNome):'', x.antes?'já estava aqui desde '+dslDataCurta(l.dataHora):'', x.depois?'continuou depois do turno':'', x.emAndamento?'em andamento':''].filter(Boolean).join(' · ');
+    return '<div class="loc-tl-i'+(x.emAndamento?' vivo':'')+'"><span class="loc-h">'+h+'</span><div><b>'+esc(l.local)+'</b>'+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+(l.obs?' <span class="li-desc">'+esc(l.obs)+'</span>':'')+'<div class="li-desc">'+notas+'</div></div></div>';
   };
   const corpo = D.grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2>'+g.equips.map(e=>{
     const linha = D.linhaDe[e.id] || [];
@@ -2566,14 +2609,13 @@ function gTurnoExportar(iniMs){
   const rows = [];
   D.grupos.forEach(g=>g.equips.forEach(e=>{
     const linha = D.linhaDe[e.id] || [];
-    if (!locTemRegistro(linha)){ rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:'', de:'', ate:'', minutos:'', usuario:'', obs:'', situacao:'sem registro no turno' }); return; }
-    linha.forEach(x=>rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:x.vazio?'(sem registro)':x.reg.local, de:fmt(x.de), ate:x.emAndamento?'em andamento':fmt(x.ate),
+    if (!locTemRegistro(linha)){ rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:'', atividade:'', solicitante:'', de:'', ate:'', minutos:'', usuario:'', obs:'', situacao:'sem registro no turno' }); return; }
+    linha.forEach(x=>rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:x.vazio?'(sem registro)':x.reg.local, atividade:x.vazio?'':(x.reg.atividade||''), solicitante:x.vazio?'':(x.reg.solicitante||''), de:fmt(x.de), ate:x.emAndamento?'em andamento':fmt(x.ate),
       minutos:Math.round((x.ate-x.de)/60000), usuario:x.vazio?'':(x.reg.usuarioNome||''), obs:x.vazio?'':(x.reg.obs||''), situacao:x.vazio?'sem registro':(x.antes?'já estava aqui ao começar':(x.depois?'continuou depois do turno':'')) }));
   }));
   const p = n=>String(n).padStart(2,'0');
-  exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
+  exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','atividade','solicitante','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
 }
-
 // bloco "Turnos" da aba Locais (filtro Hoje / Ontem / Outro dia; tocar no turno abre o relatório)
 function dslBlocoTurnos(){
   const agora = Date.now(), hoje = locDiaStr(agora), ontem = locDiaStr(agora-86400000);
@@ -2615,8 +2657,8 @@ function dslCartaoParede(x){
   const velho = vivo && (Date.now()-dslT(l.dataHora)) > 24*3600000;
   return '<div class="wall-card '+s.k+(l?'':' sem')+'">'
     + '<div class="wall-top"><div><div class="wall-cod"><span class="loc-ponto'+(vivo?' vivo':'')+'" title="'+(vivo?'ao vivo':'sem atividade')+'"></span>'+esc(e.codigo)+(vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div><div class="wall-nome">'+esc(e.nome)+' · '+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</div></div><span class="wall-st">'+esc(s.rot)+'</span></div>'
-    + (l ? (vivo ? '<div class="wall-local">'+esc(l.local)+'</div>' : '<div class="wall-local vazio">Sem atividade · último: <b>'+esc(l.local)+'</b></div>') : '<div class="wall-local vazio">Local não informado</div>')
-    + (l ? '<div class="wall-sub">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+(vivo?' ('+dslHaTempo(l.dataHora)+')':(v.fim?' até '+dslDataCurta(v.fim):''))+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>' : '')
+    + (l ? (vivo ? '<div class="wall-local">'+esc(l.local)+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div>' : '<div class="wall-local vazio">'+(v.auto?'Sem registro neste turno':'Sem atividade')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+'</div>') : '<div class="wall-local vazio">Local não informado</div>')
+    + (l ? '<div class="wall-sub">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+(vivo?' ('+dslHaTempo(l.dataHora)+')':(v.auto?' · turno anterior':' até '+dslDataCurta(v.fim)))+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>' : '')
     + (velho && s.k==='ok' ? '<div class="wall-alerta">⚠ local sem atualização há mais de 24 h</div>' : '')
     + (s.oa ? '<div class="wall-motivo"><b>'+esc(s.oa.motivo)+'</b> · parado há '+dslFmtHoras(dslOcorrenciaHoras(s.oa))+'<br><span>'+esc(s.oa.descricao)+'</span></div>' : '')
     + '</div>';
@@ -2637,6 +2679,7 @@ function renderLocais(){
         <div class="spacer"></div>
         <button class="btn ghost small" data-loc-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button>
         <button class="btn ghost small" data-loc-act="export" style="border:1px solid var(--border);">Exportar (Excel)</button>
+        <button class="btn ghost small" data-loc-act="export-uso" style="border:1px solid var(--border);">Controle de uso (Excel)…</button>
         <button class="btn primary small" data-loc-act="parede">Modo parede (tela cheia)</button>
       </div>
       <div class="dsl-acoes">
@@ -2666,6 +2709,48 @@ function renderLocais(){
   if (state.locHtml === html) return;
   state.locHtml = html; body.innerHTML = html;
 }
+// Excel no formato da planilha "Controle de uso de equipamento": uma aba por equipamento, uma linha por dia e por turno
+function locExportarUso(deMs, ateMs){
+  const P = { de:deMs, ate:ateMs }, agora = Date.now(), wb = XLSX.utils.book_new(), nomes = new Set();
+  const DIAS = ['DOMINGO','SEGUNDA-FEIRA','TERÇA-FEIRA','QUARTA-FEIRA','QUINTA-FEIRA','SEXTA-FEIRA','SÁBADO'];
+  const serDia = ms => { const d = new Date(ms); return Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 86400000); };
+  const serHora = ms => { const d = new Date(ms); return (d.getHours()*3600 + d.getMinutes()*60) / 86400; };
+  const semana = ms => { const d = new Date(Date.UTC(new Date(ms).getFullYear(), new Date(ms).getMonth(), new Date(ms).getDate())); const n = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - n); return Math.ceil(((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7); };
+  const cab = ['ÁREA','SOLICITANTE','SEMANA','DIA SEMANA','DATA INÍCIO','DATA TÉRMINO','HORÁRIO INÍCIO','HORÁRIO TÉRMINO'];
+  let total = 0;
+  state.equipamentos.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).forEach(e=>{
+    const L = locLinhasPlanilha(state.locais, e.id, P.de, P.ate, agora); if (!L.length) return;
+    const rows = [cab];
+    L.forEach(x=>{
+      const l = x.reg, meiaNoite = !x.aberto && new Date(x.ate).getHours() === 0 && new Date(x.ate).getMinutes() === 0, fimMs = x.aberto ? null : (meiaNoite ? x.ate - 60000 : x.ate);
+      rows.push([(l.local + (l.atividade ? ' · ' + l.atividade : '')).toUpperCase(), (l.solicitante || '').toUpperCase(), semana(x.de), DIAS[new Date(x.de).getDay()], serDia(x.de), fimMs == null ? '' : serDia(fimMs), serHora(x.de), fimMs == null ? '' : serHora(fimMs)]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    for (let r = 1; r < rows.length; r++) [['E','dd/mm/yyyy'],['F','dd/mm/yyyy'],['G','hh:mm'],['H','hh:mm']].forEach(([c, z])=>{ const cel = ws[c + (r + 1)]; if (cel && cel.t === 'n') cel.z = z; });
+    ws['!cols'] = [{wch:44},{wch:22},{wch:8},{wch:16},{wch:13},{wch:13},{wch:15},{wch:15}];
+    let nome = (e.codigo + ' ' + e.nome).replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31).trim(), n = 2; while (nomes.has(nome.toLowerCase())) nome = nome.slice(0, 28) + ' ' + (n++);
+    nomes.add(nome.toLowerCase()); XLSX.utils.book_append_sheet(wb, ws, nome); total += rows.length - 1;
+  });
+  if (!total){ toast('Nenhum registro de local nesse período.', 3000); return; }
+  XLSX.writeFile(wb, 'controle_uso_equipamento_' + locDiaStr(deMs) + '_a_' + locDiaStr(ateMs - 1) + '.xlsx');
+  toast('Arquivo exportado.');
+}
+// janela para escolher o intervalo de datas da planilha (começa com o período que está na tela)
+function locUsoSheet(){
+  const P = locPeriodo();
+  openSheet('<h2 class="section-title" style="margin-top:0;">Controle de uso (Excel)</h2>'
+    + '<div class="hint" style="margin:0 0 10px;">Escolha de que dia até que dia. A planilha sai com uma aba por equipamento.</div>'
+    + '<label class="field-label">De</label><input type="date" id="uso-de" value="'+locDiaStr(P.de)+'" max="'+locDiaStr(Date.now())+'">'
+    + '<label class="field-label">Até</label><input type="date" id="uso-ate" value="'+locDiaStr(Math.min(P.ate - 1, Date.now()))+'" max="'+locDiaStr(Date.now())+'">'
+    + '<button class="btn primary" id="uso-ok">Gerar planilha</button>');
+  document.getElementById('uso-ok').onclick = ()=>{
+    const a = document.getElementById('uso-de').value, b = document.getElementById('uso-ate').value;
+    if (!a || !b){ toast('Informe as duas datas.'); return; }
+    if (a > b){ toast('A data inicial não pode ser depois da final.'); return; }
+    const [y1,m1,d1] = a.split('-').map(Number), [y2,m2,d2] = b.split('-').map(Number);
+    closeSheet(); locExportarUso(new Date(y1,m1-1,d1).getTime(), new Date(y2,m2-1,d2+1).getTime());
+  };
+}
 function locExportar(){
   const P = locPeriodo(), fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
   const wb = XLSX.utils.book_new();
@@ -2674,10 +2759,10 @@ function locExportar(){
     linhasP.push([e?e.codigo:o.equipamentoCodigo, MANUT_CAT[o.categoria]||o.categoria, o.motivo, o.descricao, fmt(o.abertaEm), o.abertaPorNome||'', fmt(o.liberadaEm), o.motivoLiberacao||'', o.servicoRealizado||'', o.recebidoPor||'', Math.round(dslOcorrenciaHoras(o)*100)/100, o.liberadaEm?'liberada':'em aberto']); });
   const w1 = XLSX.utils.aoa_to_sheet(linhasP); w1['!cols'] = [{wch:14},{wch:12},{wch:22},{wch:30},{wch:18},{wch:18},{wch:18},{wch:22},{wch:30},{wch:18},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb, w1, 'Paradas');
-  const linhasL = [['Equipamento','Nome','Situação','Local atual','Observação','Desde','Informado por']];
+  const linhasL = [['Equipamento','Nome','Situação','Local atual','Atividade','Solicitante','Observação','Desde','Informado por']];
   state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).forEach(e=>{ const l = dslLocalAtual(e.id, state.locais), s = dslSituacaoEquip(e);
-    linhasL.push([e.codigo, e.nome, s.rot, l?l.local:'', l?(l.obs||''):'', l?fmt(l.dataHora):'', l?(l.usuarioNome||''):'']); });
-  const w2 = XLSX.utils.aoa_to_sheet(linhasL); w2['!cols'] = [{wch:14},{wch:24},{wch:16},{wch:28},{wch:28},{wch:18},{wch:18}];
+    linhasL.push([e.codigo, e.nome, s.rot, l?l.local:'', l?(l.atividade||''):'', l?(l.solicitante||''):'', l?(l.obs||''):'', l?fmt(l.dataHora):'', l?(l.usuarioNome||''):'']); });
+  const w2 = XLSX.utils.aoa_to_sheet(linhasL); w2['!cols'] = [{wch:14},{wch:24},{wch:16},{wch:16},{wch:30},{wch:20},{wch:28},{wch:18},{wch:18}];
   XLSX.utils.book_append_sheet(wb, w2, 'Local atual');
   XLSX.writeFile(wb, 'veiculos_'+(state.locPer==='mes'?state.locMes:state.locPer==='ano'?state.locAno:'30dias')+'.xlsx');
   toast('Arquivo exportado.');
@@ -2696,6 +2781,7 @@ function locExportar(){
       renderLocais();
     }
     else if (a==='export') locExportar();
+    else if (a==='export-uso') locUsoSheet();
     else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
     else if (a==='parede'){
       try{ await view.requestFullscreen(); }catch(err){ toast('Este navegador não abriu a tela cheia. Tente F11.', 3500); }

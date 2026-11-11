@@ -12,7 +12,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 | App (telas e regras) | `stokk-vite/src/App.jsx` |
 | Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
 | Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…022_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
+| Banco | `schema.sql` + `update_001…023_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 
@@ -30,6 +30,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Usuários (update_020, v1.7.0):** `role`, `ativo`, áreas e senha de contas só mudam pela tela **Usuários** do app (Edge Function `admin-usuarios`, chave de serviço só no servidor) ou pelo painel; o campo `profiles.admin` **só por SQL** (o gatilho `proteger_profiles` o protege). Nunca apagar conta: bloquear (`ativo = false`). Toda ação do admin vai para `admin_acoes` (sem senha).
 - **APK / atualização (v1.7.1):** a cada versão que deve avisar os usuários, aumentar `versionCode` (`android/app/build.gradle`) e `version` (`package.json`). O `android.yml` assina o APK com a chave dos segredos do GitHub e publica a Release `apk-latest` (`STOKK.apk` + `versao.json`). Nunca versionar `.jks`; nunca trocar a chave sem avisar (todos teriam que reinstalar).
 - **Menu por ambiente no APK (v1.9.0):** vale no site e no APK via `modoSite()` (`MENU_NO_APK`); NÃO voltar a usar `Capacitor.isNativePlatform()` nas partes do menu/Stokkbook ambiente (push e atualização do APK continuam nativos). O núcleo `LOC-CORE` existe em `src/App.jsx` E `public/desktop/index.html`, idênticos (teste confere).
+- **Locais (v1.9.1, update_023):** `local` é escolhido entre `LOC_LOCAIS` (Planta 1/2, Trefila; está no LOC-CORE, igual no app e no desktop); `atividade` (obrigatória no app) e `solicitante` (opcional). Mostrar sempre com `locTexto(reg)`.
 - **Locais por setor e turno (update_022):** `equipamento_locais` continua só inserção; o fim de um registro é CALCULADO (menor entre `data_fim` e o início do próximo), nunca gravado por gatilho. Relatório de turno é montado do histórico (bloco `LOC-CORE`; mudou regra → mexer lá e em `tests/locais_core.test.cjs`). Sem `data_fim` não enviar a coluna (app novo com banco antigo). Setor é texto em `equipamentos.setor` (lista `LOC_SETORES`).
 - **Selo de novidades das abas (10/11):** conta só registros de outras pessoas depois da última visita (localStorage por aparelho); nova aba com selo = ampliar `navItens` e a lista em `atualizarSelosAbas`. Regra pura em `NAV-CORE`.
 - **Stokkbook (update_021, v1.8.0):** posts só nascem por gatilho (ex.: `stokkbook_de_cinco_s`), nunca insert pelo app; reações com PK `(post_id, user_id)`; ocultar = `oculto` + motivo (nada se apaga). Novo tipo de evento = ampliar o `check` de `tipo` + gatilho + texto em `sbkCartao`.

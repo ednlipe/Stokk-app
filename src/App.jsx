@@ -368,6 +368,10 @@ const GRUPOS_MENU = [
     { area:'planta1',   nome:'Inventário',      icone:'📦', desc:'Estoque, bipar e conferência' },
     { area:'gestao_p1', nome:'5S',              icone:'🧹', desc:'Antes e depois, resumo do mês' },
     { area:'gestao',    nome:'Veículos móveis', icone:'🚜', desc:'Abastecimento, manutenção e localização' } ] },
+  // Trefila: os dois módulos são da MESMA área (trefila); mudar de um para o outro não recarrega, só troca as abas visíveis
+  { id:'tre', nome:'Trefila', modulos:[
+    { id:'tre_estoque',  area:'trefila', nome:'Estoque',  icone:'📦', desc:'Painel, bipar, estoque e conferência', ocultas:['producao'], inicial:'dashboard' },
+    { id:'tre_producao', area:'trefila', nome:'Produção', icone:'🏭', desc:'Rendimento metálico e dashboard',      soAbas:['producao'], inicial:'producao' } ] },
 ];
 // ---- MENU-CORE-INICIO (testado em tests/menu_core.test.cjs) ----
 function menuGrupos(areas, nativo, grupos){
@@ -382,7 +386,7 @@ function areasColapsadas(areas, nativo, grupos){
     const g = gs.find(x=>x.meus.some(m=>m.area === a.id));
     if (!g){ itens.push({ id:a.id, nome:a.nome, membros:[a.id] }); return; }
     if (visto[g.id]) return; visto[g.id] = true;
-    itens.push({ id:g.meus[0].area, nome:g.nome, membros:g.meus.map(m=>m.area), grupo:g.id });
+    itens.push({ id:g.meus[0].area, nome:g.nome, membros:[...new Set(g.meus.map(m=>m.area))], grupo:g.id });
   });
   return itens;
 }
@@ -391,9 +395,9 @@ function ambientesLista(areas, nativo, grupos){
   if (!nativo) itens.push({ id:'__stokkbook', nome:'Stokkbook', membros:[], especial:true });   // no site o Stokkbook é um ambiente à parte
   return itens;
 }
-function rotuloAmbiente(grupo, area, nomeArea){
+function rotuloAmbiente(grupo, area, nomeArea, moduloId){
   if (!grupo) return nomeArea || '';
-  const m = grupo.modulos.find(x=>x.area === area);
+  const m = (moduloId && grupo.modulos.find(x=>x.id === moduloId)) || grupo.modulos.find(x=>x.area === area);
   return grupo.nome + (m ? ' › '+m.nome : '');
 }
 // ---- MENU-CORE-FIM ----
@@ -401,18 +405,32 @@ function rotuloAmbiente(grupo, area, nomeArea){
 const MENU_NO_APK = true;
 function modoSite(){ return MENU_NO_APK || !Capacitor.isNativePlatform(); }
 function menuGrupoAtual(){ return menuGrupos(state.areas, !modoSite(), GRUPOS_MENU).find(g=>g.meus.some(m=>m.area === state.area)) || null; }
+// módulo aberto dentro do ambiente (vários módulos podem ser da mesma área, como Estoque/Produção da Trefila)
+function moduloAtual(){
+  const g = state.menuGrupo; if (!g) return null;
+  const meus = g.meus.filter(m=>m.area === state.area);
+  let salvo = null; try{ salvo = sessionStorage.getItem('stokk_modulo_id'); }catch(e){}
+  return meus.find(m=>m.id && m.id === salvo) || meus[0] || null;
+}
+function abaInicial(){ const m = moduloAtual(); return (m && m.inicial) || ABA_INICIAL[state.area] || 'dashboard'; }
 function renderMenu(){
   const body = document.getElementById('menu-body'), g = state.menuGrupo; if (!body || !g) return;
   body.innerHTML = '<div class="menu-tit">'+esc(g.nome)+'</div><p class="hint" style="margin:0 0 14px;">Escolha o que quer abrir.</p>'
-    + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card" data-menu-area="'+esc(m.area)+'">'
+    + '<div class="menu-grade">' + g.meus.map(m=>'<button type="button" class="menu-card" data-menu-area="'+esc(m.area)+'" data-menu-mod="'+esc(m.id||'')+'">'
       + '<span class="menu-ico">'+m.icone+'</span><span class="menu-nome">'+esc(m.nome)+'</span><span class="menu-desc">'+esc(m.desc||'')+'</span></button>').join('')
     + '</div>'
     + (admEhAdmin() ? '<div class="menu-adm"><button type="button" class="link-btn" data-menu-ir="usuarios">⚙ Administração: usuários</button></div>' : '');
   const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = g.nome;
 }
-function abrirModulo(area){
+function abrirModulo(area, modId){
   const g = state.menuGrupo; if (!g) return;
-  if (area === state.area){ setView(ABA_INICIAL[state.area] || 'dashboard'); return; }
+  try{ if (modId) sessionStorage.setItem('stokk_modulo_id', modId); else sessionStorage.removeItem('stokk_modulo_id'); }catch(e){}
+  if (area === state.area){
+    state.modulo = moduloAtual(); esconderAbasPorArea();
+    const nome = rotuloAmbiente(g, area, state.user.areaNome, state.modulo && state.modulo.id); state.user.areaNome = nome;
+    const sa = document.querySelector('#topbar-sub .sub-area'); if (sa) sa.textContent = nome;
+    setView(abaInicial()); return;
+  }
   const nome = (g.modulos.find(m=>m.area===area)||{}).nome || '';
   salvarArea(state.user.id, area);
   try{ sessionStorage.setItem('stokk_modulo_direto', '1'); }catch(e){}   // depois de recarregar, abre o módulo (não o menu)
@@ -422,12 +440,14 @@ function abrirModulo(area){
 
 function esconderAbasPorArea(){
   const propria = state.area ? ABAS_DA_AREA[state.area] : null;
-  const ocultas = (state.area && ABAS_OCULTAS_POR_AREA[state.area]) || [];
+  const mod = moduloAtual();
+  const ocultas = ((state.area && ABAS_OCULTAS_POR_AREA[state.area]) || []).concat((mod && mod.ocultas) || []);
   const deOutras = ABAS_GESTAO.concat(ABAS_P1);
   document.querySelectorAll('[data-nav]').forEach(el=>{
     const n = el.getAttribute('data-nav');
+    if (mod && mod.soAbas){ el.style.display = mod.soAbas.includes(n) ? '' : 'none'; return; }
     if (propria ? !propria.includes(n) : (deOutras.includes(n) || ocultas.includes(n))) el.style.display = 'none';
-    else if (propria) el.style.display = '';
+    else if (propria || mod) el.style.display = (el.getAttribute('data-role') === 'supervisor' && !(state.user && state.user.role === 'supervisor')) ? 'none' : '';   // aba só de supervisor continua escondida para operador
   });
 }
 const DIESEL_TABLES = ['equipamentos','tanques','tanque_entradas','abastecimentos','tanque_medicoes'];
@@ -500,7 +520,7 @@ function montarBotaoArea(){
     closeSheet();
     if (novo === '__stokkbook'){ setView('stokkbook'); return; }
     const itemNovo = areasColapsadas(state.areas, !modoSite(), GRUPOS_MENU).find(a=>a.id===novo);
-    if (itemNovo && itemNovo.membros.includes(state.area)){ setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')); return; }   // já está nesse ambiente: volta para ele
+    if (itemNovo && itemNovo.membros.includes(state.area)){ setView(state.menuGrupo ? 'menu' : abaInicial()); return; }   // já está nesse ambiente: volta para ele
     salvarArea(state.user.id, novo);
     const nomeNovo = itemNovo ? itemNovo.nome : ((state.areas.find(a=>a.id===novo)||{}).nome || '');
     try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
@@ -721,7 +741,7 @@ async function onAuthed(user){
     state.areas = areas; state.area = escolhida;
     areaNome = (areas.find(a=>a.id===escolhida)||{}).nome || '';
     state.menuGrupo = menuGrupoAtual();
-    if (state.menuGrupo) areaNome = rotuloAmbiente(state.menuGrupo, escolhida, areaNome);
+    if (state.menuGrupo){ const mm = moduloAtual(); areaNome = rotuloAmbiente(state.menuGrupo, escolhida, areaNome, mm && mm.id); }
   }
   state.user = { id:user.id, email:user.email, nome: (profile&&profile.nome)||user.email, role: (profile&&profile.role)||'operador', area: state.area, areaNome, admin: !!(profile && profile.admin === true) };
   document.getElementById('login-screen').style.display='none';
@@ -743,12 +763,12 @@ async function onAuthed(user){
     document.querySelector('nav.bottom').insertBefore(nb, document.querySelector('nav.bottom').firstChild);
     nb.addEventListener('click', ()=>setView('menu'));
     const bt = document.getElementById('btn-area'); if (bt) bt.textContent = 'trocar ambiente';
-    document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c){ abrirModulo(c.getAttribute('data-menu-area')); return; } const ir = e.target.closest('[data-menu-ir]'); if (ir) setView(ir.getAttribute('data-menu-ir')); });
+    document.getElementById('view-menu').addEventListener('click', e=>{ const c = e.target.closest('[data-menu-area]'); if (c){ abrirModulo(c.getAttribute('data-menu-area'), c.getAttribute('data-menu-mod')); return; } const ir = e.target.closest('[data-menu-ir]'); if (ir) setView(ir.getAttribute('data-menu-ir')); });
   }
   let direto = false; try{ direto = sessionStorage.getItem('stokk_modulo_direto') === '1'; sessionStorage.removeItem('stokk_modulo_direto'); }catch(e){}
   let irStokk = false; try{ irStokk = sessionStorage.getItem('stokk_abrir_stokkbook') === '1'; sessionStorage.removeItem('stokk_abrir_stokkbook'); }catch(e){}
   if (modoSite()) document.body.classList.add('web-amb');   // no site o Stokkbook é um ambiente (não fica no topo)
-  setView(irStokk && modoSite() ? 'stokkbook' : (state.menuGrupo && !direto ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')));
+  setView(irStokk && modoSite() ? 'stokkbook' : (state.menuGrupo && !direto ? 'menu' : abaInicial()));
   registrarPush(user.id);
   atuVerificar(true);
 }
@@ -5193,6 +5213,9 @@ function gTanqueForm(tid){
 const LOC_TURNOS = { 1:{ nome:'1º turno', faixa:'07:10 – 15:10' }, 2:{ nome:'2º turno', faixa:'15:10 – 23:10' }, 3:{ nome:'3º turno', faixa:'23:10 – 07:10' } };
 const LOC_SETORES = ['Pátio de Tarugo','Expedição'];
 const LOC_SEM_SETOR = 'Sem setor';
+const LOC_LOCAIS = ['Planta 1','Planta 2','Trefila'];   // locais escolhidos no formulário (registros antigos com texto livre continuam aparecendo)
+// "Planta 1 · carregando tarugo": o local e o que está sendo feito
+function locTexto(l){ return !l ? '' : String(l.local||'') + (l.atividade ? ' · '+l.atividade : ''); }
 function locT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
 // janela do turno que contém o instante ms (cortes 07:10 / 15:10 / 23:10; o 3º turno que começa às 23:10 pertence ao dia em que começou)
 function locTurnoJanela(ms){
@@ -5216,21 +5239,22 @@ function locTurnosDoDia(diaMs, agoraMs){
   const d = new Date(diaMs), y = d.getFullYear(), m = d.getMonth(), da = d.getDate();
   return [new Date(y,m,da,8,0), new Date(y,m,da,16,0), new Date(y,m,da,23,30)].map(x=>locTurnoJanela(x.getTime())).filter(j=>j.ini <= agoraMs);
 }
-// trechos de um equipamento: cada registro vale do seu início até o MENOR entre o fim informado e o início do próximo registro
+// trechos de um equipamento: cada registro vale do seu início até o MENOR entre (o fim informado OU, se não houver fim, o fim do turno em que começou)
+// e o início do próximo registro. Ou seja: sem fim informado, o registro NÃO atravessa a troca de turno; quem voltar a lançar põe o início na hora certa.
 function locSegmentos(locais, equipId){
   const L = (locais||[]).filter(l=>l && !l.anulado && l.equipamentoId === equipId)
     .sort((a,b)=>locT(a.dataHora)-locT(b.dataHora) || locT(a.timestamp)-locT(b.timestamp));
   return L.map((l,i)=>{
-    const prox = i+1 < L.length ? locT(L[i+1].dataHora) : Infinity;
-    const fimInf = l.dataFim ? locT(l.dataFim) : Infinity;
-    return { reg:l, ini:locT(l.dataHora), fim:Math.min(prox, fimInf) };
+    const ini = locT(l.dataHora), prox = i+1 < L.length ? locT(L[i+1].dataHora) : Infinity;
+    const fimInf = l.dataFim ? locT(l.dataFim) : locTurnoJanela(ini).fim;
+    return { reg:l, ini, fim:Math.min(prox, fimInf), auto:!l.dataFim };
   });
 }
-// situação "ao vivo": vivo = o último registro ainda não terminou
+// situação "ao vivo": vivo = o último registro ainda não terminou (auto = não tinha fim informado: termina sozinho na troca de turno)
 function locAoVivo(locais, equipId, agoraMs){
-  const s = locSegmentos(locais, equipId); if (!s.length) return { reg:null, vivo:false, fim:null };
+  const s = locSegmentos(locais, equipId).filter(x=>x.ini <= agoraMs); if (!s.length) return { reg:null, vivo:false, fim:null, auto:false };
   const u = s[s.length-1];
-  return { reg:u.reg, vivo:u.fim > agoraMs, fim:u.fim === Infinity ? null : u.fim };
+  return { reg:u.reg, vivo:u.fim > agoraMs, fim:u.fim, auto:u.auto };
 }
 // onde o equipamento esteve entre ini e fim (corta no instante atual se o turno ainda não acabou). "vazio" = sem registro.
 function locLinhaTurno(locais, equipId, ini, fim, agoraMs){
@@ -5254,6 +5278,27 @@ function locPorSetor(equips){
   return [...m.entries()].sort((a,b)=>ordem(a[0])-ordem(b[0]) || a[0].localeCompare(b[0]))
     .map(([setor, eqs])=>({ setor, equips:eqs.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))) }));
 }
+// partes [ini,fim) de um período, cortadas à meia-noite e nos cortes de turno (07:10, 15:10, 23:10)
+function locCortes(de, ate){
+  const out = []; let cur = de;
+  while (cur < ate){
+    const d = new Date(cur), y = d.getFullYear(), m = d.getMonth(), da = d.getDate();
+    const pts = [new Date(y,m,da,7,10), new Date(y,m,da,15,10), new Date(y,m,da,23,10), new Date(y,m,da+1,0,0)].map(x=>x.getTime()).filter(t=>t > cur);
+    const prox = Math.min(pts[0], ate); out.push([cur, prox]); cur = prox;
+  }
+  return out;
+}
+// linhas no formato da planilha "Controle de uso de equipamento": cada registro vira uma linha por dia e por turno.
+// aberto = ainda em andamento agora (o término fica em branco)
+function locLinhasPlanilha(locais, equipId, ini, fim, agoraMs){
+  const out = [];
+  locSegmentos(locais, equipId).forEach(s=>{
+    const de = Math.max(s.ini, ini), ate = Math.min(s.fim, fim, agoraMs);
+    if (ate <= de) return;
+    locCortes(de, ate).forEach(([a, b])=>out.push({ reg:s.reg, de:a, ate:b, aberto:s.fim > agoraMs && b === agoraMs }));
+  });
+  return out;
+}
 // ---- LOC-CORE-FIM ----
 
 /* ---- Localização dos equipamentos (update_017) ----
@@ -5269,15 +5314,15 @@ function locHora(ms){ return new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-di
 function gLocalLinha(e, agora){
   const v = locAoVivo(state.locais, e.id, agora), oa = dslOcorrenciaAberta(e.id, state.ocorrencias), l = v.reg;
   let corpo;
-  if (l && v.vivo) corpo = '<div class="loc-onde"><b>'+esc(l.local)+'</b></div><div class="li-desc">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
-  else if (l) corpo = '<div class="li-desc" style="margin:3px 0;">Sem atividade agora · último: <b>'+esc(l.local)+'</b>'+(v.fim?' (até '+dslDataCurta(v.fim)+')':'')+'</div>';
+  if (l && v.vivo) corpo = '<div class="loc-onde"><b>'+esc(l.local)+'</b>'+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div><div class="li-desc">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
+  else if (l) corpo = '<div class="li-desc" style="margin:3px 0;">'+(v.auto?'Sem registro neste turno':'Sem atividade agora')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+' ('+(v.auto?'turno anterior, desde '+dslDataCurta(l.dataHora):'até '+dslDataCurta(v.fim))+')</div>';
   else corpo = '<div class="li-desc" style="margin:3px 0;">Local ainda não informado</div>';
   return '<div class="list-item loc-linha'+(v.vivo?' vivo':'')+'" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;">'
     + '<span class="loc-ponto'+(v.vivo?' vivo':'')+'" title="'+(v.vivo?'ao vivo':'sem atividade')+'"></span><div class="li-main">'
     + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+(v.vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div>'
     + corpo
     + (oa?'<div style="margin-top:4px;">'+dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger')+'</div>':'')
-    + '</div><div class="li-side"><button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
+    + '</div><div class="li-side loc-btns">'+(l && !v.vivo?'<button class="btn small primary" data-g-act="local-nova" data-cont="1" data-e="'+esc(e.id)+'" style="width:auto;margin:0;" title="Abre o formulário com o mesmo local e atividade">Continuar</button>':'')+'<button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
 }
 function gLocalLista(){
   const box = document.getElementById('gl-lista'); if (!box) return;
@@ -5285,7 +5330,7 @@ function gLocalLista(){
   const j = locTurnoJanela(agora), T = LOC_TURNOS[j.turno];
   const faixa = '<div class="loc-faixa t'+j.turno+'"><b>'+T.nome+'</b><span>'+T.faixa+' · termina em '+dslFmtHoras((j.fim-agora)/3600000)+'</span></div>';
   const eqs = state.equipamentos.filter(e=>e.ativo!==false)
-    .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(e.setor||'')+' '+(l?l.local:'')).toLowerCase().includes(q); });
+    .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(e.setor||'')+' '+(l?locTexto(l)+' '+(l.solicitante||''):'')).toLowerCase().includes(q); });
   const grupos = locPorSetor(eqs);
   box.innerHTML = faixa + (grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2><div class="card" style="padding:0 14px;">'+g.equips.map(e=>gLocalLinha(e, agora)).join('')+'</div>').join('')
     || '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>');
@@ -5293,8 +5338,8 @@ function gLocalLista(){
   const rec = document.getElementById('gl-recentes'); if (!rec) return;
   const sup = dslEhSup();
   rec.innerHTML = state.locais.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)||dslT(b.timestamp)-dslT(a.timestamp)).slice(0,25).map(l=>
-    '<div class="list-item" style="'+(l.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(l.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(l.equipamentoId,l.equipamentoCodigo))+' → '+esc(l.local)+(l.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-    + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.dataFim?' → '+dslDataCurta(l.dataFim):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
+    '<div class="list-item" style="'+(l.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(l.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(l.equipamentoId,l.equipamentoCodigo))+' → '+esc(locTexto(l))+(l.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+    + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.dataFim?' → '+dslDataCurta(l.dataFim):'')+(l.solicitante?' · pedido por '+esc(l.solicitante):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
     + (sup&&!l.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(l.id)+'">anular</button></div>':'')+'</div>').join('')
     || '<p class="hint">Nenhuma localização informada ainda.</p>';
 }
@@ -5325,12 +5370,9 @@ function renderGLocal(){
   if (dslSemBanco()){ body.innerHTML = dslAvisoBanco(); return; }
   if (state.locaisErr){ body.innerHTML = gLocalAvisoBanco(); return; }
   if (!document.getElementById('gl-lista')){
-    body.innerHTML = '<div class="btn-row" style="margin-bottom:10px;"><button class="btn primary" data-g-act="local-nova" data-e="">+ Atualizar local</button><button class="btn ghost small" data-g-act="refresh" style="border:1px solid var(--border);width:auto;">↻</button></div>'
-      + '<input type="search" id="gl-busca" placeholder="Buscar equipamento, setor ou local…" value="'+esc(state.glocalBusca||'')+'">'
-      + '<h2 class="section-title">Onde estão agora</h2><div id="gl-lista"></div>'
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><h2 class="section-title" style="flex:1;">Onde estão agora</h2><button class="btn ghost small" data-g-act="refresh" title="Atualizar a lista" style="border:1px solid var(--border);width:auto;margin:0;">↻</button></div><div id="gl-lista"></div>'
       + '<h2 class="section-title">Turnos</h2><p class="hint" style="margin:-4px 0 8px;">Escolha o dia e toque num turno para ver onde cada equipamento esteve.</p><div id="gl-turnos"></div>'
       + '<h2 class="section-title">Últimas atualizações</h2><div class="card" id="gl-recentes" style="padding:0 14px;"></div>';
-    document.getElementById('gl-busca').addEventListener('input', ev=>{ state.glocalBusca = ev.target.value; gLocalLista(); });
   }
   gLocalLista();
 }
@@ -5348,8 +5390,8 @@ function gTurnoVer(iniMs){
     const h = locHora(x.de)+' → '+(x.emAndamento?'agora':locHora(x.ate));
     if (x.vazio) return '<div class="loc-tl-i vazio"><span class="loc-h">'+h+'</span><span>sem registro</span></div>';
     const l = x.reg, min = (x.ate-x.de)/3600000;
-    const notas = [dslFmtHoras(min), l.usuarioNome?esc(l.usuarioNome):'', x.antes?'já estava aqui desde '+dslDataCurta(l.dataHora):'', x.depois?'continuou depois do turno':'', x.emAndamento?'em andamento':''].filter(Boolean).join(' · ');
-    return '<div class="loc-tl-i'+(x.emAndamento?' vivo':'')+'"><span class="loc-h">'+h+'</span><div><b>'+esc(l.local)+'</b>'+(l.obs?' <span class="li-desc">'+esc(l.obs)+'</span>':'')+'<div class="li-desc">'+notas+'</div></div></div>';
+    const notas = [dslFmtHoras(min), l.solicitante?'pedido por '+esc(l.solicitante):'', l.usuarioNome?esc(l.usuarioNome):'', x.antes?'já estava aqui desde '+dslDataCurta(l.dataHora):'', x.depois?'continuou depois do turno':'', x.emAndamento?'em andamento':''].filter(Boolean).join(' · ');
+    return '<div class="loc-tl-i'+(x.emAndamento?' vivo':'')+'"><span class="loc-h">'+h+'</span><div><b>'+esc(l.local)+'</b>'+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+(l.obs?' <span class="li-desc">'+esc(l.obs)+'</span>':'')+'<div class="li-desc">'+notas+'</div></div></div>';
   };
   const corpo = D.grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2>'+g.equips.map(e=>{
     const linha = D.linhaDe[e.id] || [];
@@ -5365,48 +5407,63 @@ function gTurnoExportar(iniMs){
   const rows = [];
   D.grupos.forEach(g=>g.equips.forEach(e=>{
     const linha = D.linhaDe[e.id] || [];
-    if (!locTemRegistro(linha)){ rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:'', de:'', ate:'', minutos:'', usuario:'', obs:'', situacao:'sem registro no turno' }); return; }
-    linha.forEach(x=>rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:x.vazio?'(sem registro)':x.reg.local, de:fmt(x.de), ate:x.emAndamento?'em andamento':fmt(x.ate),
+    if (!locTemRegistro(linha)){ rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:'', atividade:'', solicitante:'', de:'', ate:'', minutos:'', usuario:'', obs:'', situacao:'sem registro no turno' }); return; }
+    linha.forEach(x=>rows.push({ turno:T.nome, setor:g.setor, equipamento:e.codigo, nome:e.nome, local:x.vazio?'(sem registro)':x.reg.local, atividade:x.vazio?'':(x.reg.atividade||''), solicitante:x.vazio?'':(x.reg.solicitante||''), de:fmt(x.de), ate:x.emAndamento?'em andamento':fmt(x.ate),
       minutos:Math.round((x.ate-x.de)/60000), usuario:x.vazio?'':(x.reg.usuarioNome||''), obs:x.vazio?'':(x.reg.obs||''), situacao:x.vazio?'sem registro':(x.antes?'já estava aqui ao começar':(x.depois?'continuou depois do turno':'')) }));
   }));
   const p = n=>String(n).padStart(2,'0');
-  exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
+  exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','atividade','solicitante','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
 }
-function gLocalSheet(equipId){
+function gLocalSheet(equipId, cont, inicioMs){
   const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   if (!eqs.length){ toast('Nenhum equipamento cadastrado.', 3000); return; }
-  const sug = [...new Set(dslValidos(state.locais).map(l=>String(l.local).trim()))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
-  openSheet('<h2 class="section-title" style="margin-top:0;">Atualizar local</h2>'
+  const uniq = campo => [...new Set(dslValidos(state.locais).map(l=>String(l[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
+  const lista = (id, arr) => '<datalist id="'+id+'">'+arr.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>';
+  const ult = cont && equipId ? locAoVivo(state.locais, equipId, Date.now()).reg : null;   // "Continuar": já vem com o mesmo local, atividade e solicitante
+  const jAtual = locTurnoJanela(Date.now()), jAnt = locTurnoJanela(jAtual.ini - 1);
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+(ult?'Continuar no mesmo':'Atualizar local')+'</h2>'
     + '<label class="field-label">Equipamento</label><select id="gl-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
     + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
-    + '<label class="field-label">Onde está atuando</label><input type="text" id="gl-local" maxlength="120" list="gl-sug" placeholder="Ex.: Pátio 2, carregando sucata" autocomplete="off"><datalist id="gl-sug">'+sug.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>'
-    + '<label class="field-label">Observação (opcional)</label><input type="text" id="gl-obs" maxlength="200">'
-    + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date())+'">'
+    + '<label class="field-label">Local</label><select id="gl-local"><option value="">Escolha o local…</option>'+LOC_LOCAIS.concat(ult&&ult.local&&!LOC_LOCAIS.includes(ult.local)?[ult.local]:[]).map(x=>'<option value="'+esc(x)+'" '+(ult&&ult.local===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
+    + '<label class="field-label">Atividade</label><input type="text" id="gl-ativ" maxlength="200" list="gl-sug-a" placeholder="Ex.: carregando tarugo, limpando pátio" autocomplete="off" value="'+esc(ult?ult.atividade||'':'')+'">'+lista('gl-sug-a', uniq('atividade'))
+    + '<label class="field-label">Solicitante (opcional)</label><input type="text" id="gl-solic" maxlength="120" list="gl-sug-s" placeholder="Quem pediu o serviço" autocomplete="off" value="'+esc(ult?ult.solicitante||'':'')+'">'+lista('gl-sug-s', uniq('solicitante'))
+    + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date(inicioMs||Date.now()))+'">'
+    + '<div class="hint loc-atalhos" style="margin:-4px 0 10px;">Esqueceu de lançar? Ajuste a hora: <button type="button" class="link-btn" id="gl-t-agora">agora</button> · <button type="button" class="link-btn" id="gl-t-atual">início deste turno ('+locHora(jAtual.ini)+')</button> · <button type="button" class="link-btn" id="gl-t-ant">início do turno anterior ('+locHora(jAnt.ini)+')</button></div>'
     + '<label class="field-label">Fim (opcional)</label><input type="datetime-local" id="gl-fim" value="">'
-    + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” nesse local até você registrar o próximo. Os registros anteriores continuam guardados.</div>'
-    + '<button class="btn primary" id="gl-ok">Salvar local</button>');
-  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : 'Último local: ')+v.reg.local+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
+    + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” até o próximo registro ou até a troca de turno. Os registros anteriores continuam guardados.</div>'
+    + '<button class="btn primary" id="gl-ok">Salvar</button>'
+    + '<button class="btn ghost" id="gl-ok2" style="border:1px solid var(--border);margin-top:8px;">Salvar e adicionar outro trecho</button>');
+  const poeHora = ms => { document.getElementById('gl-data').value = dslLocalInput(new Date(ms)); };
+  document.getElementById('gl-t-agora').onclick = ()=>poeHora(Date.now());
+  document.getElementById('gl-t-atual').onclick = ()=>poeHora(jAtual.ini);
+  document.getElementById('gl-t-ant').onclick = ()=>poeHora(jAnt.ini);
+  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : (v.auto ? 'Sem registro neste turno. Último: ' : 'Último registro: '))+locTexto(v.reg)+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
   document.getElementById('gl-equip').addEventListener('change', mostra); mostra();
-  document.getElementById('gl-ok').onclick = async ()=>{
-    const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = (document.getElementById('gl-local').value||'').trim(), quando = new Date(document.getElementById('gl-data').value);
+  const salvar = async (outro)=>{
+    const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = document.getElementById('gl-local').value, quando = new Date(document.getElementById('gl-data').value);
+    const atividade = (document.getElementById('gl-ativ').value||'').trim(), solicitante = (document.getElementById('gl-solic').value||'').trim();
     if (!eq){ toast('Escolha o equipamento.'); return; }
-    if (!local){ toast('Informe onde o equipamento está.'); return; }
+    if (!LOC_LOCAIS.includes(local) && !(ult && local && local === ult.local)){ toast('Escolha o local.'); return; }   // local antigo (texto livre) só vale ao continuar nele
+    if (!atividade){ toast('Informe a atividade.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
     const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
     if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
     if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
     if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
-    const atual = dslLocalAtual(eq.id, state.locais);
-    if (atual && atual.local.trim().toLowerCase()===local.toLowerCase() && !confirm('O equipamento já está registrado em "'+atual.local+'".\n\nRegistrar mesmo assim?')) return;
-    const b = document.getElementById('gl-ok'); b.disabled = true;
+    const v = locAoVivo(state.locais, eq.id, Date.now());
+    if (v.vivo && v.reg.local === local && String(v.reg.atividade||'').trim().toLowerCase() === atividade.toLowerCase() && !confirm('O equipamento já está registrado em "'+locTexto(v.reg)+'".\n\nRegistrar mesmo assim?')) return;
+    const b1 = document.getElementById('gl-ok'), b2 = document.getElementById('gl-ok2'); b1.disabled = b2.disabled = true;
     try{
       const id = 'lo_'+uid();
-      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, obs:(document.getElementById('gl-obs').value||'').trim()||null,
-        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, fim ? { dataFim:fim.toISOString() } : {}));
-      closeSheet(); toast(eq.codigo+' → '+local); if (db.refetchAll) await db.refetchAll();
-    }catch(e){ console.error(e); b.disabled = false; }
+      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, atividade,
+        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, solicitante ? { solicitante } : {}, fim ? { dataFim:fim.toISOString() } : {}));
+      toast(eq.codigo+' → '+local+' · '+atividade); if (db.refetchAll) await db.refetchAll();
+      if (outro){ gLocalSheet(eq.id, false, fim ? fim.getTime() : null); } else closeSheet();
+    }catch(e){ console.error(e); b1.disabled = b2.disabled = false; }
   };
+  document.getElementById('gl-ok').onclick = ()=>salvar(false);
+  document.getElementById('gl-ok2').onclick = ()=>salvar(true);
 }
 function gLocalHist(id){
   const e = dslEquipPorId(id); if (!e) return;
@@ -5415,8 +5472,8 @@ function gLocalHist(id){
   openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(e.codigo)+' — '+esc(e.nome)+'</h2>'
     + '<button class="btn primary" data-g-act="local-nova" data-e="'+esc(id)+'">Atualizar local</button>'
     + '<h2 class="section-title">Por onde passou</h2><div class="card" style="padding:0 14px;">'
-    + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(x.local)+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
-      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
+    + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(locTexto(x))+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
+      + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.solicitante?' · pedido por '+esc(x.solicitante):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
       + (sup&&!x.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
     + '</div>');
 }
@@ -5690,7 +5747,7 @@ async function gClique(e){
     else if (a==='manut-liberar') gManutLiberarSheet(id);
     else if (a==='manut-ver') gManutDetalhe(id);
     else if (a==='manut-editar') gManutEditarSheet(id);
-    else if (a==='local-nova') gLocalSheet(b.dataset.e||'');
+    else if (a==='local-nova') gLocalSheet(b.dataset.e||'', !!b.dataset.cont);
     else if (a==='local-hist') gLocalHist(id);
     else if (a==='turno-ver') gTurnoVer(b.dataset.ini);
     else if (a==='turno-xlsx') gTurnoExportar(b.dataset.ini);
@@ -6199,7 +6256,7 @@ function sbkClique(e){
   if (img && img.dataset.c5){ openSheet('<img class="c5-img sbk-grande" data-c5="'+esc(img.dataset.c5)+'" alt="">'); c5Hidratar(document.getElementById('sheet-content')); return; }
   const t = e.target.closest('[data-sbk-act]'); if (!t) return;
   const act = t.getAttribute('data-sbk-act'), id = Number(t.getAttribute('data-id'));
-  if (act === 'voltar') setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard'));
+  if (act === 'voltar') setView(state.menuGrupo ? 'menu' : abaInicial());
   else if (act === 'recarregar') sbkCarregar(false);
   else if (act === 'reagir') sbkReagir(id, t.getAttribute('data-emoji'));
   else if (act === 'ocultar') sbkOcultarSheet(id);
@@ -6334,7 +6391,7 @@ function admClique(e){
   const t = e.target.closest('[data-adm-act]'); if (!t || !admEhAdmin()) return;
   const act = t.getAttribute('data-adm-act'); const E = admEstado();
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  if (act === 'voltar'){ setView(state.menuGrupo ? 'menu' : (ABA_INICIAL[state.area] || 'dashboard')); }
+  if (act === 'voltar'){ setView(state.menuGrupo ? 'menu' : abaInicial()); }
   else if (act === 'recarregar'){ admCarregar(); }
   else if (act === 'novo'){ admNovoSheet(); }
   else if (act === 'editar'){ admEditarSheet(t.getAttribute('data-id')); }

@@ -24,4 +24,14 @@ assert.strictEqual(it.length, 1); assert.strictEqual(it[0].id, 'gestao_p1', 'sem
 const g = menuGrupos(A('planta1', 'gestao_p1'), false, G)[0];
 assert.strictEqual(rotuloAmbiente(g, 'gestao_p1', 'x'), 'Laminação Planta 1 › 5S');
 assert.strictEqual(rotuloAmbiente(null, 'trefila', 'Trefila'), 'Trefila');
+// Trefila: dois módulos da MESMA área formam um ambiente com submenu (Estoque / Produção)
+const GT = G.concat([{ id: 'tre', nome: 'Trefila', modulos: [{ id: 'tre_estoque', area: 'trefila', nome: 'Estoque' }, { id: 'tre_producao', area: 'trefila', nome: 'Produção' }] }]);
+const gt = menuGrupos(A('trefila'), false, GT);
+assert.strictEqual(gt.length, 1); assert.deepStrictEqual(gt[0].meus.map(m => m.id), ['tre_estoque', 'tre_producao']);
+assert.deepStrictEqual(menuGrupos(A('trefila'), true, GT), [], 'no APK com a trava ligada nada muda');
+it = areasColapsadas(A('trefila', 'planta1', 'gestao_p1'), false, GT);
+assert.deepStrictEqual(it.map(i => i.nome), ['Trefila', 'Laminação Planta 1']);
+assert.deepStrictEqual(it[0].membros, ['trefila'], 'sem área repetida');
+assert.strictEqual(rotuloAmbiente(gt[0], 'trefila', 'x', 'tre_producao'), 'Trefila › Produção');
+assert.strictEqual(rotuloAmbiente(gt[0], 'trefila', 'x'), 'Trefila › Estoque');
 console.log('menu_core: todos os testes passaram');

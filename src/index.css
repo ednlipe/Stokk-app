@@ -393,3 +393,8 @@ body.web-amb #btn-stokkbook{display:none;}
 /* selo laranja de novidades nas abas de baixo */
 nav.bottom button{position:relative;}
 .nav-selo{position:absolute;top:3px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 4px;border-radius:9px;box-sizing:border-box;background:var(--accent);color:var(--accent-ink);border:2px solid var(--surface);font:700 10px/14px var(--font-head);letter-spacing:0;text-align:center;pointer-events:none;}
+
+.loc-ativ{font-weight:400;color:var(--text-muted);font-size:.92em;}
+
+.loc-btns{display:flex;flex-direction:column;gap:6px;align-items:stretch;}
+.loc-atalhos .link-btn{font-size:inherit;}
