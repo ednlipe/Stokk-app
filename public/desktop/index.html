@@ -585,6 +585,8 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
 .loc-ativ{font-weight:400;color:var(--text-muted);font-size:.92em;}
 .loc-btns{display:flex;flex-direction:column;gap:6px;align-items:stretch;}
 .loc-atalhos .link-btn{font-size:inherit;}
+.loc-ponto.parada{border-color:var(--text-muted);background:var(--text-muted);}
+.loc-ponto.manut{border-color:var(--danger);background:var(--danger);}
 </style>
 </head>
 <body>
@@ -1196,7 +1198,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.9.2 · 10/11';
+const APP_VERSAO = '1.9.3 · 13/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -2491,7 +2493,15 @@ const LOC_SETORES = ['Pátio de Tarugo','Expedição'];
 const LOC_SEM_SETOR = 'Sem setor';
 const LOC_LOCAIS = ['Planta 1','Planta 2','Trefila'];   // locais escolhidos no formulário (registros antigos com texto livre continuam aparecendo)
 // "Planta 1 · carregando tarugo": o local e o que está sendo feito
+const LOC_PARADA = 'Máquina parada';   // "local" especial: equipamento sem serviço (sem atividade/solicitante; só início e fim)
+function locEhParada(l){ return !!l && l.local === LOC_PARADA; }
 function locTexto(l){ return !l ? '' : String(l.local||'') + (l.atividade ? ' · '+l.atividade : ''); }
+// situação para mostrar: manutenção/parada operacional (ocorrência aberta) vence tudo até ser liberada; calculado, nunca gravado
+function locSituacao(v, oa){
+  if (oa) return oa.categoria === 'manutencao' ? 'manut' : 'parado';
+  if (v && v.reg && v.vivo) return locEhParada(v.reg) ? 'parada' : 'vivo';
+  return v && v.reg ? 'sem' : 'nada';
+}
 function locT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
 // janela do turno que contém o instante ms (cortes 07:10 / 15:10 / 23:10; o 3º turno que começa às 23:10 pertence ao dia em que começou)
 function locTurnoJanela(ms){
@@ -2653,11 +2663,11 @@ function dslSituacaoEquip(e){
   return { k:'ok', rot:'Operando', oa:null };
 }
 function dslCartaoParede(x){
-  const { e, s, l, v } = x, vivo = !!(v && v.vivo);
+  const { e, s, l, v } = x, sit = locSituacao(v, s.oa), vivo = sit === 'vivo', paradaM = sit === 'parada';
   const velho = vivo && (Date.now()-dslT(l.dataHora)) > 24*3600000;
   return '<div class="wall-card '+s.k+(l?'':' sem')+'">'
-    + '<div class="wall-top"><div><div class="wall-cod"><span class="loc-ponto'+(vivo?' vivo':'')+'" title="'+(vivo?'ao vivo':'sem atividade')+'"></span>'+esc(e.codigo)+(vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div><div class="wall-nome">'+esc(e.nome)+' · '+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</div></div><span class="wall-st">'+esc(s.rot)+'</span></div>'
-    + (l ? (vivo ? '<div class="wall-local">'+esc(l.local)+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div>' : '<div class="wall-local vazio">'+(v.auto?'Sem registro neste turno':'Sem atividade')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+'</div>') : '<div class="wall-local vazio">Local não informado</div>')
+    + '<div class="wall-top"><div><div class="wall-cod"><span class="loc-ponto'+(vivo?' vivo':(paradaM?' parada':(s.oa?' manut':'')))+'" title="'+(vivo?'ao vivo':(paradaM?'máquina parada':(s.oa?'em manutenção':'sem atividade')))+'"></span>'+esc(e.codigo)+(vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div><div class="wall-nome">'+esc(e.nome)+' · '+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</div></div><span class="wall-st">'+esc(s.rot)+'</span></div>'
+    + (l ? ((vivo||paradaM) ? '<div class="wall-local">'+esc(l.local)+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div>' : '<div class="wall-local vazio">'+(v.auto?'Sem registro neste turno':'Sem atividade')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+'</div>') : '<div class="wall-local vazio">Local não informado</div>')
     + (l ? '<div class="wall-sub">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+(vivo?' ('+dslHaTempo(l.dataHora)+')':(v.auto?' · turno anterior':' até '+dslDataCurta(v.fim)))+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>' : '')
     + (velho && s.k==='ok' ? '<div class="wall-alerta">⚠ local sem atualização há mais de 24 h</div>' : '')
     + (s.oa ? '<div class="wall-motivo"><b>'+esc(s.oa.motivo)+'</b> · parado há '+dslFmtHoras(dslOcorrenciaHoras(s.oa))+'<br><span>'+esc(s.oa.descricao)+'</span></div>' : '')

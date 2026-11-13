@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
 const ini = src.indexOf('// ---- LOC-CORE-INICIO'), fim = src.indexOf('// ---- LOC-CORE-FIM');
 assert(ini > 0 && fim > ini);
-const C = new Function(src.slice(ini, fim) + '; return { locTurnoJanela, locTurnosRecentes, locSegmentos, locAoVivo, locLinhaTurno, locTemRegistro, locPorSetor, locTurnosDoDia, locTexto, LOC_LOCAIS, locCortes, locLinhasPlanilha };')();
+const C = new Function(src.slice(ini, fim) + '; return { locTurnoJanela, locTurnosRecentes, locSegmentos, locAoVivo, locLinhaTurno, locTemRegistro, locPorSetor, locTurnosDoDia, locTexto, LOC_LOCAIS, LOC_PARADA, locEhParada, locSituacao, locCortes, locLinhasPlanilha };')();
 const L = (y, m, d, h, mi) => new Date(y, m - 1, d, h, mi).getTime();
 const iso = ms => new Date(ms).toISOString();
 
@@ -131,4 +131,13 @@ assert.strictEqual(plan.filter(x => x.aberto).length, 1);
 // recorte pelo período pedido
 const plan2 = C.locLinhasPlanilha([R('Q','pc',L(2026,10,10,6,0),L(2026,10,10,20,0))], 'pc', L(2026,10,10,12,0), L(2026,10,10,14,0), ag2);
 assert.strictEqual(plan2.length, 1); assert.strictEqual(plan2[0].de, L(2026,10,10,12,0)); assert.strictEqual(plan2[0].ate, L(2026,10,10,14,0));
+// ---- máquina parada + situação (manutenção vence)
+const vv = C.locAoVivo([R('M1','pc',L(2026,11,10,9,0),null,{ local: C.LOC_PARADA })], 'pc', L(2026,11,10,10,0));
+assert.strictEqual(C.locEhParada(vv.reg), true); assert.strictEqual(C.locSituacao(vv, null), 'parada');
+assert.strictEqual(C.locSituacao(vv, { categoria:'manutencao' }), 'manut', 'ocorrência aberta vence');
+assert.strictEqual(C.locSituacao(vv, { categoria:'parada' }), 'parado');
+assert.strictEqual(C.locSituacao(C.locAoVivo(locs,'emp',L(2026,11,10,10,0)), null), 'vivo');
+assert.strictEqual(C.locSituacao(C.locAoVivo(locs,'pc',agora), null), 'sem');
+assert.strictEqual(C.locSituacao(C.locAoVivo([], 'x', agora), null), 'nada');
+assert.strictEqual(C.locTexto(vv.reg), 'Máquina parada');
 console.log('locais_core: todos os testes passaram');

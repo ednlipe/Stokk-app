@@ -5215,7 +5215,15 @@ const LOC_SETORES = ['Pátio de Tarugo','Expedição'];
 const LOC_SEM_SETOR = 'Sem setor';
 const LOC_LOCAIS = ['Planta 1','Planta 2','Trefila'];   // locais escolhidos no formulário (registros antigos com texto livre continuam aparecendo)
 // "Planta 1 · carregando tarugo": o local e o que está sendo feito
+const LOC_PARADA = 'Máquina parada';   // "local" especial: equipamento sem serviço (sem atividade/solicitante; só início e fim)
+function locEhParada(l){ return !!l && l.local === LOC_PARADA; }
 function locTexto(l){ return !l ? '' : String(l.local||'') + (l.atividade ? ' · '+l.atividade : ''); }
+// situação para mostrar: manutenção/parada operacional (ocorrência aberta) vence tudo até ser liberada; calculado, nunca gravado
+function locSituacao(v, oa){
+  if (oa) return oa.categoria === 'manutencao' ? 'manut' : 'parado';
+  if (v && v.reg && v.vivo) return locEhParada(v.reg) ? 'parada' : 'vivo';
+  return v && v.reg ? 'sem' : 'nada';
+}
 function locT(v){ const t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
 // janela do turno que contém o instante ms (cortes 07:10 / 15:10 / 23:10; o 3º turno que começa às 23:10 pertence ao dia em que começou)
 function locTurnoJanela(ms){
@@ -5312,17 +5320,20 @@ function dslHaTempo(iso){ const h = (Date.now()-dslT(iso))/3600000; return h < 1
 function locDiaCurto(ms){ return new Date(ms).toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}).replace('.',''); }
 function locHora(ms){ return new Date(ms).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
 function gLocalLinha(e, agora){
-  const v = locAoVivo(state.locais, e.id, agora), oa = dslOcorrenciaAberta(e.id, state.ocorrencias), l = v.reg;
+  const v = locAoVivo(state.locais, e.id, agora), oa = dslOcorrenciaAberta(e.id, state.ocorrencias), l = v.reg, sit = locSituacao(v, oa), vivo = sit === 'vivo';
   let corpo;
-  if (l && v.vivo) corpo = '<div class="loc-onde"><b>'+esc(l.local)+'</b>'+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div><div class="li-desc">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
+  if (sit === 'manut' || sit === 'parado') corpo = '<div class="loc-onde"><b>'+(sit==='manut'?'Em manutenção':'Parada operacional')+'</b>'+(oa.motivo?' <span class="loc-ativ">· '+esc(oa.motivo)+'</span>':'')+'</div><div class="li-desc">desde '+dslDataCurta(oa.abertaEm)+' ('+dslHaTempo(oa.abertaEm)+') · até ser liberada'+(l?' · último local: '+esc(l.local):'')+'</div>';
+  else if (sit === 'parada') corpo = '<div class="loc-onde"><b>Máquina parada</b></div><div class="li-desc">'+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
+  else if (vivo) corpo = '<div class="loc-onde"><b>'+esc(l.local)+'</b>'+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div><div class="li-desc">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+' ('+dslHaTempo(l.dataHora)+')'+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>';
   else if (l) corpo = '<div class="li-desc" style="margin:3px 0;">'+(v.auto?'Sem registro neste turno':'Sem atividade agora')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+' ('+(v.auto?'turno anterior, desde '+dslDataCurta(l.dataHora):'até '+dslDataCurta(v.fim))+')</div>';
   else corpo = '<div class="li-desc" style="margin:3px 0;">Local ainda não informado</div>';
-  return '<div class="list-item loc-linha'+(v.vivo?' vivo':'')+'" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;">'
-    + '<span class="loc-ponto'+(v.vivo?' vivo':'')+'" title="'+(v.vivo?'ao vivo':'sem atividade')+'"></span><div class="li-main">'
-    + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+(v.vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div>'
+  const tit = {vivo:'ao vivo', parada:'máquina parada', manut:'em manutenção', parado:'parada operacional'}[sit] || 'sem atividade';
+  return '<div class="list-item loc-linha'+(vivo?' vivo':'')+'" data-g-act="local-hist" data-id="'+esc(e.id)+'" style="cursor:pointer;">'
+    + '<span class="loc-ponto'+(sit==='nada'||sit==='sem'?'':' '+(sit==='parado'?'manut':sit))+'" title="'+tit+'"></span><div class="li-main">'
+    + '<div class="li-code" style="font-size:15px;">'+esc(e.codigo)+' — '+esc(e.nome)+(vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div>'
     + corpo
     + (oa?'<div style="margin-top:4px;">'+dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger')+'</div>':'')
-    + '</div><div class="li-side loc-btns">'+(l && !v.vivo?'<button class="btn small primary" data-g-act="local-nova" data-cont="1" data-e="'+esc(e.id)+'" style="width:auto;margin:0;" title="Abre o formulário com o mesmo local e atividade">Continuar</button>':'')+'<button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
+    + '</div><div class="li-side loc-btns">'+((sit==='sem')?'<button class="btn small primary" data-g-act="local-nova" data-cont="1" data-e="'+esc(e.id)+'" style="width:auto;margin:0;" title="Abre o formulário com o mesmo local e atividade">Continuar</button>':'')+'<button class="btn small" data-g-act="local-nova" data-e="'+esc(e.id)+'" style="width:auto;margin:0;">Atualizar</button></div></div>';
 }
 function gLocalLista(){
   const box = document.getElementById('gl-lista'); if (!box) return;
@@ -5424,7 +5435,7 @@ function gLocalSheet(equipId, cont, inicioMs){
   openSheet('<h2 class="section-title" style="margin-top:0;">'+(ult?'Continuar no mesmo':'Atualizar local')+'</h2>'
     + '<label class="field-label">Equipamento</label><select id="gl-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
     + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
-    + '<label class="field-label">Local</label><select id="gl-local"><option value="">Escolha o local…</option>'+LOC_LOCAIS.concat(ult&&ult.local&&!LOC_LOCAIS.includes(ult.local)?[ult.local]:[]).map(x=>'<option value="'+esc(x)+'" '+(ult&&ult.local===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
+    + '<label class="field-label">Local</label><select id="gl-local"><option value="">Escolha o local…</option>'+LOC_LOCAIS.concat([LOC_PARADA]).concat(ult&&ult.local&&!LOC_LOCAIS.includes(ult.local)&&ult.local!==LOC_PARADA?[ult.local]:[]).map(x=>'<option value="'+esc(x)+'" '+(ult&&ult.local===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
     + '<label class="field-label">Atividade</label><input type="text" id="gl-ativ" maxlength="200" list="gl-sug-a" placeholder="Ex.: carregando tarugo, limpando pátio" autocomplete="off" value="'+esc(ult?ult.atividade||'':'')+'">'+lista('gl-sug-a', uniq('atividade'))
     + '<label class="field-label">Solicitante (opcional)</label><input type="text" id="gl-solic" maxlength="120" list="gl-sug-s" placeholder="Quem pediu o serviço" autocomplete="off" value="'+esc(ult?ult.solicitante||'':'')+'">'+lista('gl-sug-s', uniq('solicitante'))
     + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date(inicioMs||Date.now()))+'">'
@@ -5437,28 +5448,39 @@ function gLocalSheet(equipId, cont, inicioMs){
   document.getElementById('gl-t-agora').onclick = ()=>poeHora(Date.now());
   document.getElementById('gl-t-atual').onclick = ()=>poeHora(jAtual.ini);
   document.getElementById('gl-t-ant').onclick = ()=>poeHora(jAnt.ini);
-  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : (v.auto ? 'Sem registro neste turno. Último: ' : 'Último registro: '))+locTexto(v.reg)+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : ''; };
+  const mostra = ()=>{ const v = locAoVivo(state.locais, document.getElementById('gl-equip').value, Date.now()); document.getElementById('gl-atual').textContent = v.reg ? (v.vivo ? 'Ao vivo agora: ' : (v.auto ? 'Sem registro neste turno. Último: ' : 'Último registro: '))+locTexto(v.reg)+' (desde '+dslDataCurta(v.reg.dataHora)+')'+(v.vivo?' — será encerrado no início do novo registro.':'') : '';
+    const oa = dslOcorrenciaAberta(document.getElementById('gl-equip').value, state.ocorrencias), el = document.getElementById('gl-atual');
+    if (oa){ el.innerHTML = '<span style="color:var(--danger);font-weight:700;">'+(oa.categoria==='manutencao'?'Em manutenção':'Parada operacional')+' desde '+esc(dslDataCurta(oa.abertaEm))+'. Libere a ocorrência antes de iniciar uma atividade.</span>'+(el.textContent?'<br>'+esc(el.textContent):''); } };
   document.getElementById('gl-equip').addEventListener('change', mostra); mostra();
+  // "Máquina parada": só início e fim (esconde atividade e solicitante)
+  const ajustaParada = ()=>{ const par = document.getElementById('gl-local').value === LOC_PARADA; ['gl-ativ','gl-solic'].forEach(id=>{ const el = document.getElementById(id); el.style.display = par ? 'none' : ''; if (el.previousElementSibling) el.previousElementSibling.style.display = par ? 'none' : ''; }); };
+  document.getElementById('gl-local').addEventListener('change', ajustaParada); ajustaParada();
   const salvar = async (outro)=>{
     const eq = dslEquipPorId(document.getElementById('gl-equip').value), local = document.getElementById('gl-local').value, quando = new Date(document.getElementById('gl-data').value);
-    const atividade = (document.getElementById('gl-ativ').value||'').trim(), solicitante = (document.getElementById('gl-solic').value||'').trim();
+    const parada = local === LOC_PARADA;
+    const atividade = parada ? '' : (document.getElementById('gl-ativ').value||'').trim(), solicitante = parada ? '' : (document.getElementById('gl-solic').value||'').trim();
     if (!eq){ toast('Escolha o equipamento.'); return; }
-    if (!LOC_LOCAIS.includes(local) && !(ult && local && local === ult.local)){ toast('Escolha o local.'); return; }   // local antigo (texto livre) só vale ao continuar nele
-    if (!atividade){ toast('Informe a atividade.'); return; }
+    if (!LOC_LOCAIS.includes(local) && !parada && !(ult && local && local === ult.local)){ toast('Escolha o local.'); return; }   // local antigo (texto livre) só vale ao continuar nele
+    if (!atividade && !parada){ toast('Informe a atividade.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
     const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
     if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
     if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
     if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
+    // trava: equipamento com ocorrência aberta (manutenção/parada) só aceita trecho que TERMINE antes da abertura (lançar o que aconteceu antes)
+    const oa = dslOcorrenciaAberta(eq.id, state.ocorrencias);
+    if (oa && !(fim && fim.getTime() <= dslT(oa.abertaEm))){
+      toast(eq.codigo+' está '+(oa.categoria==='manutencao'?'em manutenção':'com parada operacional')+' desde '+dslDataCurta(oa.abertaEm)+'. Libere a ocorrência antes de iniciar uma atividade.', 7000); return;
+    }
     const v = locAoVivo(state.locais, eq.id, Date.now());
     if (v.vivo && v.reg.local === local && String(v.reg.atividade||'').trim().toLowerCase() === atividade.toLowerCase() && !confirm('O equipamento já está registrado em "'+locTexto(v.reg)+'".\n\nRegistrar mesmo assim?')) return;
     const b1 = document.getElementById('gl-ok'), b2 = document.getElementById('gl-ok2'); b1.disabled = b2.disabled = true;
     try{
       const id = 'lo_'+uid();
-      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local, atividade,
-        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, solicitante ? { solicitante } : {}, fim ? { dataFim:fim.toISOString() } : {}));
-      toast(eq.codigo+' → '+local+' · '+atividade); if (db.refetchAll) await db.refetchAll();
+      await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local,
+        dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, atividade ? { atividade } : {}, solicitante ? { solicitante } : {}, fim ? { dataFim:fim.toISOString() } : {}));
+      toast(eq.codigo+' → '+local+(atividade?' · '+atividade:'')); if (db.refetchAll) await db.refetchAll();
       if (outro){ gLocalSheet(eq.id, false, fim ? fim.getTime() : null); } else closeSheet();
     }catch(e){ console.error(e); b1.disabled = b2.disabled = false; }
   };
