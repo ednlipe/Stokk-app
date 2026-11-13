@@ -435,6 +435,7 @@ function abrirModulo(area, modId){
   salvarArea(state.user.id, area);
   try{ sessionStorage.setItem('stokk_modulo_direto', '1'); }catch(e){}   // depois de recarregar, abre o módulo (não o menu)
   mostrarTrocaArea(nome);
+  bioPularNaRecarga();
   setTimeout(()=>location.reload(), 600);
 }
 
@@ -525,6 +526,7 @@ function montarBotaoArea(){
     const nomeNovo = itemNovo ? itemNovo.nome : ((state.areas.find(a=>a.id===novo)||{}).nome || '');
     try{ sessionStorage.setItem('stokk_troca_area', nomeNovo || '1'); }catch(e){}
     mostrarTrocaArea(nomeNovo);
+    bioPularNaRecarga();
     setTimeout(()=>location.reload(), 600);
   });
 }
@@ -815,6 +817,9 @@ async function bioPlugin(){
     authenticate: ()=>Biometria.autenticar({ subtitulo:'Confirme que é você' })
   };
 }
+// trocar de área/ambiente recarrega a página: nessa recarga o app NÃO pede biometria (a pessoa não saiu do app)
+function bioPularNaRecarga(){ try{ sessionStorage.setItem('stokk_bio_pular', String(Date.now())); }catch(e){} }
+function bioConsumirPulo(){ try{ const v = Number(sessionStorage.getItem('stokk_bio_pular')); sessionStorage.removeItem('stokk_bio_pular'); return !!v && (Date.now() - v) < 30000; }catch(e){ return false; } }
 function bioMensagem(txt){ const m = document.getElementById('bio-msg'); if (m) m.textContent = txt || ''; }
 function bioLiberar(){ bio.ativo = false; const el = document.getElementById('bio-lock'); if (el) el.remove(); }
 function bioDiag(info){ try{ return info ? ' [biometria: '+(info.isAvailable?'disponível':'indisponível')+', tela com bloqueio: '+(info.deviceIsSecure?'sim':'não')+', tipo: '+(info.biometryType||'?')+(info.reason?', motivo: '+info.reason:'')+']' : ''; }catch(e){ return ''; } }
@@ -866,7 +871,7 @@ async function boot(){
   let trocando = null; try{ trocando = sessionStorage.getItem('stokk_troca_area'); }catch(e){}
   if (trocando){ mostrarTrocaArea(trocando==='1' ? '' : trocando); setTimeout(esconderTrocaArea, 15000); }
   const {data:{session}} = await sb.auth.getSession();
-  if (session){ if (bioNativo()) bioBloquear(); try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }   // abriu o app já logado: a trava sobe antes do conteúdo
+  if (session){ const pulaBio = bioConsumirPulo(); if (bioNativo() && !pulaBio) bioBloquear(); try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }   // abriu o app já logado: a trava sobe antes do conteúdo
   else showLogin();
 }
 document.getElementById('login-btn').addEventListener('click', doLogin);
