@@ -796,12 +796,66 @@ async function registrarPush(userId){
     await PushNotifications.register();
   }catch(e){ console.warn('push indisponível', e); }
 }
+/* ================= BLOQUEIO POR BIOMETRIA (só no APK) =================
+   Quem já está logado continua logado; o app só bloqueia a TELA ao abrir e ao voltar de segundo plano depois de mais de 1 minuto fora.
+   Desbloqueia com digital/rosto ou, se não der, com o PIN/padrão/senha do próprio celular. Celular sem nenhum bloqueio de tela: não trava.
+   Se o plugin falhar por qualquer motivo, o app NÃO trava (não deixar o operador sem acesso). Não vale no site/desktop. */
+// ---- BIO-CORE-INICIO (testado em tests/bio_core.test.cjs) ----
+const BIO_LIMITE_MS = 60000;
+function bioPrecisaBloquear(saiuEm, agora, limite){ return !!saiuEm && (agora - saiuEm) > (limite == null ? BIO_LIMITE_MS : limite); }
+// ---- BIO-CORE-FIM ----
+const bio = { ativo:false, abrindo:false, saiuEm:0, plugin:null };
+function bioNativo(){ return Capacitor.isNativePlatform() || !!window.__BIO_MOCK__; }   // __BIO_MOCK__: só para teste no navegador
+async function bioPlugin(){
+  if (window.__BIO_MOCK__) return window.__BIO_MOCK__;
+  if (!bio.plugin) bio.plugin = (await import('@aparajita/capacitor-biometric-auth')).BiometricAuth;
+  return bio.plugin;
+}
+function bioMensagem(txt){ const m = document.getElementById('bio-msg'); if (m) m.textContent = txt || ''; }
+function bioLiberar(){ bio.ativo = false; const el = document.getElementById('bio-lock'); if (el) el.remove(); }
+async function bioAutenticar(){
+  if (bio.abrindo || !bio.ativo) return;
+  bio.abrindo = true; bioMensagem('');
+  try{
+    const P = await bioPlugin();
+    await P.authenticate({ reason:'Desbloquear o STOKK', cancelTitle:'Cancelar', allowDeviceCredential:true, androidTitle:'STOKK', androidSubtitle:'Confirme que é você' });
+    bioLiberar();
+  }catch(e){ bioMensagem('Não foi possível desbloquear. Toque em "Desbloquear" para tentar de novo.'); }
+  finally{ bio.abrindo = false; }
+}
+async function bioBloquear(){
+  if (!bioNativo() || bio.ativo) return;
+  bio.ativo = true;
+  const el = document.createElement('div');
+  el.id = 'bio-lock';
+  el.style.cssText = 'position:fixed;inset:0;z-index:3000;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;';
+  el.innerHTML = '<div style="font-family:var(--font-head);font-size:34px;text-transform:uppercase;letter-spacing:1px;">STOKK</div>'
+    + '<p class="hint" style="margin:8px 0 22px;">App bloqueado. Confirme que é você para continuar.</p>'
+    + '<div id="bio-msg" class="hint" style="color:var(--danger);min-height:20px;margin-bottom:10px;"></div>'
+    + '<button class="btn primary" id="bio-ok" style="max-width:320px;width:100%;">Desbloquear</button>'
+    + '<button class="btn ghost" id="bio-sair" style="max-width:320px;width:100%;margin-top:10px;">Sair da conta</button>';
+  document.body.appendChild(el);
+  document.getElementById('bio-ok').addEventListener('click', bioAutenticar);
+  document.getElementById('bio-sair').addEventListener('click', async ()=>{ try{ await sb.auth.signOut(); }catch(e){} bioLiberar(); location.reload(); });
+  try{
+    const info = await (await bioPlugin()).checkBiometry();
+    if (!info.isAvailable && !info.deviceIsSecure){ bioLiberar(); return; }   // celular sem biometria e sem bloqueio de tela: não há como proteger
+  }catch(e){ console.warn('biometria indisponível', e); bioLiberar(); return; }
+  bioAutenticar();
+}
+document.addEventListener('visibilitychange', ()=>{
+  if (!bioNativo() || !state.user) return;
+  if (document.hidden){ if (!bio.abrindo && !bio.ativo) bio.saiuEm = Date.now(); return; }
+  if (bio.abrindo) return;
+  if (bio.ativo){ bioAutenticar(); return; }
+  if (bioPrecisaBloquear(bio.saiuEm, Date.now())){ bio.saiuEm = 0; bioBloquear(); }
+});
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   let trocando = null; try{ trocando = sessionStorage.getItem('stokk_troca_area'); }catch(e){}
   if (trocando){ mostrarTrocaArea(trocando==='1' ? '' : trocando); setTimeout(esconderTrocaArea, 15000); }
   const {data:{session}} = await sb.auth.getSession();
-  if (session){ try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }
+  if (session){ if (bioNativo()) bioBloquear(); try{ await onAuthed(session.user); } finally { esconderTrocaArea(); } }   // abriu o app já logado: a trava sobe antes do conteúdo
   else showLogin();
 }
 document.getElementById('login-btn').addEventListener('click', doLogin);
