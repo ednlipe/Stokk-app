@@ -804,12 +804,16 @@ async function registrarPush(userId){
 const BIO_LIMITE_MS = 60000;
 function bioPrecisaBloquear(saiuEm, agora, limite){ return !!saiuEm && (agora - saiuEm) > (limite == null ? BIO_LIMITE_MS : limite); }
 // ---- BIO-CORE-FIM ----
-const bio = { ativo:false, abrindo:false, saiuEm:0, plugin:null, tentativa:0 };
+const bio = { ativo:false, abrindo:false, saiuEm:0, tentativa:0 };
 function bioNativo(){ return Capacitor.isNativePlatform() || !!window.__BIO_MOCK__; }   // __BIO_MOCK__: só para teste no navegador
+// plugin nativo próprio (android/.../BiometriaPlugin.java): confirmação direta na tela do app
+const Biometria = registerPlugin('Biometria');
 async function bioPlugin(){
   if (window.__BIO_MOCK__) return window.__BIO_MOCK__;
-  if (!bio.plugin) bio.plugin = (await import('@aparajita/capacitor-biometric-auth')).BiometricAuth;
-  return bio.plugin;
+  return {
+    checkBiometry: async ()=>{ const r = await Biometria.disponivel(); return { isAvailable:!!r.ok, deviceIsSecure:!!r.ok, biometryType:'', reason:'código '+r.codigo }; },
+    authenticate: ()=>Biometria.autenticar({ subtitulo:'Confirme que é você' })
+  };
 }
 function bioMensagem(txt){ const m = document.getElementById('bio-msg'); if (m) m.textContent = txt || ''; }
 function bioLiberar(){ bio.ativo = false; const el = document.getElementById('bio-lock'); if (el) el.remove(); }
