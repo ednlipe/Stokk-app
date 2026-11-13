@@ -804,7 +804,7 @@ async function registrarPush(userId){
 const BIO_LIMITE_MS = 60000;
 function bioPrecisaBloquear(saiuEm, agora, limite){ return !!saiuEm && (agora - saiuEm) > (limite == null ? BIO_LIMITE_MS : limite); }
 // ---- BIO-CORE-FIM ----
-const bio = { ativo:false, abrindo:false, saiuEm:0, plugin:null };
+const bio = { ativo:false, abrindo:false, saiuEm:0, plugin:null, tentativa:0 };
 function bioNativo(){ return Capacitor.isNativePlatform() || !!window.__BIO_MOCK__; }   // __BIO_MOCK__: só para teste no navegador
 async function bioPlugin(){
   if (window.__BIO_MOCK__) return window.__BIO_MOCK__;
@@ -813,15 +813,22 @@ async function bioPlugin(){
 }
 function bioMensagem(txt){ const m = document.getElementById('bio-msg'); if (m) m.textContent = txt || ''; }
 function bioLiberar(){ bio.ativo = false; const el = document.getElementById('bio-lock'); if (el) el.remove(); }
-async function bioAutenticar(){
-  if (bio.abrindo || !bio.ativo) return;
-  bio.abrindo = true; bioMensagem('');
+function bioDiag(info){ try{ return info ? ' [biometria: '+(info.isAvailable?'disponível':'indisponível')+', tela com bloqueio: '+(info.deviceIsSecure?'sim':'não')+', tipo: '+(info.biometryType||'?')+(info.reason?', motivo: '+info.reason:'')+']' : ''; }catch(e){ return ''; } }
+async function bioAutenticar(manual){
+  if (!bio.ativo) return;
+  if (bio.abrindo && !manual) return;                 // toque no botão sempre tenta de novo (uma tentativa antiga pode ter ficado pendurada)
+  const minha = ++bio.tentativa; bio.abrindo = true; bioMensagem(manual ? 'Verificando…' : '');
+  const limite = setTimeout(()=>{ if (bio.tentativa === minha && bio.abrindo){ bio.abrindo = false; bioMensagem('A confirmação não respondeu. Toque em "Desbloquear" para tentar de novo.'); } }, 45000);
   try{
     const P = await bioPlugin();
     await P.authenticate({ reason:'Desbloquear o STOKK', cancelTitle:'Cancelar', allowDeviceCredential:true, androidTitle:'STOKK', androidSubtitle:'Confirme que é você' });
-    bioLiberar();
-  }catch(e){ bioMensagem('Não foi possível desbloquear. Toque em "Desbloquear" para tentar de novo.'); }
-  finally{ bio.abrindo = false; }
+    if (bio.tentativa === minha) bioLiberar();
+  }catch(e){
+    if (bio.tentativa !== minha) return;
+    let info = null; try{ info = await (await bioPlugin()).checkBiometry(); }catch(er){}
+    bioMensagem('Não foi possível desbloquear'+(e && (e.code||e.message) ? ' ('+String(e.code||'')+(e.code&&e.message?': ':'')+String(e.message||'')+')' : '')+'. Toque em "Desbloquear" para tentar de novo.'+bioDiag(info));
+  }
+  finally{ clearTimeout(limite); if (bio.tentativa === minha) bio.abrindo = false; }
 }
 async function bioBloquear(){
   if (!bioNativo() || bio.ativo) return;
@@ -835,19 +842,19 @@ async function bioBloquear(){
     + '<button class="btn primary" id="bio-ok" style="max-width:320px;width:100%;">Desbloquear</button>'
     + '<button class="btn ghost" id="bio-sair" style="max-width:320px;width:100%;margin-top:10px;">Sair da conta</button>';
   document.body.appendChild(el);
-  document.getElementById('bio-ok').addEventListener('click', bioAutenticar);
+  document.getElementById('bio-ok').addEventListener('click', ()=>bioAutenticar(true));
   document.getElementById('bio-sair').addEventListener('click', async ()=>{ try{ await sb.auth.signOut(); }catch(e){} bioLiberar(); location.reload(); });
   try{
     const info = await (await bioPlugin()).checkBiometry();
     if (!info.isAvailable && !info.deviceIsSecure){ bioLiberar(); return; }   // celular sem biometria e sem bloqueio de tela: não há como proteger
   }catch(e){ console.warn('biometria indisponível', e); bioLiberar(); return; }
-  bioAutenticar();
+  setTimeout(()=>bioAutenticar(), 700);   // dá tempo da tela do app abrir antes de chamar a confirmação do sistema
 }
 document.addEventListener('visibilitychange', ()=>{
   if (!bioNativo() || !state.user) return;
   if (document.hidden){ if (!bio.abrindo && !bio.ativo) bio.saiuEm = Date.now(); return; }
   if (bio.abrindo) return;
-  if (bio.ativo){ bioAutenticar(); return; }
+  if (bio.ativo){ setTimeout(()=>bioAutenticar(), 400); return; }
   if (bioPrecisaBloquear(bio.saiuEm, Date.now())){ bio.saiuEm = 0; bioBloquear(); }
 });
 async function boot(){
