@@ -5433,6 +5433,8 @@ function gLocalTurnos(){
   const eqs = state.equipamentos.filter(e=>e.ativo!==false);
   const rot = dia === hoje ? 'Hoje' : (dia === ontem ? 'Ontem' : 'Outro dia');
   const turnos = locTurnosDoDia(diaMs, agora);
+  // depois da meia-noite o 3º turno (que começou ontem às 23:10) ainda está em andamento: aparece também em "Hoje"
+  if (dia === hoje){ const cur = locTurnoJanela(agora); if (cur.ini < new Date(y,m-1,d,0,0).getTime() && !turnos.some(j=>j.ini === cur.ini)) turnos.unshift(cur); }
   box.innerHTML = '<div class="loc-dias"><button class="loc-dia'+(dia===hoje?' on':'')+'" data-g-act="turnos-dia" data-d="'+hoje+'">Hoje</button>'
     + '<button class="loc-dia'+(dia===ontem?' on':'')+'" data-g-act="turnos-dia" data-d="'+ontem+'">Ontem</button>'
     + '<label class="loc-dia'+(rot==='Outro dia'?' on':'')+'">Outro dia <input type="date" id="gl-dia" max="'+hoje+'" value="'+dia+'"></label></div>'
