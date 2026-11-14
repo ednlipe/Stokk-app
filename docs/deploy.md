@@ -41,3 +41,5 @@ A câmera do navegador exige **HTTPS** (ou `localhost`).
 - **v1.9.0 (10/11, `versionCode 22`) — pacote completo:** (1) rodar `update_022_locais_turnos.sql`; (2) publicar site + desktop (mesmos arquivos do repositório) e APK (Actions gera o Release `apk-latest`; quem tem o 1.8.1 recebe o popup sozinho). Conferir o Setor de cada equipamento em Equipamentos.
 - **Locais por setor e turno (10/11, antes do pacote):** rodar `update_022_locais_turnos.sql` (depende do 015/017) e publicar o site. Sem o SQL a tela funciona, só não grava fim nem setor. Conferir/ajustar o setor de cada equipamento em Equipamentos. APK/desktop: depois (aumentar `versionCode`).
 - **Stokkbook (09/11, v1.8.0, `versionCode 20`):** (1) rodar `update_021_stokkbook.sql` no SQL Editor (depende do 018/019); (2) publicar site e APK (o APK instalado avisa sozinho da nova versão). Sem o SQL o botão Stokkbook abre com o aviso "ainda não foi ativado" e a caixinha do 5S só dá erro se desmarcada.
+
+- **update_024_locais_corrigir.sql** (depois do 017/022/023): operador corrige/anula o próprio registro de Locais por 48 h; supervisor qualquer. Pode rodar mais de uma vez. Desfazer: ver o fim do arquivo.

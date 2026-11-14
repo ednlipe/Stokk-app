@@ -5421,7 +5421,7 @@ function gLocalLista(){
   rec.innerHTML = state.locais.slice().sort((a,b)=>dslT(b.dataHora)-dslT(a.dataHora)||dslT(b.timestamp)-dslT(a.timestamp)).slice(0,25).map(l=>
     '<div class="list-item" style="'+(l.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(l.anulado?'text-decoration:line-through;':'')+'">'+esc(dslEquipNome(l.equipamentoId,l.equipamentoCodigo))+' → '+esc(locTexto(l))+(l.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
     + '<div class="li-desc">'+dslDataCurta(l.dataHora)+(l.dataFim?' → '+dslDataCurta(l.dataFim):'')+(l.solicitante?' · pedido por '+esc(l.solicitante):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+(l.obs?' · '+esc(l.obs):'')+(l.anulado&&l.anuladoMotivo?' · motivo: '+esc(l.anuladoMotivo):'')+'</div></div>'
-    + (sup&&!l.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(l.id)+'">anular</button></div>':'')+'</div>').join('')
+    + (locPodeEditar(l)?'<div class="li-side loc-btns"><button class="link-btn" data-g-act="local-corrigir" data-id="'+esc(l.id)+'">corrigir</button><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(l.id)+'">anular</button></div>':'')+'</div>').join('')
     || '<p class="hint">Nenhuma localização informada ainda.</p>';
 }
 // lista de turnos (do mais recente para o mais antigo); tocar abre o relatório do turno
@@ -5495,25 +5495,33 @@ function gTurnoExportar(iniMs){
   const p = n=>String(n).padStart(2,'0');
   exportXlsx(rows, 'locais_turno'+D.j.turno+'_'+dia.getFullYear()+'-'+p(dia.getMonth()+1)+'-'+p(dia.getDate())+'.xlsx', ['turno','setor','equipamento','nome','local','atividade','solicitante','de','ate','minutos','usuario','obs','situacao'], 'Locais por turno');
 }
-function gLocalSheet(equipId, cont, inicioMs){
+// quem lançou corrige/anula o próprio registro por 48 h; o supervisor, qualquer um (mesma regra do update_024 no banco)
+function locPodeEditar(x){
+  if (!x || x.anulado || !state.user) return false;
+  if (dslEhSup()) return true;
+  return !!x.usuarioId && x.usuarioId === state.user.id && (Date.now() - dslT(x.timestamp)) < 48*3600000;
+}
+function gLocalSheet(equipId, cont, inicioMs, editar){
   const eqs = state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
   if (!eqs.length){ toast('Nenhum equipamento cadastrado.', 3000); return; }
   const uniq = campo => [...new Set(dslValidos(state.locais).map(l=>String(l[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)).slice(0,60);
   const lista = (id, arr) => '<datalist id="'+id+'">'+arr.map(s=>'<option value="'+esc(s)+'">').join('')+'</datalist>';
-  const ult = cont && equipId ? locAoVivo(state.locais, equipId, Date.now()).reg : null;   // "Continuar": já vem com o mesmo local, atividade e solicitante
+  if (editar){ equipId = editar.equipamentoId; inicioMs = dslT(editar.dataHora); }
+  const ult = editar ? editar : (cont && equipId ? locAoVivo(state.locais, equipId, Date.now()).reg : null);   // "Continuar": já vem com o mesmo local, atividade e solicitante
   const jAtual = locTurnoJanela(Date.now()), jAnt = locTurnoJanela(jAtual.ini - 1);
-  openSheet('<h2 class="section-title" style="margin-top:0;">'+(ult?'Continuar no mesmo':'Atualizar local')+'</h2>'
-    + '<label class="field-label">Equipamento</label><select id="gl-equip">'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+(editar?'Corrigir registro':(ult?'Continuar no mesmo':'Atualizar local'))+'</h2>'
+    + (editar?'<p class="hint" style="margin:-4px 0 10px;">O registro antigo não é apagado: fica anulado (“corrigido”) e entra um novo com os dados abaixo.</p>':'')
+    + '<label class="field-label">Equipamento</label><select id="gl-equip"'+(editar?' disabled':'')+'>'+(equipId?'':'<option value="">Escolha o equipamento…</option>')+eqs.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===equipId?'selected':'')+'>'+esc(e.codigo+' — '+e.nome)+'</option>').join('')+'</select>'
     + '<div class="hint" id="gl-atual" style="margin:-4px 0 10px;"></div>'
     + '<label class="field-label">Local</label><select id="gl-local"><option value="">Escolha o local…</option>'+LOC_LOCAIS.concat([LOC_PARADA]).concat(ult&&ult.local&&!LOC_LOCAIS.includes(ult.local)&&ult.local!==LOC_PARADA?[ult.local]:[]).map(x=>'<option value="'+esc(x)+'" '+(ult&&ult.local===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
     + '<label class="field-label">Atividade</label><input type="text" id="gl-ativ" maxlength="200" list="gl-sug-a" placeholder="Ex.: carregando tarugo, limpando pátio" autocomplete="off" value="'+esc(ult?ult.atividade||'':'')+'">'+lista('gl-sug-a', uniq('atividade'))
     + '<label class="field-label">Solicitante (opcional)</label><input type="text" id="gl-solic" maxlength="120" list="gl-sug-s" placeholder="Quem pediu o serviço" autocomplete="off" value="'+esc(ult?ult.solicitante||'':'')+'">'+lista('gl-sug-s', uniq('solicitante'))
     + '<label class="field-label">Início</label><input type="datetime-local" id="gl-data" value="'+dslLocalInput(new Date(inicioMs||Date.now()))+'">'
     + '<div class="hint loc-atalhos" style="margin:-4px 0 10px;">Esqueceu de lançar? Ajuste a hora: <button type="button" class="link-btn" id="gl-t-agora">agora</button> · <button type="button" class="link-btn" id="gl-t-atual">início deste turno ('+locHora(jAtual.ini)+')</button> · <button type="button" class="link-btn" id="gl-t-ant">início do turno anterior ('+locHora(jAnt.ini)+')</button></div>'
-    + '<label class="field-label">Fim (opcional)</label><input type="datetime-local" id="gl-fim" value="">'
+    + '<label class="field-label">Fim (opcional)</label><input type="datetime-local" id="gl-fim" value="'+(editar&&editar.dataFim?dslLocalInput(new Date(dslT(editar.dataFim))):'')+'">'
     + '<div class="hint" style="margin:-4px 0 10px;">Sem fim, o equipamento fica “ao vivo” até o próximo registro ou até a troca de turno. Os registros anteriores continuam guardados.</div>'
-    + '<button class="btn primary" id="gl-ok">Salvar</button>'
-    + '<button class="btn ghost" id="gl-ok2" style="border:1px solid var(--border);margin-top:8px;">Salvar e adicionar outro trecho</button>');
+    + '<button class="btn primary" id="gl-ok">'+(editar?'Salvar correção':'Salvar')+'</button>'
+    + (editar?'':'<button class="btn ghost" id="gl-ok2" style="border:1px solid var(--border);margin-top:8px;">Salvar e adicionar outro trecho</button>'));
   const poeHora = ms => { document.getElementById('gl-data').value = dslLocalInput(new Date(ms)); };
   document.getElementById('gl-t-agora').onclick = ()=>poeHora(Date.now());
   document.getElementById('gl-t-atual').onclick = ()=>poeHora(jAtual.ini);
@@ -5544,18 +5552,22 @@ function gLocalSheet(equipId, cont, inicioMs){
       toast(eq.codigo+' está '+(oa.categoria==='manutencao'?'em manutenção':'com parada operacional')+' desde '+dslDataCurta(oa.abertaEm)+'. Libere a ocorrência antes de iniciar uma atividade.', 7000); return;
     }
     const v = locAoVivo(state.locais, eq.id, Date.now());
-    if (v.vivo && v.reg.local === local && String(v.reg.atividade||'').trim().toLowerCase() === atividade.toLowerCase() && !confirm('O equipamento já está registrado em "'+locTexto(v.reg)+'".\n\nRegistrar mesmo assim?')) return;
-    const b1 = document.getElementById('gl-ok'), b2 = document.getElementById('gl-ok2'); b1.disabled = b2.disabled = true;
+    if (!editar && v.vivo && v.reg.local === local && String(v.reg.atividade||'').trim().toLowerCase() === atividade.toLowerCase() && !confirm('O equipamento já está registrado em "'+locTexto(v.reg)+'".\n\nRegistrar mesmo assim?')) return;
+    const b1 = document.getElementById('gl-ok'), b2 = document.getElementById('gl-ok2') || b1; b1.disabled = b2.disabled = true;
     try{
       const id = 'lo_'+uid();
       await db.collection('equipamento_locais').doc(id).set(Object.assign({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, local,
         dataHora:quando.toISOString(), usuarioId:state.user.id, usuarioNome:state.user.nome, timestamp:new Date().toISOString() }, atividade ? { atividade } : {}, solicitante ? { solicitante } : {}, fim ? { dataFim:fim.toISOString() } : {}));
-      toast(eq.codigo+' → '+local+(atividade?' · '+atividade:'')); if (db.refetchAll) await db.refetchAll();
+      if (editar){   // o novo já está salvo; agora anula o antigo (fica no histórico como "corrigido")
+        try{ await db.collection('equipamento_locais').doc(editar.id).update({ anulado:true, anuladoMotivo:'Corrigido por '+(state.user.nome||'usuário') }); toast(eq.codigo+': registro corrigido.'); }
+        catch(er){ console.error(er); toast('O novo registro foi salvo, mas não deu para anular o antigo. Peça ao supervisor para anular o registro antigo.', 7000); }
+      } else toast(eq.codigo+' → '+local+(atividade?' · '+atividade:''));
+      if (db.refetchAll) await db.refetchAll();
       if (outro){ gLocalSheet(eq.id, false, fim ? fim.getTime() : null); } else closeSheet();
     }catch(e){ console.error(e); b1.disabled = b2.disabled = false; }
   };
   document.getElementById('gl-ok').onclick = ()=>salvar(false);
-  document.getElementById('gl-ok2').onclick = ()=>salvar(true);
+  const ok2 = document.getElementById('gl-ok2'); if (ok2) ok2.onclick = ()=>salvar(true);
 }
 function gLocalHist(id){
   const e = dslEquipPorId(id); if (!e) return;
@@ -5566,7 +5578,7 @@ function gLocalHist(id){
     + '<h2 class="section-title">Por onde passou</h2><div class="card" style="padding:0 14px;">'
     + (l.map(x=>'<div class="list-item" style="'+(x.anulado?'opacity:.55;':'')+'"><div class="li-main"><div class="li-code" style="font-size:14px;'+(x.anulado?'text-decoration:line-through;':'')+'">'+esc(locTexto(x))+(x.anulado?' '+dslChip('anulado','danger'):'')+'</div>'
       + '<div class="li-desc">'+dslDataCurta(x.dataHora)+(x.dataFim?' → '+dslDataCurta(x.dataFim):'')+(x.solicitante?' · pedido por '+esc(x.solicitante):'')+(x.usuarioNome?' · '+esc(x.usuarioNome):'')+(x.obs?' · '+esc(x.obs):'')+'</div></div>'
-      + (sup&&!x.anulado?'<div class="li-side"><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
+      + (locPodeEditar(x)?'<div class="li-side loc-btns"><button class="link-btn" data-g-act="local-corrigir" data-id="'+esc(x.id)+'">corrigir</button><button class="link-btn" data-g-act="anular" data-t="equipamento_locais" data-id="'+esc(x.id)+'">anular</button></div>':'')+'</div>').join('') || '<p class="hint">Nenhum local informado ainda.</p>')
     + '</div>');
 }
 
@@ -5840,6 +5852,7 @@ async function gClique(e){
     else if (a==='manut-ver') gManutDetalhe(id);
     else if (a==='manut-editar') gManutEditarSheet(id);
     else if (a==='local-nova') gLocalSheet(b.dataset.e||'', !!b.dataset.cont);
+    else if (a==='local-corrigir'){ const r = state.locais.find(x=>x.id===id); if (r && locPodeEditar(r)) gLocalSheet('', false, null, r); else toast('Este registro não pode mais ser corrigido por você.', 4000); }
     else if (a==='local-hist') gLocalHist(id);
     else if (a==='turno-ver') gTurnoVer(b.dataset.ini);
     else if (a==='turno-xlsx') gTurnoExportar(b.dataset.ini);
