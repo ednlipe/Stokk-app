@@ -12,3 +12,11 @@ android/local.properties
 *.jks
 *.keystore
 *.pem
+
+# backups do banco têm dados reais (nomes, estoque, hash de senhas): nunca versionar.
+# Só banco/estrutura*.sql (sem dados) vai para o git. Ver scripts/backup_banco.ps1.
+STOKK_backups/
+dados_*.sql
+dados_auth*.sql
+*.dump
+conexao.txt

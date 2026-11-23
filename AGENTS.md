@@ -12,7 +12,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 | App (telas e regras) | `stokk-vite/src/App.jsx` |
 | Site desktop (mesmas regras do app) | `stokk-vite/public/desktop/index.html` |
 | Android / Capacitor | `stokk-vite/android/` (versão em `build.gradle` e `package.json`) |
-| Banco | `schema.sql` + `update_001…023_*.sql` (+ `schema_atual.sql`, foto do banco) na raiz |
+| Banco | `update_0NN_*.sql` na raiz (o `schema.sql` e os `update_001…011` se perderam); foto completa e atual em `banco/estrutura.sql` + `banco/estrutura_extras.sql`, gerada por `scripts/backup_banco.ps1` (`docs/banco.md` §4.7). Rode o script antes e depois de cada `update_0NN` em produção. |
 | Notificações push (Edge Function) | `supabase/functions/avisar-conferencias/index.ts` |
 | Documentação | `docs/` |
 

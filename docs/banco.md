@@ -167,4 +167,30 @@ Usuário `powerbi_leitor`: `connection limit 20`, `default_transaction_read_only
 ---
 
 
-> **`schema_atual.sql` (raiz):** foto das tabelas, chaves, índices e regras RLS conferidas no Supabase em 23/10/2026, feita porque o `schema.sql` original e os `update_001…006`, `009` e `010` foram perdidos. É só referência: **não rode** no banco que já existe. Funções, gatilhos e views do Power BI estão nos `update_007`, `008`, `011`, `012` e `013`.
+> **`schema_atual.sql` (raiz):** foto das tabelas, chaves, índices e regras RLS conferidas no Supabase em 23/10/2026, feita porque o `schema.sql` original e os `update_001…006`, `009` e `010` foram perdidos. É só referência: **não rode** no banco que já existe. Funções, gatilhos e views do Power BI estão nos `update_007`, `008`, `011`, `012` e `013`. **Desatualizado** (não tem diesel, 5S, Stokkbook, funções nem gatilhos): a referência completa passa a ser `banco/estrutura.sql` (seção 4.7).
+
+### 4.7 Backup e foto da estrutura (`scripts/backup_banco.ps1`)
+
+**Por quê:** o plano grátis do Supabase não faz backup automático, e o `schema.sql` + `update_001…011` se perderam (os `update_007`, `008` e `011` nem estão no repositório). Sem isso não dá para recriar o banco nem montar o ambiente de teste.
+
+**Status:** 1º backup feito em 23/11/2026 (sem erros, arquivos conferidos). A restauração ainda não foi testada.
+
+**Como rodar:** dois cliques em `scripts\backup_banco.cmd` (ou `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\backup_banco.ps1`). Na 1ª vez, cole a *connection string* do Supabase (painel › **Connect** › URI; pode vir com `[YOUR-PASSWORD]`). A conexão direta (`db.<projeto>.supabase.co`) funcionou neste PC; se a rede não tiver IPv6, use a do **Session pooler**. Para trocar, apague `STOKK_backups\conexao.txt`. A senha do banco é pedida na hora, não aparece na tela e não é gravada. Opções: `-SoEstrutura` (sem dados) e `-Pasta <pasta>` (padrão: `OneDrive\STOKK_backups`). Usa o `pg_dump`/`psql` do PostgreSQL instalado no PC (versão igual ou maior que a do servidor; o script confere).
+
+| Arquivo gerado | Conteúdo | Git? |
+|---|---|---|
+| `banco/estrutura.sql` | `pg_dump --schema-only --no-owner` de `public` e `bi`: tabelas, chaves, índices, funções, gatilhos, RLS, permissões (inclusive por coluna) e views do Power BI. | **Sim** (o `git diff banco` mostra o que mudou no banco entre uma foto e outra) |
+| `banco/estrutura_extras.sql` | O que fica fora de `public`/`bi` (consulta em `scripts/backup_extras.sql`): extensões, papéis extras (só o nome, ex.: `powerbi_leitor`), tabelas no tempo real, gatilhos em `auth`/`storage` que chamam funções do `public`, buckets e políticas do Storage e os agendamentos do `pg_cron` **como comentário, com os segredos trocados por `<SEGREDO>`**. | **Sim** |
+| `STOKK_backups/AAAA-MM-DD_HHmm/dados_public.sql` | Dados de todas as tabelas de `public` (`--data-only`). | **Nunca** (`.gitignore`) |
+| `STOKK_backups/AAAA-MM-DD_HHmm/dados_auth.sql` | `auth.users` e `auth.identities` (logins, com o hash das senhas). | **Nunca** |
+| `STOKK_backups/conexao.txt` | Connection string **sem senha**, para não colar de novo. | **Nunca** |
+
+O script procura segredos (JWT, chave privada, senha de papel, `x-cron-secret`, `Bearer`) nos dois arquivos de `banco/` e avisa para não fazer commit se achar algo. Revisar o `git diff banco` antes do commit mesmo assim.
+
+**Não entra no backup:** as **fotos do 5S** (bucket `cinco-s` do Storage; só os caminhos estão no banco), os segredos das Edge Functions (`FCM_SERVICE_ACCOUNT`, `CRON_SECRET`) e as próprias Edge Functions (estão em `supabase/functions/`).
+
+**Montar um banco novo a partir dos arquivos (ex.: ambiente de teste), num projeto Supabase novo:** (1) criar à mão os papéis listados em `estrutura_extras.sql` com senha nova; (2) extensões; (3) `banco/estrutura.sql`; (4) o resto do `estrutura_extras.sql` (tempo real, gatilhos em `auth`, Storage); (5) recriar os crons pelo `docs/deploy.md` com o segredo do projeto novo; (6) dados: de teste (recomendado) ou `dados_public.sql`. **Status:** roteiro ainda não testado; será conferido ao montar o ambiente de teste.
+
+**Restaurar a produção a partir de um backup de dados:** só em caso de perda, com o banco recriado pela estrutura acima; carregar `dados_auth.sql` antes de `dados_public.sql` (`profiles.id` aponta para `auth.users`). Os gatilhos de proteção podem recusar linhas ao carregar: nesse caso, rodar a carga como `postgres` com `set session_replication_role = replica;`. **Status:** não testado.
+
+**Quando rodar:** antes de qualquer `update_0NN` em produção (backup + foto da estrutura antes; só a foto depois, para o commit) e pelo menos uma vez por semana. Backup automático (GitHub Actions ou Agendador do Windows) ainda não existe: ver `pendencias.md`.

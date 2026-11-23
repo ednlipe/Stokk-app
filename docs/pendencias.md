@@ -11,8 +11,19 @@
 - Confirmar com a empresa: quantos tanques e equipamentos; quem lança abastecimento e compra; se o horímetro do caminhão também importa; prazo de guarda dos registros; se a empresa quer cópia dos dados em outro lugar (Excel online/Power Automate, ver conversa de 01/11).
 - Limite conhecido: o consumo assume que cada abastecimento enche o equipamento; abastecimento parcial distorce o L/h e o km/L daquele intervalo.
 - Compra lançada com data antiga não recalcula o custo dos abastecimentos já gravados (de propósito).
-- `schema_atual.sql` (foto do banco) ainda não inclui as tabelas do diesel: regenerar depois de rodar o `update_015` em produção.
-- Backup: plano gratuito sem backup automático; registros de diesel/segurança merecem backup semanal manual.
+- `schema_atual.sql` está desatualizado; a foto completa passa a ser `banco/estrutura.sql`, gerada por `scripts/backup_banco.ps1` (ver §13.4).
+
+## 13.4 Backup e estrutura do banco (23/11 — 1º backup feito)
+
+- **1º backup em 23/11/2026 00:07** (produção, PostgreSQL 17.6): `banco/estrutura.sql` (27 tabelas, 20 funções, 32 gatilhos, 54 políticas, 15 views), `banco/estrutura_extras.sql` e os dados em `OneDrive\STOKK_backups\2026-11-23_0007` (27 tabelas de `public` e 6 logins). Conferido: nenhum segredo nos arquivos de `banco/` (os 3 crons saíram com `<SEGREDO>`). Falta o commit.
+- **O que a foto mostrou da produção:** os `update_015` a `023` **estão aplicados** (várias seções acima ainda dizem "não aplicado"/"não testado em produção" e estão desatualizadas nesse ponto).
+- **`update_024_locais_corrigir.sql` NÃO está aplicado:** a política `equipamento_locais_update` ainda é só do supervisor. O app 1.10.4+ mostra o botão **corrigir** a quem lançou; para o operador, o registro novo é salvo e a anulação do antigo dá erro, e **ficam dois registros válidos**. Rodar o `update_024` (antes, rodar o backup).
+- **Cron do diesel não existe:** só há os crons `push-conferencia`, `push-inventario` e `push-rendimento` (jobs 6, 7, 8). O aviso "sem abastecer" (`{"tipo":"diesel"}`) nunca dispara. Criar pelo `docs/deploy.md`, se o aviso ainda for desejado.
+- `schema_atual.sql` ficou superado por `banco/estrutura.sql`: pode ser apagado ou marcado como histórico.
+- A cada execução, as linhas `\restrict`/`\unrestrict` do `estrutura.sql` mudam (chave aleatória de segurança do `pg_dump` 17.6+/18). É normal aparecerem no `git diff`.
+- **Backup automático** (ainda não existe; plano grátis sem backup): decidir entre o Agendador de Tarefas do Windows (precisa da senha guardada no PC) ou GitHub Actions (o repositório é usado pelo Pages; os dados teriam que sair **criptografados**, porque artefatos de repositório público podem ser baixados por terceiros).
+- **Fotos do 5S fora do backup** (bucket `cinco-s`): falta uma rotina que baixe as fotos novas pela API do Storage.
+- Testar uma restauração completa num projeto Supabase vazio (vai acontecer ao montar o ambiente de teste).
 
 ## 13.1 Pendências de Paradas e manutenção (v1.5.1 — nada testado em produção)
 

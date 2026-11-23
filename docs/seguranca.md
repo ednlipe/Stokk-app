@@ -15,7 +15,7 @@
 - `powerbi_leitor` só lê o schema `bi`, em transação somente leitura, com timeout de 60 s.
 - **Pausa do Supabase (plano gratuito):** o projeto pausa após ~1 semana sem uso. Basta retomar no painel; os usuários foram orientados a não deixar pausar.
 - Realtime exige as tabelas na publication `supabase_realtime` (feito nos SQLs).
-- Backup: o `.pbix` e o banco devem ter cópia antes de alterações grandes.
+- Backup: o `.pbix` e o banco devem ter cópia antes de alterações grandes. Banco: `scripts/backup_banco.ps1` (ver `banco.md` §4.7). Os arquivos de dados (`dados_public.sql`, `dados_auth.sql` com hash das senhas) ficam fora do repositório (`OneDrive\STOKK_backups`, bloqueados no `.gitignore`) e não devem ser enviados a ninguém. Só a estrutura (`banco/estrutura*.sql`, sem dados e com os segredos dos crons trocados por `<SEGREDO>`) vai para o git.
 
 ---
 - **Gestão / Diesel (update_015):** as 5 tabelas do diesel têm RLS por área (`area = any (areas_do_usuario())`) e `anon` sem acesso. Quem lê: contas ativas com a área Gestão. `abastecimentos`: qualquer conta ativa da área insere (em nome de si mesma); compras, conferências da régua, equipamentos e tanques: só supervisor. **Ninguém apaga:** não há DELETE; correção é anulação (permissão de UPDATE só nas colunas `anulado` e `anulado_motivo`, com gatilho que exige motivo e grava quem/quando). A área só é concedida pelo painel/SQL (`usuario_areas`).
