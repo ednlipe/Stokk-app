@@ -17,6 +17,7 @@
 
 - Banco de teste montado em 23/11. Falta: conta de **supervisor** de teste (hoje só `teste@teste.com`, operador), entrar no app de teste e conferir as telas de cada área.
 - Próximas etapas: site de teste no GitHub Pages (subpasta), APK de teste (`com.stokk.app.teste`, precisa do pacote no Firebase), testes rodando no GitHub antes de publicar, Edge Functions publicadas no teste quando for testar Usuários/avisos.
+- Biometria desligada na 1.10.7 (23/11): conferir num celular que o app abre sem pedir digital.
 - 1ª junção `teste` → `master` feita em 23/11 (v1.10.6). Conferir no celular que o 5S e as ocorrências salvam na produção.
 
 ## 13.4 Backup e estrutura do banco (23/11 — 1º backup feito)

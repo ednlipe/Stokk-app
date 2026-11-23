@@ -818,7 +818,10 @@ const BIO_LIMITE_MS = 60000;
 function bioPrecisaBloquear(saiuEm, agora, limite){ return !!saiuEm && (agora - saiuEm) > (limite == null ? BIO_LIMITE_MS : limite); }
 // ---- BIO-CORE-FIM ----
 const bio = { ativo:false, abrindo:false, saiuEm:0, tentativa:0 };
-function bioNativo(){ return Capacitor.isNativePlatform() || !!window.__BIO_MOCK__; }   // __BIO_MOCK__: só para teste no navegador
+// DESLIGADO em 23/11/2026 (decisão do dono: não há necessidade por enquanto). Para religar: BIO_LIGADA = true
+// (o código e o BiometriaPlugin.java continuam no projeto; precisa de APK novo com versão aumentada).
+const BIO_LIGADA = false;
+function bioNativo(){ return !!window.__BIO_MOCK__ || (BIO_LIGADA && Capacitor.isNativePlatform()); }   // __BIO_MOCK__: só para teste no navegador
 // plugin nativo próprio (android/.../BiometriaPlugin.java): confirmação direta na tela do app
 const Biometria = registerPlugin('Biometria');
 async function bioPlugin(){

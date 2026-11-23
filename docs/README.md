@@ -1,6 +1,6 @@
 # STOKK — Índice da documentação
 
-**Última atualização:** 2026-11-23 · **Versão do app (rótulo na tela):** `1.10.6 · <carimbo da build>`
+**Última atualização:** 2026-11-23 · **Versão do app (rótulo na tela):** `1.10.7 · <carimbo da build>`
 
 Leia só o arquivo da área em que vai mexer:
 
@@ -15,6 +15,7 @@ Leia só o arquivo da área em que vai mexer:
 | Power BI, medidas, visual `.pbiviz` | [powerbi.md](powerbi.md) |
 | Build, deploy, CI | [deploy.md](deploy.md) |
 | Ambiente de teste (branch `teste`, banco `stokk-teste`, `ambientes.json`) | [ambiente-teste.md](ambiente-teste.md) |
+| Resumo para colar no chat do Claude (fora do PC) | [resumo-para-chat.md](resumo-para-chat.md) |
 | O que falta / problemas conhecidos | [pendencias.md](pendencias.md) |
 | O que mudou e quando | [historico.md](historico.md) |
 | Mapa do App.jsx (divisão em módulos) | [mapa-app-jsx.md](mapa-app-jsx.md) |

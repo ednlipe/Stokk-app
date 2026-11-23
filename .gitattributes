@@ -1,0 +1,4 @@
+# App e desktop têm núcleos que os testes comparam letra por letra: manter sempre LF nos dois
+# (sem isso, trocar de branch no Windows regrava um deles com CRLF e os testes falham).
+src/App.jsx text eol=lf
+public/desktop/index.html text eol=lf
