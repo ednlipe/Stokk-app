@@ -13,6 +13,12 @@
 - Compra lançada com data antiga não recalcula o custo dos abastecimentos já gravados (de propósito).
 - `schema_atual.sql` está desatualizado; a foto completa passa a ser `banco/estrutura.sql`, gerada por `scripts/backup_banco.ps1` (ver §13.4).
 
+## 13.6 Mudança para a Cloudflare (23/11 — preparada na branch `teste`)
+
+- Seguir a ordem de `deploy.md` §12.1. **Não tornar o repositório privado antes de todos os celulares estarem na versão que procura a atualização na Cloudflare.**
+- Falta: login do dono na Cloudflare, token *Edit Cloudflare Workers*, segredos `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` no GitHub, 1ª publicação, preencher `ambientes.json › producao.atualizacao`.
+- Depois: avisar o endereço novo do desktop; desligar `pages.yml` e o passo da Release no `android.yml`; tirar `GH_PAGES`/`/Stokk-app/` do `vite.config.js`.
+
 ## 13.5 Ambiente de teste (23/11 — etapa 1 pronta na branch `teste`)
 
 - Banco de teste montado em 23/11. Falta: conta de **supervisor** de teste (hoje só `teste@teste.com`, operador), entrar no app de teste e conferir as telas de cada área.

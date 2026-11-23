@@ -16,6 +16,29 @@
 
 A câmera do navegador exige **HTTPS** (ou `localhost`).
 
+### 12.1 Mudança para a Cloudflare (iniciada em 23/11/2026)
+
+**Por quê:** o dono quer o repositório **privado** no GitHub. Site no GitHub Pages com repositório privado exige plano pago, e o download da Release `apk-latest` passa a exigir login, o que **cortaria o aviso de atualização de todos os celulares**. Por isso a ordem abaixo importa.
+
+**Como fica:**
+- Site em **Cloudflare Workers com arquivos estáticos** (`wrangler.jsonc`, nome `stokk`, pasta `dist/`): produção em `https://stokk.<conta>.workers.dev`, desktop em `/desktop/`, APK e `versao.json` em `/apk/`.
+- Quem publica é o **GitHub Actions** (a Cloudflare não monta APK):
+  - `android.yml` (push na `master`): monta o site e o APK, publica a Release do GitHub (como antes, para os celulares antigos) e, no último passo, `npx wrangler@4 deploy` com o APK em `dist/apk/` (copiado **depois** do `cap sync`).
+  - `cloudflare-teste.yml` (push na `teste`): roda **todos os testes** (Node 22), `npm run build:teste` e `wrangler versions upload --preview-alias teste` → link fixo do teste `https://teste-stokk.<conta>.workers.dev`, sem mexer na produção.
+- Segredos no GitHub (*Settings › Secrets and variables › Actions*): `CLOUDFLARE_API_TOKEN` (token com o modelo **Edit Cloudflare Workers**) e `CLOUDFLARE_ACCOUNT_ID`. Sem eles, os passos da Cloudflare são pulados sem erro. **Nunca** escrever o token em arquivo.
+- App (`src/App.jsx`, bloco ATUALIZAÇÃO DO APK): `ATU_BASE` vem de `ambientes.json › producao.atualizacao` (ex.: `https://stokk.<conta>.workers.dev/apk/`, com `/` no fim). Preenchido: o app procura o `versao.json` lá; vazio: continua na Release do GitHub. `atuJsonOk` aceita APK da Release **ou** da pasta da Cloudflare (testado em `tests/atualizacao_core.test.cjs`).
+
+**Ordem da troca (não pular etapas):**
+1. Dono: entrar na Cloudflare, criar o token e pôr os 2 segredos no GitHub.
+2. Push na `master` → 1ª publicação na Cloudflare (descobre o endereço `stokk.<conta>.workers.dev`).
+3. Preencher `producao.atualizacao` em `ambientes.json`, subir a versão e enviar → APK que procura a atualização na Cloudflare.
+4. Esperar **todos** os celulares instalarem essa versão (os antigos só enxergam o GitHub).
+5. Avisar quem usa o desktop do endereço novo.
+6. Só então: tornar o repositório privado, desligar o GitHub Pages (`pages.yml`) e tirar o passo da Release do `android.yml`.
+
+**Status (23/11):** arquivos prontos na branch `teste` (`wrangler.jsonc`, passos nos workflows, `ATU_BASE` no app); etapa 1 em andamento; nada publicado na Cloudflare ainda.
+
+
 ---
 
 

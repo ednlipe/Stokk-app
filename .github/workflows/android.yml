@@ -98,3 +98,25 @@ jobs:
           gh release create apk-latest STOKK.apk versao.json --target "$GITHUB_SHA" \
             --title "STOKK — APK mais recente (v$V)" \
             --notes "APK assinado, gerado automaticamente. O app compara o versao.json com a versão instalada e avisa quando há uma mais nova."
+
+      # Cloudflare (23/11): publica o site + o APK em https://stokk.<conta>.workers.dev (pasta /apk/).
+      # Precisa dos segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID; sem eles, este passo é pulado.
+      # O versao.json da Cloudflare só é publicado com "atualizacao" preenchido em ambientes.json.
+      # Depois da npx cap sync (acima), para o APK não ir parar dentro do próprio APK.
+      - name: Publicar na Cloudflare (site + APK)
+        if: steps.chave.outputs.assinado == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "Sem os segredos da Cloudflare: não publiquei lá."; exit 0; fi
+          export BASE=$(node -p "require('./ambientes.json').producao.atualizacao || ''")
+          mkdir -p dist/apk
+          cp STOKK.apk dist/apk/STOKK.apk
+          if [ -n "$BASE" ]; then
+            node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync('versao.json','utf8')); j.url=process.env.BASE+'STOKK.apk'; fs.writeFileSync('dist/apk/versao.json', JSON.stringify(j,null,2))"
+            cat dist/apk/versao.json
+          else
+            echo "ambientes.json › producao.atualizacao vazio: publiquei o APK, mas sem versao.json (os celulares seguem no GitHub)."
+          fi
+          npx --yes wrangler@4 deploy

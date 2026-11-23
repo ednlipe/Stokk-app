@@ -74,6 +74,8 @@ export default defineConfig(({ mode }) => {
       // "dono/repositório" do GitHub (no Actions vem pronto): o app procura aqui o aviso de nova versão do APK
       __REPO__: JSON.stringify(process.env.GITHUB_REPOSITORY || ''),
       __AMBIENTE__: JSON.stringify(nomeAmb),
+      // pasta do APK no site da Cloudflare (ambientes.json › atualizacao); vazio = aviso de atualização pela Release do GitHub
+      __ATU_BASE__: JSON.stringify(amb.atualizacao || ''),
       __SUPABASE_URL__: JSON.stringify(amb.url),
       __SUPABASE_ANON_KEY__: JSON.stringify(amb.anonKey),
     },

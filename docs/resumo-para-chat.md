@@ -51,6 +51,10 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 - O dono decidiu tirar o desbloqueio por biometria do APK. `BIO_LIGADA = false` em `src/App.jsx`; o código continua para religar se precisar.
 - `.gitattributes` fixa LF no `App.jsx` e no desktop (os testes comparam os dois letra por letra).
 
+### 2.6 Mudança para a Cloudflare (preparada na branch `teste`, nada publicado ainda)
+- Objetivo: repositório privado no GitHub e site + APK na Cloudflare (`https://stokk.<conta>.workers.dev`, APK em `/apk/`). Quem publica é o GitHub Actions (a Cloudflare não monta APK); a branch `teste` ganha o link `teste-stokk.<conta>.workers.dev`.
+- **Cuidado:** só tornar o repositório privado depois que todos os celulares instalarem a versão que procura a atualização na Cloudflare (`ambientes.json › producao.atualizacao`). Ordem completa em `docs/deploy.md` §12.1.
+
 ## 3. Pendências importantes (resumo de `docs/pendencias.md`)
 - Conferir na fábrica que o 5S e as ocorrências salvam (1.10.6).
 - Criar a conta **supervisor** de teste no `stokk-teste`.

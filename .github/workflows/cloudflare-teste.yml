@@ -1,0 +1,47 @@
+name: Site de teste (Cloudflare)
+
+# A cada push na branch "teste": roda os testes, compila com o banco de TESTE (npm run build:teste)
+# e publica uma prévia na Cloudflare com o link fixo https://teste-stokk.<conta>.workers.dev
+# (não mexe no site da produção). Precisa dos segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID
+# e de o site "stokk" já ter sido publicado uma vez pela master. Ver docs/ambiente-teste.md.
+
+on:
+  push:
+    branches: [teste]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-teste
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar os testes (tests/*.cjs)
+        run: for t in tests/*.cjs; do echo "== $t"; node "$t"; done
+
+      - name: Compilar com o banco de TESTE
+        run: npm run build:teste
+
+      - name: Publicar a prévia "teste" na Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "Sem os segredos da Cloudflare: não publiquei."; exit 0; fi
+          npx --yes wrangler@4 versions upload --preview-alias teste

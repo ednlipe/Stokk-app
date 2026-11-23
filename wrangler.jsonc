@@ -1,0 +1,13 @@
+// Site do STOKK na Cloudflare (Workers com arquivos estáticos). Ver docs/deploy.md › "Cloudflare".
+// Quem publica é o GitHub Actions (.github/workflows/android.yml na master; cloudflare-teste.yml na teste),
+// porque o APK precisa ser montado lá (a Cloudflare não monta Android) e vai junto, em dist/apk/.
+{
+  "name": "stokk",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist"
+  },
+  // endereço https://stokk.<sua-conta>.workers.dev (produção) e links de prévia (ex.: teste-stokk.<sua-conta>.workers.dev)
+  "workers_dev": true,
+  "preview_urls": true
+}

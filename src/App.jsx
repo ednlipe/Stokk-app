@@ -6556,12 +6556,18 @@ function montarBotaoUsuarios(){
    o "codigo" (versionCode) com o instalado. Só se for MAIOR aparece o aviso; "Depois" some até fechar o app.
    Quem baixa e abre o instalador é o plugin nativo Atualizador (AtualizadorPlugin.java). */
 const ATU_REPO = (typeof __REPO__ !== 'undefined') ? __REPO__ : '';
+// Cloudflare (desde 23/11): endereço da pasta do APK no site, ex.: https://stokk.xxx.workers.dev/apk/ (vem de ambientes.json › atualizacao).
+// Preenchido: o app procura o versao.json AQUI. Vazio: continua na Release do GitHub (ATU_REPO).
+const ATU_BASE = (typeof __ATU_BASE__ !== 'undefined') ? __ATU_BASE__ : '';
 const Atualizador = registerPlugin('Atualizador');
 // ---- ATU-CORE-INICIO (testado em tests/atualizacao_core.test.cjs) ----
-function atuJsonOk(j, repo){
-  return !!j && typeof j === 'object' && !!repo
+// o APK só pode vir da Release do repositório OU da pasta do site na Cloudflare (base com https e terminada em "/")
+function atuJsonOk(j, repo, base){
+  if (!j || typeof j !== 'object' || typeof j.url !== 'string') return false;
+  const doGithub = !!repo && j.url.indexOf('https://github.com/'+repo+'/releases/download/') === 0;
+  const daBase = typeof base === 'string' && /^https:\/\/[^\/]+\/(.+\/)?$/.test(base) && j.url.indexOf(base) === 0;
+  return (doGithub || daBase)
     && Number.isFinite(Number(j.codigo)) && typeof j.versao === 'string'
-    && typeof j.url === 'string' && j.url.indexOf('https://github.com/'+repo+'/releases/download/') === 0
     && typeof j.sha256 === 'string' && /^[0-9a-fA-F]{64}$/.test(j.sha256);
 }
 function atuNovaVersao(instaladoCodigo, remoto){
@@ -6571,16 +6577,17 @@ function atuNovaVersao(instaladoCodigo, remoto){
 // ---- ATU-CORE-FIM ----
 function atuEstado(){ return state.atu || (state.atu = { ultima:0, remoto:null, dispensada:0, baixando:false }); }
 async function atuVerificar(forcar){
-  if (!Capacitor.isNativePlatform() || !ATU_REPO) return;
+  if (!Capacitor.isNativePlatform() || (!ATU_REPO && !ATU_BASE)) return;
   const S = atuEstado(), agora = Date.now();
   if (S.baixando || (!forcar && agora - S.ultima < 30*60*1000)) return;
   if (!document.getElementById('overlay').classList.contains('hidden')) return;   // já tem uma janela aberta: tenta na próxima
   S.ultima = agora;
   try{
     const inst = await Atualizador.info();
-    const r = await CapacitorHttp.get({ url:'https://github.com/'+ATU_REPO+'/releases/download/apk-latest/versao.json?t='+agora, headers:{'Cache-Control':'no-cache'} });
+    const onde = ATU_BASE ? ATU_BASE+'versao.json' : 'https://github.com/'+ATU_REPO+'/releases/download/apk-latest/versao.json';
+    const r = await CapacitorHttp.get({ url:onde+'?t='+agora, headers:{'Cache-Control':'no-cache'} });
     let j = r && r.data; if (typeof j === 'string'){ try{ j = JSON.parse(j); }catch(e){ j = null; } }
-    if (!r || r.status !== 200 || !atuJsonOk(j, ATU_REPO) || !atuNovaVersao(inst.codigo, j)) return;
+    if (!r || r.status !== 200 || !atuJsonOk(j, ATU_REPO, ATU_BASE) || !atuNovaVersao(inst.codigo, j)) return;
     if (S.dispensada === Number(j.codigo)) return;
     S.remoto = j; S.instalada = inst;
     atuAbrir();
