@@ -290,11 +290,22 @@ export default function App() {
 "use strict";
 
 /* ================= CONFIGURAÇÃO DO SUPABASE =================
-   Preencha com os dados do seu projeto (Supabase → Settings → API).
+   O banco (produção ou teste) vem de ambientes.json, escolhido pelo vite.config.js conforme o comando:
+   npm run dev = TESTE, npm run build = PRODUÇÃO (ver docs/ambiente-teste.md). Não escreva URL/chave aqui.
    A "anon key" é pública por design (protegida pelas regras RLS do banco). */
-const SUPABASE_URL = 'https://vjzqzmigifjdxftwmxew.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqenF6bWlnaWZqZHhmdHdteGV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NDIyMDcsImV4cCI6MjEwNTMxODIwN30.Gv1pt95kVFlRrvj-226AxnHmh8TGezG0HGxRUth-FZg';
+const AMBIENTE = __AMBIENTE__;
+const SUPABASE_URL = __SUPABASE_URL__;
+const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// faixa vermelha fixa no topo: ninguém confunde o teste com a produção
+if (AMBIENTE === 'teste' && !document.getElementById('faixa-ambiente-teste')){
+  const fx = document.createElement('div');
+  fx.id = 'faixa-ambiente-teste';
+  fx.textContent = 'AMBIENTE DE TESTE · não é a produção';
+  fx.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#c62828;color:#fff;font:700 11px/16px sans-serif;letter-spacing:1px;text-align:center;pointer-events:none;opacity:.92;padding-top:env(safe-area-inset-top);';
+  document.body.appendChild(fx);
+  document.title = '[TESTE] ' + document.title;
+}
 /* ============================================================== */
 
 /* ---------------- STATE ---------------- */
@@ -5659,10 +5670,6 @@ function gManutAbrirSheet(equipId){
     if (!desc){ toast('Descreva o que está acontecendo.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
-    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
-    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
-    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const id = 'oc_'+uid(), b = document.getElementById('mo-ok'); b.disabled = true;
     try{
       await db.collection('ocorrencias').doc(id).set({ id, equipamentoId:eq.id, equipamentoCodigo:eq.codigo, categoria:document.getElementById('mo-cat').value,
@@ -5689,10 +5696,6 @@ function gManutLiberarSheet(id){
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() < dslT(o.abertaEm)){ toast('A liberação não pode ser antes da abertura ('+dslDataCurta(o.abertaEm)+').', 3500); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
-    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
-    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
-    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const b = document.getElementById('ml-ok'); b.disabled = true;
     try{
       await db.collection('ocorrencias').doc(id).update({ liberadaEm:quando.toISOString(), liberadaPorNome:state.user.nome, motivoLiberacao:document.getElementById('ml-motivo').value, servicoRealizado:serv, recebidoPor:quem });
@@ -6110,10 +6113,6 @@ function c5AbrirSheet(){
     if (!antes.blobs.length){ toast('Tire a foto do antes.'); return; }
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
-    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
-    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
-    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     if (concluir && !depois.blobs.length){ toast('Tire a foto do depois.'); return; }
     if (concluir && !acao){ toast('Informe o que foi feito.'); return; }
     const id = 'cs_'+uid(); ok.disabled = true; ok.textContent = 'Enviando fotos…';
@@ -6150,10 +6149,6 @@ function c5ConcluirSheet(id){
     if (isNaN(quando.getTime())){ toast('Informe a data e a hora.'); return; }
     if (quando.getTime() < c5T(r.abertoEm)){ toast('A conclusão não pode ser antes da abertura ('+dslDataCurta(r.abertoEm)+').', 3500); return; }
     if (quando.getTime() > Date.now()+3600000){ toast('A data não pode estar no futuro.'); return; }
-    const fimVal = document.getElementById('gl-fim').value, fim = fimVal ? new Date(fimVal) : null;
-    if (fim && isNaN(fim.getTime())){ toast('Fim inválido.'); return; }
-    if (fim && fim.getTime() < quando.getTime()){ toast('O fim não pode ser antes do início.'); return; }
-    if (fim && fim.getTime() > Date.now()+3600000){ toast('O fim não pode estar no futuro.'); return; }
     const b = document.getElementById('c5-ok'); b.disabled = true; b.textContent = 'Enviando fotos…';
     try{
       await c5ConcluirGravar(id, depois.blobs, acao, quando, t=>{ b.textContent = t; }, document.getElementById('c5-post').checked);

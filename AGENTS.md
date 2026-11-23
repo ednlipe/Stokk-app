@@ -17,6 +17,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 | Documentação | `docs/` |
 
 ## Regras que valem sempre
+- **Ambiente de teste (23/11):** trabalhe na branch `teste`; `npm run dev` usa o banco **de teste** e `npm run build` o **da produção** (escolha no `vite.config.js`, valores em `ambientes.json`). Nunca escreva URL/chave do Supabase no `App.jsx`; no desktop a troca é feita na build (se falhar, a build para). `update_0NN` roda primeiro no `stokk-teste`. Veja `docs/ambiente-teste.md`.
 - **Documentação é obrigatória.** Ao desenvolver, alterar ou configurar algo, atualize na mesma entrega: o arquivo da área em `docs/`; uma linha em `docs/historico.md` (data, o quê, arquivos/SQL); `docs/pendencias.md` (remova o resolvido, inclua o novo); e `docs/README.md` se a versão mudar. Marque com "Status" o que ainda não foi testado em produção. Escreva em português e use nomes reais de tabelas, colunas, funções e arquivos.
 - **Nunca registre segredos** (senhas, `service_role`, `CRON_SECRET`, chave do Firebase, senha do `powerbi_leitor`) em arquivos, docs ou commits.
 - **Mudança de banco = novo `update_0NN_*.sql`** idempotente (pode rodar mais de uma vez), na raiz, listado em `docs/banco.md`. Não edite migrações antigas.

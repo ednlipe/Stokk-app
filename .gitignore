@@ -19,4 +19,4 @@ STOKK_backups/
 dados_*.sql
 dados_auth*.sql
 *.dump
-conexao.txt
+conexao*.txt

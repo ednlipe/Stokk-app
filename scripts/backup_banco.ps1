@@ -22,6 +22,7 @@ param(
   [switch]$SoEstrutura
 )
 
+try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch {}   # acentos das mensagens do psql
 $raiz = Split-Path -Parent $PSScriptRoot
 if (-not $Pasta) {
   $base = if ($env:OneDrive) { $env:OneDrive } else { [Environment]::GetFolderPath('MyDocuments') }

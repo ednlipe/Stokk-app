@@ -1,11 +1,13 @@
 {
   "name": "stokk",
   "private": true,
-  "version": "1.10.5",
+  "version": "1.10.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:producao": "vite --mode producao",
     "build": "vite build",
+    "build:teste": "vite build --mode teste",
     "preview": "vite preview"
   },
   "dependencies": {

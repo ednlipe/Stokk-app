@@ -13,6 +13,12 @@
 - Compra lançada com data antiga não recalcula o custo dos abastecimentos já gravados (de propósito).
 - `schema_atual.sql` está desatualizado; a foto completa passa a ser `banco/estrutura.sql`, gerada por `scripts/backup_banco.ps1` (ver §13.4).
 
+## 13.5 Ambiente de teste (23/11 — etapa 1 pronta na branch `teste`)
+
+- Banco de teste montado em 23/11. Falta: conta de **supervisor** de teste (hoje só `teste@teste.com`, operador), entrar no app de teste e conferir as telas de cada área.
+- Próximas etapas: site de teste no GitHub Pages (subpasta), APK de teste (`com.stokk.app.teste`, precisa do pacote no Firebase), testes rodando no GitHub antes de publicar, Edge Functions publicadas no teste quando for testar Usuários/avisos.
+- 1ª junção `teste` → `master` feita em 23/11 (v1.10.6). Conferir no celular que o 5S e as ocorrências salvam na produção.
+
 ## 13.4 Backup e estrutura do banco (23/11 — 1º backup feito)
 
 - **1º backup em 23/11/2026 00:07** (produção, PostgreSQL 17.6): `banco/estrutura.sql` (27 tabelas, 20 funções, 32 gatilhos, 54 políticas, 15 views), `banco/estrutura_extras.sql` e os dados em `OneDrive\STOKK_backups\2026-11-23_0007` (27 tabelas de `public` e 6 logins). Conferido: nenhum segredo nos arquivos de `banco/` (os 3 crons saíram com `<SEGREDO>`). Falta o commit.
