@@ -47,6 +47,6 @@
 4. Aprovado: rodar o backup da produção (`scripts\backup_banco.cmd`), rodar o `update_0NN` na produção, aumentar a versão (regra do `AGENTS.md`), juntar `teste` na `master` e enviar. Só aí vai para o site e para os celulares.
 
 ## Próximas etapas (ainda não feitas)
-- **Site de teste na Cloudflare** (preparado em 23/11, ver `deploy.md` §12.1): o workflow `cloudflare-teste.yml` publica a cada push na `teste` em `https://teste-stokk.<conta>.workers.dev`, depois de rodar os testes. Falta a 1ª publicação da produção na Cloudflare e os segredos no GitHub.
+- **Site de teste na Cloudflare: FEITO (23/11).** Link **https://teste-stokk.khay-entertainment.workers.dev** (desktop em `/desktop/`), atualizado pelo `cloudflare-teste.yml` a cada push na `teste`, depois de rodar os testes. Abre no celular. Ver `deploy.md` §12.1.
 - **APK de teste** (`com.stokk.app.teste`, nome "STOKK TESTE", instalável ao lado do normal, Release própria `apk-teste`): exige cadastrar o pacote novo no Firebase (`google-services.json`). Alternativa sem celular: emulador do Android Studio.
 - Testes no GitHub: já rodam no `cloudflare-teste.yml` (Node 22; os 12 passam). Falta rodar também antes da publicação da `master`.

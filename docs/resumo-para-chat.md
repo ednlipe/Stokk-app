@@ -1,7 +1,7 @@
 # STOKK — Resumo para colar no chat (fora do PC)
 
 > Cole este arquivo inteiro no começo de uma conversa no chat do Claude (celular/navegador) para ele entender o projeto e o que mudou.
-> Atualizado em **23/11/2026** · versão em produção: **1.10.7** (`versionCode 33`).
+> Atualizado em **23/11/2026** · versão em produção: **1.10.8** (`versionCode 34`).
 > Não tem senha nem chave secreta aqui. **Nunca cole no chat:** senha do banco, `service_role`, `CRON_SECRET`, chave do Firebase, senha do `powerbi_leitor`, arquivos `dados_*.sql` de backup.
 
 ---
@@ -51,7 +51,8 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 - O dono decidiu tirar o desbloqueio por biometria do APK. `BIO_LIGADA = false` em `src/App.jsx`; o código continua para religar se precisar.
 - `.gitattributes` fixa LF no `App.jsx` e no desktop (os testes comparam os dois letra por letra).
 
-### 2.6 Mudança para a Cloudflare (preparada na branch `teste`, nada publicado ainda)
+### 2.6 Mudança para a Cloudflare (no ar desde 23/11; 1.10.8 já procura a atualização lá)
+- Produção: https://stokk.khay-entertainment.workers.dev · Teste: https://teste-stokk.khay-entertainment.workers.dev
 - Objetivo: repositório privado no GitHub e site + APK na Cloudflare (`https://stokk.<conta>.workers.dev`, APK em `/apk/`). Quem publica é o GitHub Actions (a Cloudflare não monta APK); a branch `teste` ganha o link `teste-stokk.<conta>.workers.dev`.
 - **Cuidado:** só tornar o repositório privado depois que todos os celulares instalarem a versão que procura a atualização na Cloudflare (`ambientes.json › producao.atualizacao`). Ordem completa em `docs/deploy.md` §12.1.
 

@@ -16,7 +16,7 @@
 ## 13.6 Mudança para a Cloudflare (23/11 — preparada na branch `teste`)
 
 - Seguir a ordem de `deploy.md` §12.1. **Não tornar o repositório privado antes de todos os celulares estarem na versão que procura a atualização na Cloudflare.**
-- Falta: login do dono na Cloudflare, token *Edit Cloudflare Workers*, segredos `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` no GitHub, 1ª publicação, preencher `ambientes.json › producao.atualizacao`.
+- Feito em 23/11: token e segredos no GitHub, 1ª publicação (`stokk.khay-entertainment.workers.dev`) e link de teste (`teste-stokk.khay-entertainment.workers.dev`). 1.10.8 (23/11) procura a atualização na Cloudflare. Falta: **todos os celulares na 1.10.8+** antes de fechar o repositório; conferir num celular que a versão seguinte chega pela Cloudflare.
 - Depois: avisar o endereço novo do desktop; desligar `pages.yml` e o passo da Release no `android.yml`; tirar `GH_PAGES`/`/Stokk-app/` do `vite.config.js`.
 
 ## 13.5 Ambiente de teste (23/11 — etapa 1 pronta na branch `teste`)

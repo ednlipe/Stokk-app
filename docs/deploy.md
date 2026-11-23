@@ -36,7 +36,7 @@ A câmera do navegador exige **HTTPS** (ou `localhost`).
 5. Avisar quem usa o desktop do endereço novo.
 6. Só então: tornar o repositório privado, desligar o GitHub Pages (`pages.yml`) e tirar o passo da Release do `android.yml`.
 
-**Status (23/11):** arquivos prontos na branch `teste` (`wrangler.jsonc`, passos nos workflows, `ATU_BASE` no app); etapa 1 em andamento; nada publicado na Cloudflare ainda.
+**Status (23/11):** etapas 1 e 2 feitas. Subdomínio da conta: `khay-entertainment.workers.dev`. Produção publicada em **https://stokk.khay-entertainment.workers.dev** (app, `/desktop/` no banco da produção e `/apk/STOKK.apk`; `versao.json` ainda não, de propósito). Teste em **https://teste-stokk.khay-entertainment.workers.dev** (banco de teste, com a faixa). Etapa 3 feita na **1.10.8** (`versionCode 34`): o app procura a atualização na Cloudflare. Próxima: etapa 4 (todos os celulares na 1.10.8 ou mais nova).
 
 
 ---
