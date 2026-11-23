@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 4w04KdsydSZl4FdyCB7Oa7cCxDdo1JXwcu4hIe1lHK3fxh8hNdKurdbIDjhqn5s
+\restrict b2f4f5AIB8G8G5zqecRYleehdsSOI02mj6hp1v5Kje4o0Lcw6Mratgq8PJ9Iuzl
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6
@@ -2636,7 +2636,7 @@ CREATE POLICY equipamento_locais_select ON public.equipamento_locais FOR SELECT 
 -- Name: equipamento_locais equipamento_locais_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY equipamento_locais_update ON public.equipamento_locais FOR UPDATE TO authenticated USING ((( SELECT public.eh_supervisor() AS eh_supervisor) AND (area = ANY (( SELECT public.areas_do_usuario() AS areas_do_usuario)::text[])))) WITH CHECK ((( SELECT public.eh_supervisor() AS eh_supervisor) AND (area = ANY (( SELECT public.areas_do_usuario() AS areas_do_usuario)::text[]))));
+CREATE POLICY equipamento_locais_update ON public.equipamento_locais FOR UPDATE TO authenticated USING (((area = ANY (( SELECT public.areas_do_usuario() AS areas_do_usuario)::text[])) AND (( SELECT public.eh_supervisor() AS eh_supervisor) OR ((usuario_id = auth.uid()) AND ("timestamp" > (now() - '48:00:00'::interval)) AND ("timestamp" <= (now() + '01:00:00'::interval)))))) WITH CHECK (((area = ANY (( SELECT public.areas_do_usuario() AS areas_do_usuario)::text[])) AND (( SELECT public.eh_supervisor() AS eh_supervisor) OR ((usuario_id = auth.uid()) AND ("timestamp" > (now() - '48:00:00'::interval)) AND ("timestamp" <= (now() + '01:00:00'::interval))))));
 
 
 --
@@ -3967,5 +3967,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 4w04KdsydSZl4FdyCB7Oa7cCxDdo1JXwcu4hIe1lHK3fxh8hNdKurdbIDjhqn5s
+\unrestrict b2f4f5AIB8G8G5zqecRYleehdsSOI02mj6hp1v5Kje4o0Lcw6Mratgq8PJ9Iuzl
 

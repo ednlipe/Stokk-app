@@ -130,6 +130,7 @@ Várias fotos (`update_019`): a foto principal continua em `foto_antes`/`foto_de
 | `update_014_contagem_cega.sql` | **Contagem cega:** colunas `sessoes.tipo` (`'normal'` padrão ou `'cega'`, com check) e `sessoes.itens` (jsonb, itens lidos da etiqueta). Não mexe em `volumes`. Rodar depois do 013. **Status:** testado só em Postgres local. |
 | `update_019_cinco_s_fotos.sql` | **5S com várias fotos:** colunas `cinco_s.fotos_antes_extra` e `fotos_depois_extra` (até 4 cada), função `cinco_s_caminhos_ok`, checks, gatilho `cinco_s_proteger` recriado, política de insert ajustada, `grant update (fotos_depois_extra)`, `bi.cinco_s` com quantidade de fotos. Rodar depois do 018. |
 | `update_020_admin.sql` | `profiles.admin`, `proteger_profiles` protege também `admin`, `eh_admin()`, tabela `admin_acoes` (tela Usuários, v1.7.0). |
+| `update_024_locais_corrigir.sql` | Política `equipamento_locais_update`: supervisor anula qualquer registro da área; quem lançou anula o próprio por 48 h (`timestamp` até 1 h no futuro). Usada pelo "corrigir" dos Locais (app 1.10.4+). Depende do 017/022/023. **Rodado em produção em 23/11/2026.** |
 | `update_023_locais_atividade.sql` | `equipamento_locais.atividade` (até 200) e `solicitante` (até 120, opcional) + views BI. Depende do 022. |
 | `update_022_locais_turnos.sql` | Locais por turno: `equipamento_locais.data_fim` (opcional), `equipamentos.setor`, views BI com fim/setor. Depende do 015/017. |
 | `update_021_stokkbook.sql` | Stokkbook: posts e reações do feed, `cinco_s.postar_stokkbook` (v1.8.0). Depende do 018/019. |

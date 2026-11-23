@@ -1,6 +1,6 @@
 -- ============================================================
 -- STOKK — partes da estrutura fora dos schemas public e bi
--- Gerado em 23/11/2026 00:07 (Brasília) por scripts/backup_banco.ps1. Não edite à mão: rode o script de novo.
+-- Gerado em 23/11/2026 00:28 (Brasília) por scripts/backup_banco.ps1. Não edite à mão: rode o script de novo.
 -- Servidor: PostgreSQL 17.6
 -- Ordem para montar um banco novo: docs/banco.md, seção 4.7.
 -- ============================================================

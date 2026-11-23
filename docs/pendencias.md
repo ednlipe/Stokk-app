@@ -16,8 +16,8 @@
 ## 13.4 Backup e estrutura do banco (23/11 — 1º backup feito)
 
 - **1º backup em 23/11/2026 00:07** (produção, PostgreSQL 17.6): `banco/estrutura.sql` (27 tabelas, 20 funções, 32 gatilhos, 54 políticas, 15 views), `banco/estrutura_extras.sql` e os dados em `OneDrive\STOKK_backups\2026-11-23_0007` (27 tabelas de `public` e 6 logins). Conferido: nenhum segredo nos arquivos de `banco/` (os 3 crons saíram com `<SEGREDO>`). Falta o commit.
-- **O que a foto mostrou da produção:** os `update_015` a `023` **estão aplicados** (várias seções acima ainda dizem "não aplicado"/"não testado em produção" e estão desatualizadas nesse ponto).
-- **`update_024_locais_corrigir.sql` NÃO está aplicado:** a política `equipamento_locais_update` ainda é só do supervisor. O app 1.10.4+ mostra o botão **corrigir** a quem lançou; para o operador, o registro novo é salvo e a anulação do antigo dá erro, e **ficam dois registros válidos**. Rodar o `update_024` (antes, rodar o backup).
+- **O que a foto mostrou da produção:** os `update_015` a `023` **estão aplicados** (e o `024` desde 23/11) (várias seções acima ainda dizem "não aplicado"/"não testado em produção" e estão desatualizadas nesse ponto).
+- **Falha silenciosa no adaptador (`src/App.jsx`, `doc().update()`, igual no desktop):** o UPDATE não confere quantas linhas mudaram, então qualquer alteração barrada pela RLS aparece como sucesso. Corrigir com `.select()` e erro quando vier 0 linhas (mudança no app: versão nova e teste antes, de preferência no ambiente de teste).
 - **Cron do diesel não existe:** só há os crons `push-conferencia`, `push-inventario` e `push-rendimento` (jobs 6, 7, 8). O aviso "sem abastecer" (`{"tipo":"diesel"}`) nunca dispara. Criar pelo `docs/deploy.md`, se o aviso ainda for desejado.
 - `schema_atual.sql` ficou superado por `banco/estrutura.sql`: pode ser apagado ou marcado como histórico.
 - A cada execução, as linhas `\restrict`/`\unrestrict` do `estrutura.sql` mudam (chave aleatória de segurança do `pg_dump` 17.6+/18). É normal aparecerem no `git diff`.
