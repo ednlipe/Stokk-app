@@ -1,7 +1,7 @@
 # STOKK — Resumo para colar no chat (fora do PC)
 
 > Cole este arquivo inteiro no começo de uma conversa no chat do Claude (celular/navegador) para ele entender o projeto e o que mudou.
-> Atualizado em **23/11/2026** · versão em produção: **1.10.8** (`versionCode 34`); na branch `teste`: **1.10.9** (`versionCode 35`).
+> Atualizado em **23/11/2026** · versão em produção: **1.10.9** (`versionCode 35`).
 > Não tem senha nem chave secreta aqui. **Nunca cole no chat:** senha do banco, `service_role`, `CRON_SECRET`, chave do Firebase, senha do `powerbi_leitor`, arquivos `dados_*.sql` de backup.
 
 ---
@@ -56,7 +56,7 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 - Objetivo: repositório privado no GitHub e site + APK na Cloudflare (`https://stokk.<conta>.workers.dev`, APK em `/apk/`). Quem publica é o GitHub Actions (a Cloudflare não monta APK); a branch `teste` ganha o link `teste-stokk.<conta>.workers.dev`.
 - **Cuidado:** só tornar o repositório privado depois que todos os celulares instalarem a versão que procura a atualização na Cloudflare (`ambientes.json › producao.atualizacao`). Ordem completa em `docs/deploy.md` §12.1.
 
-### 2.7 Falha silenciosa do `update()` corrigida (v1.10.9, `versionCode 35`, na branch `teste`)
+### 2.7 Falha silenciosa do `update()` corrigida (v1.10.9, `versionCode 35`, em produção desde 23/11)
 - **Antes:** quando a RLS barrava uma alteração, o Supabase respondia sem erro e com 0 linhas alteradas, e o app mostrava "salvo/anulado/corrigido" mesmo assim. Exemplo: "corrigir registro" de Locais com o prazo de 48 h vencido.
 - **Agora:**
   - `doc().update()` (app e desktop) pede de volta as linhas alteradas. Se vierem 0, mostra: "Não foi possível salvar: você não tem permissão ou o registro mudou. Atualize a tela e tente de novo."
