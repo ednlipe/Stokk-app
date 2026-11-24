@@ -36,7 +36,7 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 
 - Quem escolhe o banco é o `vite.config.js`, com URL e chave pública em `ambientes.json`. **Não escrever URL/chave do Supabase no `App.jsx`.**
 - O desktop tem a URL da produção escrita; no teste a troca é feita automaticamente na build (se falhar, a build para).
-- Banco de teste montado por `scripts/montar_banco_teste.ps1`. Conta de teste: `teste@teste.com` (operador). Ainda **não há** conta de supervisor de teste.
+- Banco de teste montado por `scripts/montar_banco_teste.ps1`. Contas de teste: `teste@teste.com` (supervisor, Trefila e Planta 1) e `op.teste@teste.com` (operador, Gestão). Conta nova nasce bloqueada: no teste, liberar pelo SQL Editor do `stokk-teste` (`profiles.ativo`, `role`, `area` e uma linha em `usuario_areas`), porque a tela Usuários depende de Edge Function que não existe no teste.
 - No teste **não funcionam**: Edge Functions (tela Usuários, avisos de parada), push, crons, Power BI.
 - Ainda não existe link online do teste (só no PC). Próximas etapas: site de teste no GitHub Pages, APK de teste, testes rodando no GitHub.
 - Detalhes: `docs/ambiente-teste.md`.

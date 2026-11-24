@@ -2,7 +2,7 @@
 
 > Para testar mudanças **antes** de chegarem ao app que a fábrica usa.
 > Índice geral: [`docs/README.md`](README.md). Regra: mudou algo desta área, atualize ESTE arquivo e uma linha em [`historico.md`](historico.md).
-> **Status (23/11/2026):** projeto `stokk-teste` (`jxqhsdhohuqfigdvmbyx`, região ca-central-1) criado e **montado** pelo script (estrutura, extras e cadastros sem erro); conta de teste `teste@teste.com` ativa. `npm run dev` conferido: app e desktop apontam só para o teste, com a faixa. Login e uso das telas no teste ainda não conferidos. Site de teste e APK de teste ainda não existem (ver "Próximas etapas").
+> **Status (23/11/2026):** projeto `stokk-teste` (`jxqhsdhohuqfigdvmbyx`, região ca-central-1) criado e **montado** pelo script (estrutura, extras e cadastros sem erro); contas de teste `teste@teste.com` (supervisor) e `op.teste@teste.com` (operador, Gestão) ativas. `npm run dev` conferido: app e desktop apontam só para o teste, com a faixa. Login e uso das telas no teste ainda não conferidos. Site de teste e APK de teste ainda não existem (ver "Próximas etapas").
 
 ## Como funciona
 
@@ -31,6 +31,18 @@
    - pede para criar as contas de teste no painel (**Authentication › Users › Add user**, com *Auto Confirm*) e ativa cada uma com `consultas/teste_ativar_usuarios.sql` (supervisor e operador, todas as áreas).
    A connection string do teste (sem senha) fica em `OneDrive\STOKK_backups\conexao_teste.txt`.
 4. `npm run dev` e abrir no navegador (F12 › modo celular). Desktop: `/desktop/`.
+
+**Contas de teste (23/11):**
+- `teste@teste.com`: supervisor, Trefila e Planta 1.
+- `op.teste@teste.com`: operador, só Gestão. Serve para conferir o que a RLS barra. Ela está com `profiles.admin = true`; se não for de propósito, tirar com `update public.profiles set admin = false where id = (select id from auth.users where email = 'op.teste@teste.com');`.
+
+**Conta criada depois (pelo SQL Editor do `stokk-teste`, que não entende o `:'email'` do psql):**
+```sql
+update public.profiles p set ativo = true, role = 'operador', area = 'gestao'
+  from auth.users u where u.id = p.id and u.email = 'EMAIL';
+insert into public.usuario_areas (user_id, area)
+  select id, 'gestao' from auth.users where email = 'EMAIL' on conflict do nothing;
+```
 
 **Quando a estrutura da produção mudar** (novo `update_0NN`): rode o `update_0NN` **primeiro no teste** (SQL Editor do `stokk-teste`), teste, e só depois na produção. Para recomeçar o teste do zero: apagar e recriar o projeto `stokk-teste` e rodar o script de novo (ele usa a foto mais recente de `banco/`).
 
