@@ -1,7 +1,7 @@
 # STOKK — Resumo para colar no chat (fora do PC)
 
 > Cole este arquivo inteiro no começo de uma conversa no chat do Claude (celular/navegador) para ele entender o projeto e o que mudou.
-> Atualizado em **23/11/2026** · versão em produção: **1.10.8** (`versionCode 34`).
+> Atualizado em **23/11/2026** · versão em produção: **1.10.8** (`versionCode 34`); na branch `teste`: **1.10.9** (`versionCode 35`).
 > Não tem senha nem chave secreta aqui. **Nunca cole no chat:** senha do banco, `service_role`, `CRON_SECRET`, chave do Firebase, senha do `powerbi_leitor`, arquivos `dados_*.sql` de backup.
 
 ---
@@ -56,10 +56,16 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 - Objetivo: repositório privado no GitHub e site + APK na Cloudflare (`https://stokk.<conta>.workers.dev`, APK em `/apk/`). Quem publica é o GitHub Actions (a Cloudflare não monta APK); a branch `teste` ganha o link `teste-stokk.<conta>.workers.dev`.
 - **Cuidado:** só tornar o repositório privado depois que todos os celulares instalarem a versão que procura a atualização na Cloudflare (`ambientes.json › producao.atualizacao`). Ordem completa em `docs/deploy.md` §12.1.
 
+### 2.7 Falha silenciosa do `update()` corrigida (v1.10.9, `versionCode 35`, na branch `teste`)
+- **Antes:** quando a RLS barrava uma alteração, o Supabase respondia sem erro e com 0 linhas alteradas, e o app mostrava "salvo/anulado/corrigido" mesmo assim. Exemplo: "corrigir registro" de Locais com o prazo de 48 h vencido.
+- **Agora:**
+  - `doc().update()` (app e desktop) pede de volta as linhas alteradas. Se vierem 0, mostra: "Não foi possível salvar: você não tem permissão ou o registro mudou. Atualize a tela e tente de novo."
+  - O bloco é o `UPD-CORE` (`updExecutar`, `updMsg`), idêntico no app e no desktop; o teste é `tests/update_core.test.cjs`.
+- **Turnos:** os cortes são 07:10 / 15:10 / 23:10. Todos os cálculos (rendimento, 5S, Locais, view `bi.producoes`) já usavam isso; só a documentação dizia 7h–15h20 e foi corrigida.
+
 ## 3. Pendências importantes (resumo de `docs/pendencias.md`)
 - Conferir na fábrica que o 5S e as ocorrências salvam (1.10.6).
 - Criar a conta **supervisor** de teste no `stokk-teste`.
-- **Falha silenciosa:** `doc().update()` no app e no desktop não confere se alguma linha mudou; algo barrado pela RLS aparece como "salvo". Corrigir com `.select()` e erro quando vier 0 linhas.
 - **Cron do diesel** não existe em produção (criar se o aviso ainda for desejado; `docs/deploy.md`).
 - **Backup automático** ainda não existe; as fotos do 5S (bucket `cinco-s`) não entram no backup.
 - Aviso de compilação: chave `situacao` repetida num objeto em `src/App.jsx` (perto da linha 6630–6637). Não quebra nada, mas vale limpar.
@@ -76,7 +82,7 @@ App mobile-first de **estoque e rendimento metálico** de uma trefilaria.
 4. **Mudança de banco = novo arquivo** `update_025_*.sql` (o próximo número), que possa rodar mais de uma vez sem erro. Rodar **primeiro no `stokk-teste`**, depois na produção (com backup antes). Não editar os `update` antigos.
 5. **Não enfraquecer a segurança (RLS).** Políticas com área usam `area = any ((select public.areas_do_usuario())::text[])`.
 6. **Documentação é obrigatória:** atualizar o arquivo da área em `docs/`, `docs/historico.md` e `docs/pendencias.md`.
-7. Peso sempre em **kg**. Rendimento = soma produzida ÷ soma consumida. Turnos: 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20. Fuso de Brasília.
+7. Peso sempre em **kg**. Rendimento = soma produzida ÷ soma consumida. Turnos: 1º 07:10–15:10, 2º 15:10–23:10, 3º 23:10–07:10. Fuso de Brasília.
 8. Tabelas da Gestão e do 5S são **só inserção**: nada se apaga, o supervisor **anula** com motivo.
 
 ## 5. Como trazer uma alteração feita no chat para o projeto

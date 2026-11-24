@@ -7,6 +7,13 @@
 
 - **Adaptador** `createSupabaseDB()` (em `App.jsx` e no site desktop) imita uma API de documentos:
   `db.collection(t).doc(id).set/update/get/delete` e `db.collection(t).orderBy(f,dir).limit(n).onSnapshot(cb)`.
+- **`update()` confere as linhas alteradas (v1.10.9, bloco `UPD-CORE`, cópia idêntica no desktop):**
+  - **Por quê:** a RLS do Supabase não dá erro quando barra um UPDATE; ela só altera 0 linhas. Antes, o app mostrava "salvo" mesmo assim.
+  - **Como funciona:** `doc().update()` passa por `updExecutar(q, coluna)`. Ele pede de volta só a coluna da chave (`.select()`, ou seja, `Prefer: return=representation`). Se vierem **0 linhas**, lança erro com `semLinhas = true` e a mensagem `UPD_SEM_LINHAS` ("Não foi possível salvar: você não tem permissão ou o registro mudou. Atualize a tela e tente de novo."), mostrada no toast.
+  - **Mensagem nas telas:** as que têm mensagem própria de erro usam `updMsg(e, padrão)`. Assim aparece o aviso de permissão em vez de "confira a internet".
+  - **Reação do Stokkbook:** o `update` direto também usa o `updExecutar`.
+  - **Testes:** `tests/update_core.test.cjs`.
+  - **Para quem for mexer:** um update novo pelo `sb.from(...)` direto deve usar o `updExecutar`.
 - **Conversão de nomes:** o app usa `camelCase`; o banco usa `snake_case` (`camelToSnake`/`snakeToCamel`, só no primeiro nível).
   Por isso o conteúdo de colunas jsonb mantém as chaves como foram gravadas (ex.: `resultado.consumidoKg`).
 - **Tempo real:** cada coleção assinada abre um canal `postgres_changes` e relê a tabela inteira a cada evento (`refetch`).

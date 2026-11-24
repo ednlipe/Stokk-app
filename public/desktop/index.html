@@ -973,6 +973,19 @@ function montarBotaoArea(){
   });
 }
 
+// ---- UPD-CORE-INICIO (igual no app e no desktop; testado em tests/update_core.test.cjs)
+// A RLS do Supabase NÃO dá erro quando barra um UPDATE: ele só altera 0 linhas. Por isso o update
+// pede de volta as linhas alteradas (.select = Prefer: return=representation) e 0 linhas vira erro.
+const UPD_SEM_LINHAS = 'Não foi possível salvar: você não tem permissão ou o registro mudou. Atualize a tela e tente de novo.';
+async function updExecutar(q, coluna){
+  const r = await q.select(coluna);
+  if (r.error) throw r.error;
+  if (!Array.isArray(r.data) || r.data.length === 0){ const e = new Error(UPD_SEM_LINHAS); e.semLinhas = true; throw e; }
+  return r.data.length;
+}
+function updMsg(e, padrao){ return (e && e.semLinhas) ? e.message : padrao; }
+// ---- UPD-CORE-FIM
+
 function createSupabaseDB(){
   const listeners = {};
   const channels = {};
@@ -1076,8 +1089,8 @@ function createSupabaseDB(){
           async update(dataObj){
             let q = sb.from(table).update(objToSnake(dataObj)).eq(camelToSnake(pk), id);
             const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
-            const {error} = await q;
-            if (error){ toast('Erro ao atualizar: '+error.message, 4000); throw error; }
+            try{ return await updExecutar(q, camelToSnake(pk)); }   // 0 linhas alteradas = erro (UPD-CORE)
+            catch(error){ toast(updMsg(error, 'Erro ao atualizar: '+error.message), 6000); throw error; }
           },
           async get(){
             let q = sb.from(table).select('*').eq(camelToSnake(pk), id);
@@ -1198,7 +1211,7 @@ async function onAuthed(user){
   subscribeData();
   setView(ABA_INICIAL[state.area] || 'dashboard');
 }
-const APP_VERSAO = '1.10.8 · 23/11';
+const APP_VERSAO = '1.10.9 · 23/11';
 async function boot(){
   const lv = document.getElementById('login-versao'); if (lv) lv.textContent = 'versão ' + APP_VERSAO;
   const {data:{session}} = await sb.auth.getSession();
@@ -4498,7 +4511,7 @@ async function importFiles(files){
 
     }catch(err){
       console.error(err);
-      toast(`Erro ao ler ${file.name}. Verifique se é o relatório do Protheus.`, 4000);
+      toast(updMsg(err, `Erro ao ler ${file.name}. Verifique se é o relatório do Protheus.`), err&&err.semLinhas?6000:4000);
     }
   }
   progEl.innerHTML = '';

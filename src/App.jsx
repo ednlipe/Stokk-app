@@ -542,6 +542,19 @@ function montarBotaoArea(){
   });
 }
 
+// ---- UPD-CORE-INICIO (igual no app e no desktop; testado em tests/update_core.test.cjs)
+// A RLS do Supabase NÃO dá erro quando barra um UPDATE: ele só altera 0 linhas. Por isso o update
+// pede de volta as linhas alteradas (.select = Prefer: return=representation) e 0 linhas vira erro.
+const UPD_SEM_LINHAS = 'Não foi possível salvar: você não tem permissão ou o registro mudou. Atualize a tela e tente de novo.';
+async function updExecutar(q, coluna){
+  const r = await q.select(coluna);
+  if (r.error) throw r.error;
+  if (!Array.isArray(r.data) || r.data.length === 0){ const e = new Error(UPD_SEM_LINHAS); e.semLinhas = true; throw e; }
+  return r.data.length;
+}
+function updMsg(e, padrao){ return (e && e.semLinhas) ? e.message : padrao; }
+// ---- UPD-CORE-FIM
+
 function createSupabaseDB(){
   const listeners = {};
   const channels = {};
@@ -644,8 +657,8 @@ function createSupabaseDB(){
           async update(dataObj){
             let q = sb.from(table).update(objToSnake(dataObj)).eq(camelToSnake(pk), id);
             const ar = areaDaTabela(table); if (ar) q = q.eq('area', ar);
-            const {error} = await q;
-            if (error){ toast('Erro ao atualizar: '+error.message, 4000); throw error; }
+            try{ return await updExecutar(q, camelToSnake(pk)); }   // 0 linhas alteradas = erro (UPD-CORE)
+            catch(error){ toast(updMsg(error, 'Erro ao atualizar: '+error.message), 6000); throw error; }
           },
           async get(){
             let q = sb.from(table).select('*').eq(camelToSnake(pk), id);
@@ -2712,7 +2725,7 @@ function openVolumeDetail(lote){
           usuarioId: state.user?state.user.id:null, usuarioNome: state.user?state.user.nome:null
         });
         toast('Status de conferência atualizado.');
-      }catch(e){ console.error(e); toast('Não consegui alterar o status.'); }
+      }catch(e){ console.error(e); toast(updMsg(e, 'Não consegui alterar o status.'), 6000); }
       closeSheet();
     };
   });
@@ -2883,7 +2896,7 @@ async function importFiles(files){
 
     }catch(err){
       console.error(err);
-      toast(`Erro ao ler ${file.name}. Verifique se é o relatório do Protheus.`, 4000);
+      toast(updMsg(err, `Erro ao ler ${file.name}. Verifique se é o relatório do Protheus.`), err&&err.semLinhas?6000:4000);
     }
   }
   progEl.innerHTML = '';
@@ -3532,7 +3545,7 @@ function producaoSalvar(patch){
   state.producaoEscritasPend++; state.producaoUltimaEscrita = Date.now();
   state.producaoFila = state.producaoFila.then(async ()=>{
     try{ await db.collection('producoes').doc(id).update(dados); return true; }
-    catch(e){ console.error(e); toast('Não consegui salvar a última alteração. Confira a internet.', 3500); return false; }
+    catch(e){ console.error(e); toast(updMsg(e, 'Não consegui salvar a última alteração. Confira a internet.'), e&&e.semLinhas?6000:3500); return false; }
     finally{ state.producaoEscritasPend--; state.producaoUltimaEscrita = Date.now(); }
   });
   renderProducao();
@@ -6159,7 +6172,7 @@ function c5ConcluirSheet(id){
       const novo = state.cincoS.find(x=>x.id===id);
       if (novo && novo.concluidoEm){ closeSheet(); toast('5S concluído.'); }
       else { toast('Não foi possível concluir. Tente de novo.', 4000); b.disabled = false; b.textContent = 'Concluir 5S'; }
-    }catch(e){ console.error(e); toast('Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.', 4500); b.disabled = false; b.textContent = 'Concluir 5S'; }
+    }catch(e){ console.error(e); toast(updMsg(e, 'Não consegui salvar: '+((e&&e.message)||'sem conexão')+'. Confira a internet e tente de novo.'), 6000); b.disabled = false; b.textContent = 'Concluir 5S'; }
   };
 }
 function c5EditarSheet(id){
@@ -6338,7 +6351,7 @@ async function sbkReagir(postId, emoji){
       const r = await sb.from('stokkbook_reacoes').delete().eq('post_id', postId).eq('user_id', uid); if (r.error) throw r.error;
     } else if (meu){
       meu.emoji = emoji; sbkRender();
-      const r = await sb.from('stokkbook_reacoes').update({ emoji }).eq('post_id', postId).eq('user_id', uid); if (r.error) throw r.error;
+      await updExecutar(sb.from('stokkbook_reacoes').update({ emoji }).eq('post_id', postId).eq('user_id', uid), 'post_id');   // 0 linhas = erro
     } else {
       E.reacoes.push({ post_id:postId, user_id:uid, user_nome:state.user.nome, emoji, criado_em:new Date().toISOString() }); sbkRender();
       const r = await sb.from('stokkbook_reacoes').insert({ post_id:postId, emoji }); if (r.error) throw r.error;

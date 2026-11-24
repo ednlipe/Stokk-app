@@ -32,7 +32,7 @@ App mobile-first de estoque e rendimento metálico para uma trefilaria. Backend 
 - **Regra de entrega (combinada com o dono, 08/11):** toda entrega com mudança no app (zip ou arquivo solto) já vai com a versão aumentada: `versionCode` +1 e `versionName` em `android/app/build.gradle`, `version` em `package.json` e `package-lock.json` (2 lugares), `APP_VERSAO` em `public/desktop/index.html`, versão em `docs/README.md` e linha em `docs/historico.md`. Se for mandado só um arquivo solto, mandar junto o `build.gradle` ou avisar que a versão não mudou. O dono não precisa mexer no número: sem aumentar o `versionCode` os celulares não recebem o aviso de atualização.
 - **Todo peso está em kg** (`volumes.quantidade`, `movimentos.quantidade`, produção). O Power BI tem `quantidade_kg` e `quantidade_ton`.
 - **Rendimento metálico = soma produzida ÷ soma consumida** (nunca média de percentuais). Cor pelo valor com 1 casa decimal: ≥ 99 verde, ≥ 98 amarelo, abaixo vermelho.
-- **Turnos:** 1º 7h–15h20, 2º 15h–23h20, 3º 23h–7h20.
+- **Turnos:** 1º 07:10–15:10, 2º 15:10–23:10, 3º 23:10–07:10 (mesmos cortes no rendimento, no 5S, nos Locais e na view `bi.producoes`).
 - **App e site desktop usam as mesmas regras.** Mudou numa, confira a outra.
 - **Fuso:** Brasília (UTC−3). O `pg_cron` roda em UTC; some 3 horas ao agendar.
 

@@ -35,7 +35,7 @@ Conferência ao contrário: **primeiro bipa tudo, depois compara com a planilha 
 - **Rendimento = soma produzida ÷ soma consumida.** Nunca média de percentuais (vale para dia, turno, mês e total).
 - Só entram produções com `etapa = 'finalizada'` e `resultado` preenchido.
 - **Cor pelo número exibido (1 casa decimal):** ≥ 99,0 verde · ≥ 98,0 amarelo · abaixo vermelho. (98,96 aparece como 99,0% e fica verde.) Acima de 100% recebe ⚠ ("confira os pesos").
-- **Turnos:** 1º 7h–15h20 · 2º 15h–23h20 · 3º 23h–7h20.
+- **Turnos:** 1º 07:10–15:10 · 2º 15:10–23:10 · 3º 23:10–07:10. Os cálculos usam esses cortes (minutos 430 / 910 / 1390): `producaoTurnoPorHora` (app), `rTurnoPorHora` (desktop), `c5Turno`, `locTurnoJanela` e a view `bi.producoes`. (Antes de 23/11 a documentação dizia 7h–15h20; era só texto.)
 - Se a produção não tem turno gravado, deduz pelos cortes **07:10 / 15:10 / 23:10** (minutos 430 / 910 / 1390).
 - O **3º turno antes das 07:10 conta para o dia anterior**; `data_producao` gravada tem prioridade.
 - **Todo peso é guardado e mostrado em KG** (desde 2026-10-13, `update_009`): `volumes.quantidade`, `movimentos.quantidade` e pesos de produção. A planilha importada vinha em **toneladas** (convertida por `update_010`); o importador do app agora multiplica por 1000 ao importar.
