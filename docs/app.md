@@ -30,7 +30,9 @@
     para ocorrências, locais e 5S, `volumes` em páginas. Mudou o adaptador → rodar este teste. Ele **não** confirma que o
     Supabase entrega os eventos (canal, publicação `supabase_realtime`, RLS): isso só com o banco real (`pendencias.md` §13.7).
   O botão **Atualizar** do dashboard força `db.refetchAll()` (relê direto, sem esperar o realtime).
-  **Status:** conferido pelo teste acima e na `build:teste`; não testado com o Supabase real nem em produção.
+  **Status:** conferido pelo teste acima e na `build:teste`. Com o Supabase real (ambiente de teste, 25/11): Gestão validada
+  (locais, abastecimento, ocorrência e 3 trechos seguidos chegaram ao desktop em 0,3–2,3 s, uma leitura por evento, com ordem e
+  limite); Trefila, 5S, APK e produção ainda não (`pendencias.md` §13.7).
 - **Leitura com limite e casos antigos (v1.5.4):** quando uma leitura com `.limit(n)` volta cheia, `completarAntigos` (no adaptador,
   cópia idêntica no desktop) busca à parte o que ainda vale e ficou de fora: em `ocorrencias`, as em aberto (`liberada_em is null`,
   não anuladas); em `equipamento_locais`, o último local válido de cada equipamento que não apareceu na leitura. Sem isso, uma
