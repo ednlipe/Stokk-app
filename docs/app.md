@@ -16,8 +16,21 @@
   - **Para quem for mexer:** um update novo pelo `sb.from(...)` direto deve usar o `updExecutar`.
 - **Conversão de nomes:** o app usa `camelCase`; o banco usa `snake_case` (`camelToSnake`/`snakeToCamel`, só no primeiro nível).
   Por isso o conteúdo de colunas jsonb mantém as chaves como foram gravadas (ex.: `resultado.consumidoKg`).
-- **Tempo real:** cada coleção assinada abre um canal `postgres_changes` e relê a tabela inteira a cada evento (`refetch`).
-  O botão **Atualizar** do dashboard força `db.refetchAll()`.
+- **Tempo real:** cada coleção assinada abre um canal `postgres_changes` (`ensureChannel`). A cada evento, `releituraRealtime(table)` relê
+  com os **mesmos parâmetros da assinatura** (`fetchParams[table]`: ordem e limite), e não a tabela inteira (desde 25/11, branch `teste`;
+  antes o evento chamava `refetch(table)` sem parâmetros e a assinatura com limite passava a ter a tabela toda, fora de ordem).
+  - Tabelas sem limite (`volumes`, `produtos`, `equipamentos`, `tanques`) continuam lidas inteiras, em páginas de 1000.
+  - Com o limite atingido, `completarAntigos` também roda na releitura do realtime (ocorrências, locais e 5S antigos que ainda valem).
+  - Rajada de eventos: no máximo uma releitura em andamento por tabela e mais uma no fim (`rtEmCurso`/`rtDeNovo`).
+  - Resposta atrasada: cada `refetch` ganha um número (`leituraSeq`); se outra leitura da mesma tabela começou depois, a resposta
+    antiga é descartada e não sobrescreve `cache`/listas nem os avisos de erro (`producoesErro`, `paradasErr`, `locaisErr`, `cincoErr`, `dieselErr`).
+  - Mesmo código no desktop (`public/desktop/index.html`).
+  - **Teste:** `tests/realtime_core.test.cjs` (banco simulado, nos dois arquivos; confere também que `releituraRealtime` é idêntico):
+    ordem/limite no evento, rajada = 2 leituras, resposta atrasada e erro atrasado descartados, `completarAntigos` no evento
+    para ocorrências, locais e 5S, `volumes` em páginas. Mudou o adaptador → rodar este teste. Ele **não** confirma que o
+    Supabase entrega os eventos (canal, publicação `supabase_realtime`, RLS): isso só com o banco real (`pendencias.md` §13.7).
+  O botão **Atualizar** do dashboard força `db.refetchAll()` (relê direto, sem esperar o realtime).
+  **Status:** conferido pelo teste acima e na `build:teste`; não testado com o Supabase real nem em produção.
 - **Leitura com limite e casos antigos (v1.5.4):** quando uma leitura com `.limit(n)` volta cheia, `completarAntigos` (no adaptador,
   cópia idêntica no desktop) busca à parte o que ainda vale e ficou de fora: em `ocorrencias`, as em aberto (`liberada_em is null`,
   não anuladas); em `equipamento_locais`, o último local válido de cada equipamento que não apareceu na leitura. Sem isso, uma

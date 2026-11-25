@@ -560,11 +560,25 @@ function createSupabaseDB(){
   const channels = {};
   const cache = {};
   const fetchParams = {};
+  const leituraSeq = {};   // nº da última leitura iniciada por tabela: resposta atrasada não sobrescreve a mais nova
+  const rtEmCurso = {};    // releitura do realtime em andamento, por tabela
+  const rtDeNovo = {};     // chegou evento durante essa releitura: relê mais uma vez quando ela acabar
   function ensureChannel(table){
     if (channels[table]) return;
     channels[table] = sb.channel('rt-'+table)
-      .on('postgres_changes', {event:'*', schema:'public', table}, ()=>{ refetch(table); })
+      .on('postgres_changes', {event:'*', schema:'public', table}, ()=>{ releituraRealtime(table); })
       .subscribe();
+  }
+  // Evento do realtime: relê com os MESMOS parâmetros da assinatura (ordem e limite em fetchParams), e não a
+  // tabela inteira. Vários eventos seguidos viram no máximo uma leitura em andamento + uma no fim.
+  // Mesmo código no desktop (public/desktop/index.html).
+  function releituraRealtime(table){
+    if (rtEmCurso[table]){ rtDeNovo[table] = true; return rtEmCurso[table]; }
+    const p = fetchParams[table]; if (!p) return Promise.resolve();
+    rtEmCurso[table] = refetch(table, p.orderField, p.orderDir, p.limitN)
+      .catch(err=>{ console.error('realtime', table, err); })
+      .finally(()=>{ rtEmCurso[table] = null; if (rtDeNovo[table]){ rtDeNovo[table] = false; releituraRealtime(table); } });
+    return rtEmCurso[table];
   }
   // Tabelas lidas com limite trazem só as linhas mais recentes. Quando o limite é atingido, o que ainda
   // vale mas é antigo ficaria de fora: uma ocorrência em aberto antiga sumiria (o equipamento apareceria
@@ -606,6 +620,7 @@ function createSupabaseDB(){
     const PAGINA = 1000;
     const pkCol = camelToSnake(PK[table] || 'id');
     const ar = areaDaTabela(table);
+    const seq = leituraSeq[table] = (leituraSeq[table]||0) + 1;
     const data = []; let error = null;
     while (true){
       let q = sb.from(table).select('*');
@@ -621,6 +636,7 @@ function createSupabaseDB(){
       data.push(...lote);
       if (lote.length < pedir || (limitN && data.length >= limitN)) break;
     }
+    if (leituraSeq[table] !== seq) return;           // começou outra leitura depois desta: vale a mais nova
     if (error){
       console.error(table, error);
       // a aba Produção usa uma tabela nova; se o SQL ainda não foi rodado, não enche a tela de avisos
@@ -632,6 +648,7 @@ function createSupabaseDB(){
       toast('Erro ao ler dados: '+error.message, 4000); return;
     }
     if (limitN && data.length >= limitN) await completarAntigos(table, data, ar, pkCol);
+    if (leituraSeq[table] !== seq) return;
     if (table==='producoes') state.producoesErro = null;
     if (table==='ocorrencias') state.paradasErr = null;
     if (table==='equipamento_locais') state.locaisErr = null;
@@ -684,8 +701,8 @@ function createSupabaseDB(){
           cb({ docs: rows.map(r=>({ id: r[pk], data:()=>r })) });
         };
         listeners[table].push(fn);
+        fetchParams[table] = {orderField, orderDir, limitN};   // antes do canal: o realtime relê com estes parâmetros
         ensureChannel(table);
-        fetchParams[table] = {orderField, orderDir, limitN};
         refetch(table, orderField, orderDir, limitN);
         return ()=>{ listeners[table] = listeners[table].filter(x=>x!==fn); };
       }
