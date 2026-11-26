@@ -471,6 +471,9 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
 :root[data-theme="light"] #view-rendimento{--warn:#9A6F00;--warn-dim:#FBEFC4;}
 main .view#view-rendimento.active,main .view#view-diesel.active{max-width:1240px;}
 main .view#view-locais.active{max-width:1500px;}
+main .view#view-manut.active{max-width:1240px;}
+#view-locais .wall-card[data-g-act]{cursor:pointer;} #view-locais .wall-card[data-g-act]:hover{box-shadow:0 0 0 2px var(--accent-dim);}
+#view-locais:fullscreen .wall-card[data-g-act]{cursor:default;}
 .rend-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;margin-bottom:14px;}
 .rend-mes{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-size:21px;text-transform:capitalize;}
 .rend-mes button{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:18px;cursor:pointer;}
@@ -787,6 +790,11 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
       <div id="loc-body"></div>
     </section>
 
+    <!-- GESTÃO · MANUTENÇÃO (paradas e manutenção, separado da Localização em 26/11) -->
+    <section class="view" id="view-manut">
+      <div id="man-body"></div>
+    </section>
+
     <!-- GESTÃO PLANTA 1 · 5S -->
     <section class="view" id="view-c5resumo">
       <div id="c5r-body"></div>
@@ -804,6 +812,10 @@ details.cega-sec>summary{cursor:pointer;padding:8px 10px;font-weight:600;font-si
     <button data-nav="locais" style="display:none;">
       <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
       Localização
+    </button>
+    <button data-nav="manut" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+      Manutenção
     </button>
     <button data-nav="c5resumo" style="display:none;">
       <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
@@ -912,8 +924,8 @@ function objToCamel(o){ const r={}; for(const k in o) r[snakeToCamel(k)]=o[k]; r
 // abas que ainda não existem em certas áreas (Planta 1: só estoque e conferência por enquanto)
 const ABAS_OCULTAS_POR_AREA = { planta1: ['rendimento'] };
 // ambiente Gestão (update_015): só mostra o painel de diesel; as outras áreas não mostram essa aba
-// ambientes de Gestão: Veículos Móveis (abastecimento + localização) e Gestão Planta 1 (5S, update_018)
-const ABAS_DA_AREA = { gestao: ['diesel','locais'], gestao_p1: ['c5resumo','c5galeria'] };
+// ambientes de Gestão: Veículos Móveis (abastecimento + localização + manutenção) e Gestão Planta 1 (5S, update_018)
+const ABAS_DA_AREA = { gestao: ['diesel','locais','manut'], gestao_p1: ['c5resumo','c5galeria'] };
 const ABA_INICIAL = { gestao: 'diesel', gestao_p1: 'c5resumo' };
 function esconderAbasPorArea(){
   const propria = state.area ? ABAS_DA_AREA[state.area] : null;
@@ -1559,6 +1571,7 @@ function renderView(name){
   else if (name==='rendimento') renderRendimento();
   else if (name==='diesel') renderDiesel();
   else if (name==='locais') renderLocais();
+  else if (name==='manut') renderManut();
   else if (name==='c5resumo') renderC5Resumo();
   else if (name==='c5galeria') renderC5Galeria();
 }
@@ -2493,28 +2506,11 @@ async function gCliqueDesk(e){
 }
 document.getElementById('view-diesel').addEventListener('click', gCliqueDesk);
 document.getElementById('sheet-content').addEventListener('click', gCliqueDesk);
-// Equipamentos e onde estão (com cadastro e correção para o supervisor)
-function dslBlocoEquipamentos(){
-  const sup = dslEhSup();
-  const lista = state.equipamentos.slice().sort((a,b)=>(b.ativo!==false)-(a.ativo!==false) || String(a.codigo).localeCompare(String(b.codigo)));
-  const linhas = lista.map(e=>{
-    const l = dslLocalAtual(e.id, state.locais), oa = dslOcorrenciaAberta(e.id, state.ocorrencias);
-    return '<tr style="'+(e.ativo===false?'opacity:.55;':'')+'"><td>'+esc(e.codigo)+' <span>'+esc(e.nome)+'</span></td><td>'+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</td>'
-      + '<td>'+(l?'<b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+' <span>'+dslHaTempo(l.dataHora)+(l.solicitante?' · pedido por '+esc(l.solicitante):'')+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</span>':'<span>não informado</span>')+'</td>'
-      + '<td>'+(e.ativo===false?dslChip('inativo'):oa?dslChip(oa.categoria==='manutencao'?'em manutenção':'parado','danger'):dslChip('operando','ok'))+'</td>'
-      + '<td><button class="link-btn" data-g-act="local-nova" data-e="'+esc(e.id)+'">atualizar local</button>'
-      + '<button class="link-btn" data-g-act="local-hist" data-id="'+esc(e.id)+'">histórico</button>'
-      + (sup?'<button class="link-btn" data-g-act="equip-edit" data-id="'+esc(e.id)+'">editar</button>':'')+'</td></tr>';
-  }).join('');
-  return '<div class="card" style="margin-top:16px;"><div class="rend-card-t">Equipamentos e onde estão <small>local informado pela equipe</small></div>'
-    + (state.locaisErr?'<p class="hint" style="color:var(--danger);">A localização ainda não está no banco: rode o update_017_localizacao.sql no Supabase.</p>':'')
-    + '<div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Equipamento</th><th>Tipo</th><th>Local atual</th><th>Situação</th><th></th></tr></thead><tbody>'
-    + (linhas||'<tr><td colspan="5" class="rend-vazio">Nenhum equipamento cadastrado.'+(sup?' Use "+ Equipamento".':'')+'</td></tr>')+'</tbody></table></div></div>';
-}
-/* ================= LOCALIZAÇÃO — painel de parede + paradas (desktop) =================
+/* ================= LOCALIZAÇÃO — painel de parede (desktop) =================
    Segunda aba da área Veículos Móveis. "Modo parede" abre em tela cheia (para TV/monitor), com cartões grandes de onde cada
-   equipamento está e se está operando, parado ou em manutenção; atualiza sozinho. Fora do modo parede, a mesma aba tem os
-   botões e as tabelas de paradas e manutenção (liberar, corrigir, histórico) e o cadastro de equipamentos. */
+   equipamento está e se está operando, parado ou em manutenção; atualiza sozinho. Fora do modo parede: Atualizar local,
+   Controle de uso (Excel), Turnos e o clique no cartão (gEquipMenu: atualizar local, histórico, ocorrência, editar).
+   Paradas e manutenção ficam na aba Manutenção (renderManut, 26/11). */
 /* ================= LOCAIS POR SETOR E TURNO — núcleo (MESMA cópia do app: src/App.jsx, bloco LOC-CORE; testado em tests/locais_core.test.cjs) ================= */
 Object.assign(state, { glDia: '' });
 // ---- LOC-CORE-INICIO (regras de turno e de linha do tempo dos locais; testado em tests/locais_core.test.cjs) ----
@@ -2695,7 +2691,7 @@ function dslSituacaoEquip(e){
 function dslCartaoParede(x){
   const { e, s, l, v } = x, sit = locSituacao(v, s.oa), vivo = sit === 'vivo', paradaM = sit === 'parada';
   const velho = vivo && (Date.now()-dslT(l.dataHora)) > 24*3600000;
-  return '<div class="wall-card '+s.k+(l?'':' sem')+'">'
+  return '<div class="wall-card '+s.k+(l?'':' sem')+'" data-g-act="equip-menu" data-id="'+esc(e.id)+'" title="Clique para atualizar o local, ver o histórico ou abrir uma ocorrência">'
     + '<div class="wall-top"><div><div class="wall-cod"><span class="loc-ponto'+(vivo?' vivo':(paradaM?' parada':(s.oa?' manut':'')))+'" title="'+(vivo?'ao vivo':(paradaM?'máquina parada':(s.oa?'em manutenção':'sem atividade')))+'"></span>'+esc(e.codigo)+(vivo?' <span class="loc-aovivo">ao vivo</span>':'')+'</div><div class="wall-nome">'+esc(e.nome)+' · '+esc(DSL_TIPOS[e.tipo]||e.tipo)+'</div></div><span class="wall-st">'+esc(s.rot)+'</span></div>'
     + (l ? ((vivo||paradaM) ? '<div class="wall-local">'+esc(l.local)+(l.atividade?' <span class="loc-ativ">· '+esc(l.atividade)+'</span>':'')+'</div>' : '<div class="wall-local vazio">'+(v.auto?'Sem registro neste turno':'Sem atividade')+' · último: <b>'+esc(l.local)+'</b>'+(l.atividade?' · '+esc(l.atividade):'')+'</div>') : '<div class="wall-local vazio">Local não informado</div>')
     + (l ? '<div class="wall-sub">'+(l.solicitante?'pedido por '+esc(l.solicitante)+' · ':'')+(l.obs?esc(l.obs)+' · ':'')+'desde '+dslDataCurta(l.dataHora)+(vivo?' ('+dslHaTempo(l.dataHora)+')':(v.auto?' · turno anterior':' até '+dslDataCurta(v.fim)))+(l.usuarioNome?' · '+esc(l.usuarioNome):'')+'</div>' : '')
@@ -2703,6 +2699,8 @@ function dslCartaoParede(x){
     + (s.oa ? '<div class="wall-motivo"><b>'+esc(s.oa.motivo)+'</b> · parado há '+dslFmtHoras(dslOcorrenciaHoras(s.oa))+'<br><span>'+esc(s.oa.descricao)+'</span></div>' : '')
     + '</div>';
 }
+// Localização (enxuta, 26/11): onde está cada equipamento agora, situação, contadores, Atualizar local, Modo parede e Turnos.
+// Paradas e manutenção ficam na aba Manutenção (renderManut). Clicar num cartão abre as ações do equipamento (gEquipMenu).
 function renderLocais(){
   const body = document.getElementById('loc-body'); if (!body) return;
   if (dslSemBanco()){ body.innerHTML = '<div class="card left-danger"><b>O módulo de Diesel ainda não está no banco.</b><p class="hint" style="margin:6px 0 0;">Rode o arquivo update_015_diesel.sql no SQL Editor do Supabase e atualize a página.</p></div>'; return; }
@@ -2710,22 +2708,15 @@ function renderLocais(){
   const itens = state.equipamentos.filter(e=>e.ativo!==false).map(e=>{ const v = locAoVivo(state.locais, e.id, Date.now()); return { e, s:dslSituacaoEquip(e), l:v.reg, v }; })
     .sort((a,b)=> ordem[a.s.k]-ordem[b.s.k] || String(a.e.codigo).localeCompare(String(b.e.codigo)));
   const n = k => itens.filter(x=>x.s.k===k).length, semLocal = itens.filter(x=>!x.l).length;
-  const P = locPeriodo(), sup = dslEhSup(), agora = new Date();
+  const agora = new Date();
   const html = `
     <div class="nao-parede">
       <div class="rend-top">
-        <div class="filter-row wrap">${[['mes','Mês'],['30d','30 dias'],['ano','Ano']].map(p=>`<button class="filter-chip ${state.locPer===p[0]?'active':''}" data-loc-act="per" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>
-        ${state.locPer==='30d' ? `<div class="rend-mes"><span>${esc(P.rotulo)}</span></div>` : `<div class="rend-mes"><button data-loc-act="nav" data-v="-1" aria-label="Anterior">‹</button><span>${esc(P.rotulo)}</span><button data-loc-act="nav" data-v="1" aria-label="Próximo">›</button></div>`}
+        <div class="dsl-acoes" style="margin:0;"><button class="btn primary" data-g-act="local-nova" data-e="">Atualizar local</button></div>
         <div class="spacer"></div>
         <button class="btn ghost small" data-loc-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button>
-        <button class="btn ghost small" data-loc-act="export" style="border:1px solid var(--border);">Exportar (Excel)</button>
         <button class="btn ghost small" data-loc-act="export-uso" style="border:1px solid var(--border);">Controle de uso (Excel)…</button>
         <button class="btn primary small" data-loc-act="parede">Modo parede (tela cheia)</button>
-      </div>
-      <div class="dsl-acoes">
-        <button class="btn primary" data-g-act="manut-nova">+ Ocorrência (parada / manutenção)</button>
-        <button class="btn" data-g-act="local-nova" data-e="">Atualizar local</button>
-        ${sup?'<button class="btn" data-g-act="equip-novo">+ Equipamento</button>':''}
       </div>
     </div>
     <div class="wall-head">
@@ -2742,21 +2733,40 @@ function renderLocais(){
     ${locPorSetor(itens.map(x=>x.e)).map(g=>`<div class="wall-setor">${esc(g.setor)}</div><div class="wall-grid">${g.equips.map(e=>itens.find(x=>x.e.id===e.id)).sort((a,b)=>ordem[a.s.k]-ordem[b.s.k]).map(dslCartaoParede).join('')}</div>`).join('') || '<div class="rend-vazio">Nenhum equipamento cadastrado.</div>'}
     <div class="wall-dica">Esc para sair da tela cheia · atualiza sozinho a cada minuto</div>
     <div class="nao-parede">
+      <p class="hint" style="margin:10px 0 0;">Clique num equipamento para atualizar o local, ver o histórico ou abrir uma ocorrência.</p>
       ${dslBlocoTurnos()}
-      ${dslBlocoParadas(P)}
-      ${dslBlocoEquipamentos()}
     </div>`;
   if (state.locHtml === html) return;
   state.locHtml = html; body.innerHTML = html;
 }
-// Excel no formato da planilha "Controle de uso de equipamento": uma aba por equipamento, uma linha por dia e por turno
+// ações de um equipamento (clique no cartão da Localização): o que antes ficava na tabela "Equipamentos e onde estão"
+function gEquipMenu(id){
+  const e = dslEquipPorId(id); if (!e) return;
+  const s = dslSituacaoEquip(e), l = dslLocalAtual(e.id, state.locais), sup = dslEhSup();
+  const bt = (act, txt, extra, cls) => '<button class="btn '+(cls||'')+'" data-g-act="'+act+'" '+extra+' style="margin-top:8px;">'+txt+'</button>';
+  openSheet('<h2 class="section-title" style="margin-top:0;">'+esc(e.codigo)+' — '+esc(e.nome)+'</h2>'
+    + '<div class="hint" style="margin:0 0 6px;">'+esc(DSL_TIPOS[e.tipo]||e.tipo)+(e.setor?' · '+esc(e.setor):'')+' · <b>'+esc(s.rot)+'</b></div>'
+    + '<div class="hint" style="margin:0 0 10px;">'+(l?'Último local: <b>'+esc(locTexto(l))+'</b> · '+dslHaTempo(l.dataHora)+(l.usuarioNome?' · '+esc(l.usuarioNome):''):'Local não informado.')+'</div>'
+    + bt('local-nova', 'Atualizar local', 'data-e="'+esc(e.id)+'"', 'primary')
+    + bt('local-hist', 'Histórico de locais', 'data-id="'+esc(e.id)+'"')
+    + (s.oa ? bt('manut-ver', 'Ver ocorrência em aberto', 'data-id="'+esc(s.oa.id)+'"') : bt('manut-nova', '+ Ocorrência (parada / manutenção)', 'data-e="'+esc(e.id)+'"'))
+    + (sup ? bt('equip-edit', 'Editar equipamento', 'data-id="'+esc(e.id)+'"') : ''));
+}
+// Excel no formato da planilha "Controle de uso de equipamento": uma aba "Local atual" e uma aba por equipamento, uma linha por dia e por turno
 function locExportarUso(deMs, ateMs){
-  const P = { de:deMs, ate:ateMs }, agora = Date.now(), wb = XLSX.utils.book_new(), nomes = new Set();
+  const P = { de:deMs, ate:ateMs }, agora = Date.now(), wb = XLSX.utils.book_new(), nomes = new Set(['local atual']);
   const DIAS = ['DOMINGO','SEGUNDA-FEIRA','TERÇA-FEIRA','QUARTA-FEIRA','QUINTA-FEIRA','SEXTA-FEIRA','SÁBADO'];
   const serDia = ms => { const d = new Date(ms); return Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 86400000); };
   const serHora = ms => { const d = new Date(ms); return (d.getHours()*3600 + d.getMinutes()*60) / 86400; };
   const semana = ms => { const d = new Date(Date.UTC(new Date(ms).getFullYear(), new Date(ms).getMonth(), new Date(ms).getDate())); const n = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - n); return Math.ceil(((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7); };
   const cab = ['ÁREA','SOLICITANTE','SEMANA','DIA SEMANA','DATA INÍCIO','DATA TÉRMINO','HORÁRIO INÍCIO','HORÁRIO TÉRMINO'];
+  // primeira aba: onde cada equipamento ativo está agora (antes ia no Excel da aba Localização)
+  const fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
+  const linhasL = [['Equipamento','Nome','Situação','Local atual','Atividade','Solicitante','Observação','Desde','Informado por']];
+  state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).forEach(e=>{ const l = dslLocalAtual(e.id, state.locais), s = dslSituacaoEquip(e);
+    linhasL.push([e.codigo, e.nome, s.rot, l?l.local:'', l?(l.atividade||''):'', l?(l.solicitante||''):'', l?(l.obs||''):'', l?fmt(l.dataHora):'', l?(l.usuarioNome||''):'']); });
+  const wl = XLSX.utils.aoa_to_sheet(linhasL); wl['!cols'] = [{wch:14},{wch:24},{wch:16},{wch:16},{wch:30},{wch:20},{wch:28},{wch:18},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, wl, 'Local atual');
   let total = 0;
   state.equipamentos.slice().sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).forEach(e=>{
     const L = locLinhasPlanilha(state.locais, e.id, P.de, P.ate, agora); if (!L.length) return;
@@ -2775,13 +2785,13 @@ function locExportarUso(deMs, ateMs){
   XLSX.writeFile(wb, 'controle_uso_equipamento_' + locDiaStr(deMs) + '_a_' + locDiaStr(ateMs - 1) + '.xlsx');
   toast('Arquivo exportado.');
 }
-// janela para escolher o intervalo de datas da planilha (começa com o período que está na tela)
+// janela para escolher o intervalo de datas da planilha (começa no mês atual)
 function locUsoSheet(){
-  const P = locPeriodo();
+  const h = new Date(), de = new Date(h.getFullYear(), h.getMonth(), 1).getTime();
   openSheet('<h2 class="section-title" style="margin-top:0;">Controle de uso (Excel)</h2>'
-    + '<div class="hint" style="margin:0 0 10px;">Escolha de que dia até que dia. A planilha sai com uma aba por equipamento.</div>'
-    + '<label class="field-label">De</label><input type="date" id="uso-de" value="'+locDiaStr(P.de)+'" max="'+locDiaStr(Date.now())+'">'
-    + '<label class="field-label">Até</label><input type="date" id="uso-ate" value="'+locDiaStr(Math.min(P.ate - 1, Date.now()))+'" max="'+locDiaStr(Date.now())+'">'
+    + '<div class="hint" style="margin:0 0 10px;">Escolha de que dia até que dia. A planilha sai com a aba "Local atual" e uma aba por equipamento.</div>'
+    + '<label class="field-label">De</label><input type="date" id="uso-de" value="'+locDiaStr(de)+'" max="'+locDiaStr(Date.now())+'">'
+    + '<label class="field-label">Até</label><input type="date" id="uso-ate" value="'+locDiaStr(Date.now())+'" max="'+locDiaStr(Date.now())+'">'
     + '<button class="btn primary" id="uso-ok">Gerar planilha</button>');
   document.getElementById('uso-ok').onclick = ()=>{
     const a = document.getElementById('uso-de').value, b = document.getElementById('uso-ate').value;
@@ -2791,7 +2801,29 @@ function locUsoSheet(){
     closeSheet(); locExportarUso(new Date(y1,m1-1,d1).getTime(), new Date(y2,m2-1,d2+1).getTime());
   };
 }
-function locExportar(){
+/* ================= MANUTENÇÃO — paradas e manutenção (desktop, 26/11) =================
+   Terceira aba da área Veículos Móveis (antes era um bloco dentro da Localização). Mesmas regras (dslParadasResumo,
+   dslOcorrencia*); período próprio (Mês / 30 dias / Ano, state.locPer + locPeriodo); quem libera/corrige é o supervisor (RLS). */
+function renderManut(){
+  const body = document.getElementById('man-body'); if (!body) return;
+  if (dslSemBanco()){ body.innerHTML = '<div class="card left-danger"><b>O módulo de Diesel ainda não está no banco.</b><p class="hint" style="margin:6px 0 0;">Rode o arquivo update_015_diesel.sql no SQL Editor do Supabase e atualize a página.</p></div>'; return; }
+  const P = locPeriodo();
+  const html = `
+    <div class="rend-top">
+      <div class="filter-row wrap">${[['mes','Mês'],['30d','30 dias'],['ano','Ano']].map(p=>`<button class="filter-chip ${state.locPer===p[0]?'active':''}" data-man-act="per" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>
+      ${state.locPer==='30d' ? `<div class="rend-mes"><span>${esc(P.rotulo)}</span></div>` : `<div class="rend-mes"><button data-man-act="nav" data-v="-1" aria-label="Anterior">‹</button><span>${esc(P.rotulo)}</span><button data-man-act="nav" data-v="1" aria-label="Próximo">›</button></div>`}
+      <div class="spacer"></div>
+      <button class="btn ghost small" data-man-act="refresh" style="border:1px solid var(--border);">↻ Atualizar</button>
+      <button class="btn ghost small" data-man-act="export" style="border:1px solid var(--border);">Exportar paradas (Excel)</button>
+    </div>
+    <div class="dsl-acoes">
+      <button class="btn primary" data-g-act="manut-nova">+ Ocorrência (parada / manutenção)</button>
+    </div>
+    ${dslBlocoParadas(P)}`;
+  if (state.manHtml === html) return;
+  state.manHtml = html; body.innerHTML = html;
+}
+function manutExportar(){
   const P = locPeriodo(), fmt = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '';
   const wb = XLSX.utils.book_new();
   const linhasP = [['Equipamento','Categoria','Motivo','Descrição','Aberta em','Aberta por','Liberada em','Motivo da liberação','O que foi feito','Quem pegou','Horas parado','Situação']];
@@ -2799,29 +2831,21 @@ function locExportar(){
     linhasP.push([e?e.codigo:o.equipamentoCodigo, MANUT_CAT[o.categoria]||o.categoria, o.motivo, o.descricao, fmt(o.abertaEm), o.abertaPorNome||'', fmt(o.liberadaEm), o.motivoLiberacao||'', o.servicoRealizado||'', o.recebidoPor||'', Math.round(dslOcorrenciaHoras(o)*100)/100, o.liberadaEm?'liberada':'em aberto']); });
   const w1 = XLSX.utils.aoa_to_sheet(linhasP); w1['!cols'] = [{wch:14},{wch:12},{wch:22},{wch:30},{wch:18},{wch:18},{wch:18},{wch:22},{wch:30},{wch:18},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb, w1, 'Paradas');
-  const linhasL = [['Equipamento','Nome','Situação','Local atual','Atividade','Solicitante','Observação','Desde','Informado por']];
-  state.equipamentos.filter(e=>e.ativo!==false).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).forEach(e=>{ const l = dslLocalAtual(e.id, state.locais), s = dslSituacaoEquip(e);
-    linhasL.push([e.codigo, e.nome, s.rot, l?l.local:'', l?(l.atividade||''):'', l?(l.solicitante||''):'', l?(l.obs||''):'', l?fmt(l.dataHora):'', l?(l.usuarioNome||''):'']); });
-  const w2 = XLSX.utils.aoa_to_sheet(linhasL); w2['!cols'] = [{wch:14},{wch:24},{wch:16},{wch:16},{wch:30},{wch:20},{wch:28},{wch:18},{wch:18}];
-  XLSX.utils.book_append_sheet(wb, w2, 'Local atual');
-  XLSX.writeFile(wb, 'veiculos_'+(state.locPer==='mes'?state.locMes:state.locPer==='ano'?state.locAno:'30dias')+'.xlsx');
+  XLSX.writeFile(wb, 'paradas_'+(state.locPer==='mes'?state.locMes:state.locPer==='ano'?state.locAno:'30dias')+'.xlsx');
   toast('Arquivo exportado.');
 }
 (function ligarLocais(){
   const view = document.getElementById('view-locais');
-  view.addEventListener('click', gCliqueDesk);
+  view.addEventListener('click', e=>{
+    // no modo parede a janela não aparece (fica fora da tela cheia): o clique no cartão só vale fora dele
+    const c = e.target.closest('[data-g-act="equip-menu"]');
+    if (c){ if (!document.fullscreenElement) gEquipMenu(c.dataset.id); return; }
+    gCliqueDesk(e);
+  });
   view.addEventListener('click', async e=>{
     const b = e.target.closest('[data-loc-act]'); if (!b) return;
     const a = b.dataset.locAct;
-    if (a==='per'){ state.locPer = b.dataset.v; renderLocais(); }
-    else if (a==='nav'){
-      const v = Number(b.dataset.v);
-      if (state.locPer==='ano') state.locAno += v;
-      else { const [y,m] = state.locMes.split('-').map(Number); const n = new Date(y, m-1+v, 1); state.locMes = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); }
-      renderLocais();
-    }
-    else if (a==='export') locExportar();
-    else if (a==='export-uso') locUsoSheet();
+    if (a==='export-uso') locUsoSheet();
     else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
     else if (a==='parede'){
       try{ await view.requestFullscreen(); }catch(err){ toast('Este navegador não abriu a tela cheia. Tente F11.', 3500); }
@@ -2829,10 +2853,25 @@ function locExportar(){
   });
   view.addEventListener('change', e=>{ const i = e.target; if (i && i.id==='gl-dia' && i.value && i.value <= locDiaStr(Date.now())){ state.glDia = i.value; state.locHtml = ''; renderLocais(); } });
   document.addEventListener('fullscreenchange', ()=>{ state.locHtml = ''; renderLocais(); });
-  // relógio e "há quanto tempo" andam sozinhos; no painel aberto, relê a cada minuto só o que o painel mostra
+  const man = document.getElementById('view-manut');
+  man.addEventListener('click', gCliqueDesk);
+  man.addEventListener('click', async e=>{
+    const b = e.target.closest('[data-man-act]'); if (!b) return;
+    const a = b.dataset.manAct;
+    if (a==='per'){ state.locPer = b.dataset.v; renderManut(); }
+    else if (a==='nav'){
+      const v = Number(b.dataset.v);
+      if (state.locPer==='ano') state.locAno += v;
+      else { const [y,m] = state.locMes.split('-').map(Number); const n = new Date(y, m-1+v, 1); state.locMes = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); }
+      renderManut();
+    }
+    else if (a==='export') manutExportar();
+    else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
+  });
+  // relógio e "há quanto tempo" andam sozinhos; com a Localização ou a Manutenção aberta, relê a cada minuto só o que elas mostram
   // (ocorrências e locais), em vez do banco todo (abastecimentos etc.), para não pesar no Supabase numa TV ligada o dia todo
-  setInterval(()=>{ if (state.view==='locais') renderLocais(); }, 30000);
-  setInterval(async ()=>{ if (state.view==='locais' && db && db.refetchTabelas) { try{ await db.refetchTabelas(['ocorrencias','equipamento_locais']); }catch(e){} } }, 60000);
+  setInterval(()=>{ if (state.view==='locais') renderLocais(); else if (state.view==='manut') renderManut(); }, 30000);
+  setInterval(async ()=>{ if ((state.view==='locais' || state.view==='manut') && db && db.refetchTabelas) { try{ await db.refetchTabelas(['ocorrencias','equipamento_locais']); }catch(e){} } }, 60000);
 })();
 function renderDiesel(){
   const body = document.getElementById('dsl-body'); if (!body) return;
