@@ -472,6 +472,25 @@ table.tabela-estoque input[type="checkbox"]{width:18px;height:18px;}
 main .view#view-rendimento.active,main .view#view-diesel.active{max-width:1240px;}
 main .view#view-locais.active{max-width:1500px;}
 main .view#view-manut.active{max-width:1240px;}
+/* gráfico "onde cada veículo passou mais tempo" (Localização, 27/11). Cores: paleta categórica validada (claro: superfície #FFF; escuro: #1E2226) */
+#view-locais{--lt-1:#3987e5;--lt-2:#d95926;--lt-3:#199e70;--lt-o:#8b8f94;--lt-p:#5c6166;}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) #view-locais{--lt-1:#2a78d6;--lt-2:#eb6834;--lt-3:#1baf7a;--lt-o:#9aa0a6;--lt-p:#6b7076;} }
+:root[data-theme="light"] #view-locais{--lt-1:#2a78d6;--lt-2:#eb6834;--lt-3:#1baf7a;--lt-o:#9aa0a6;--lt-p:#6b7076;}
+.lt-legs{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 12px;font-size:13px;color:var(--text-muted);}
+.lt-leg{display:inline-flex;align-items:center;gap:6px;} .lt-sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
+.lt-row{display:grid;grid-template-columns:minmax(150px,220px) 1fr minmax(200px,300px);gap:14px;align-items:center;padding:7px 0;border-top:1px solid var(--border);}
+.lt-eq b{display:block;font-family:var(--font-head);font-size:16px;letter-spacing:.5px;} .lt-eq span{font-size:12px;color:var(--text-muted);}
+.lt-bar{height:22px;background:var(--surface-2);border-radius:4px;overflow:hidden;} .lt-bar.vazio{opacity:.5;}
+.lt-fill{display:flex;gap:2px;height:100%;min-width:6px;} .lt-seg{display:block;height:100%;min-width:3px;cursor:default;}
+.lt-seg:first-child{border-radius:4px 0 0 4px;} .lt-seg:last-child{border-radius:0 4px 4px 0;} .lt-seg:only-child{border-radius:4px;}
+.lt-seg:hover{filter:brightness(1.15);}
+.lt-c1{background:var(--lt-1);} .lt-c2{background:var(--lt-2);} .lt-c3{background:var(--lt-3);} .lt-co{background:var(--lt-o);}
+.lt-cp{background:repeating-linear-gradient(45deg,var(--lt-p) 0 3px,transparent 3px 6px),var(--surface-3);}
+.lt-txt{font-size:13px;} .lt-txt small{display:block;color:var(--text-muted);font-size:12px;} .lt-txt.muted{color:var(--text-muted);}
+.lt-tab{margin-top:10px;font-size:13px;} .lt-tab summary{cursor:pointer;color:var(--text-muted);}
+.lt-tip{position:fixed;z-index:999;display:none;pointer-events:none;background:var(--surface-3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.25);}
+@media (max-width:760px){ .lt-row{grid-template-columns:1fr;gap:4px;} }
+
 #view-locais .wall-card[data-g-act]{cursor:pointer;} #view-locais .wall-card[data-g-act]:hover{box-shadow:0 0 0 2px var(--accent-dim);}
 #view-locais:fullscreen .wall-card[data-g-act]{cursor:default;}
 .rend-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;margin-bottom:14px;}
@@ -2699,6 +2718,63 @@ function dslCartaoParede(x){
     + (s.oa ? '<div class="wall-motivo"><b>'+esc(s.oa.motivo)+'</b> · parado há '+dslFmtHoras(dslOcorrenciaHoras(s.oa))+'<br><span>'+esc(s.oa.descricao)+'</span></div>' : '')
     + '</div>';
 }
+// "Onde cada veículo passou mais tempo" (27/11): horas por local no período, uma barra empilhada por equipamento.
+// Usa os trechos do LOC-CORE (locSegmentos: fim = data_fim, início do próximo ou fim do turno) cortados no período e no agora.
+// Locais da lista (LOC_LOCAIS) têm cor fixa; texto livre antigo vira "Outro local"; "Máquina parada" fica cinza listrado.
+Object.assign(state, { locTempoPer: '7d', locTempoTab: false });
+const LOC_TEMPO_PER = [['hoje','Hoje'],['7d','7 dias'],['30d','30 dias']];
+function locTempoPeriodo(){
+  const h = new Date(), hoje0 = new Date(h.getFullYear(), h.getMonth(), h.getDate()).getTime();
+  const dias = state.locTempoPer==='hoje' ? 1 : state.locTempoPer==='30d' ? 30 : 7;
+  return { de: hoje0 - (dias-1)*86400000, ate: Math.min(hoje0 + 86400000, Date.now()) };
+}
+function locTempoCat(local){ return locEhParada({ local }) ? 'parada' : (LOC_LOCAIS.includes(local) ? local : 'outro'); }
+function locTempoCats(){ return LOC_LOCAIS.map((n,i)=>({ k:n, nome:n, cls:'lt-c'+(i+1) })).concat([{ k:'outro', nome:'Outro local', cls:'lt-co' }, { k:'parada', nome:'Máquina parada', cls:'lt-cp' }]); }
+function locTempoDados(){
+  const P = locTempoPeriodo(), agora = Date.now();
+  const linhas = state.equipamentos.filter(e=>e.ativo!==false).map(e=>{
+    const h = {};
+    locSegmentos(state.locais, e.id).forEach(s=>{
+      const de = Math.max(s.ini, P.de), ate = Math.min(s.fim, P.ate, agora); if (ate <= de) return;
+      const k = locTempoCat(s.reg.local); h[k] = (h[k]||0) + (ate-de)/3600000;
+    });
+    const total = Object.values(h).reduce((a,b)=>a+b, 0);
+    const top = Object.keys(h).filter(k=>k!=='parada').sort((a,b)=>h[b]-h[a])[0] || null;
+    return { e, h, total, top };
+  }).sort((a,b)=>b.total-a.total || String(a.e.codigo).localeCompare(String(b.e.codigo)));
+  return { P, linhas, max: Math.max(0, ...linhas.map(x=>x.total)) };
+}
+function locBlocoTempo(){
+  const D = locTempoDados(), cats = locTempoCats(), nomeCat = k => (cats.find(c=>c.k===k)||{}).nome || k;
+  const pct = (v, t) => t > 0 ? Math.round(v/t*100) : 0;
+  const leg = cats.map(c=>'<span class="lt-leg"><i class="lt-sw '+c.cls+'"></i>'+esc(c.nome)+'</span>').join('');
+  const barras = D.linhas.map(x=>{
+    const cab = '<div class="lt-eq"><b>'+esc(x.e.codigo)+'</b><span>'+esc(x.e.nome)+'</span></div>';
+    if (!x.total) return '<div class="lt-row">'+cab+'<div class="lt-bar vazio"></div><div class="lt-txt muted">sem registro no período</div></div>';
+    const segs = cats.filter(c=>x.h[c.k]>0).map(c=>'<i class="lt-seg '+c.cls+'" style="flex:'+x.h[c.k].toFixed(4)+' 1 0;" data-tip="'+esc(x.e.codigo+' · '+c.nome+': '+dslFmtHoras(x.h[c.k])+' ('+pct(x.h[c.k], x.total)+'%)')+'"></i>').join('');
+    const txt = x.top ? 'Mais tempo: <b>'+esc(nomeCat(x.top))+'</b> · '+dslFmtHoras(x.h[x.top])+' ('+pct(x.h[x.top], x.total)+'%)' : 'Só máquina parada';
+    return '<div class="lt-row">'+cab+'<div class="lt-bar"><div class="lt-fill" style="width:'+(x.total/D.max*100).toFixed(2)+'%;">'+segs+'</div></div><div class="lt-txt">'+txt+'<small>total '+dslFmtHoras(x.total)+'</small></div></div>';
+  }).join('') || '<div class="rend-vazio">Nenhum equipamento cadastrado.</div>';
+  const usadas = cats.filter(c=>D.linhas.some(x=>x.h[c.k]>0));
+  const tab = '<details class="lt-tab"'+(state.locTempoTab?' open':'')+'><summary>Ver em tabela</summary><div class="rend-scroll"><table class="rend-tab dsl-tab"><thead><tr><th>Equipamento</th>'+usadas.map(c=>'<th>'+esc(c.nome)+'</th>').join('')+'<th>Total</th></tr></thead><tbody>'
+    + D.linhas.map(x=>'<tr><td>'+esc(x.e.codigo)+' <span>'+esc(x.e.nome)+'</span></td>'+usadas.map(c=>'<td>'+(x.h[c.k]?dslFmtHoras(x.h[c.k]):'—')+'</td>').join('')+'<td>'+(x.total?dslFmtHoras(x.total):'—')+'</td></tr>').join('')
+    + '</tbody></table></div></details>';
+  return '<div class="card" style="margin-top:16px;"><div class="rend-card-t">Onde cada veículo passou mais tempo <small>horas com local informado; a barra maior é quem mais trabalhou no período</small></div>'
+    + '<div class="filter-row wrap" style="margin-bottom:10px;align-items:center;">'+LOC_TEMPO_PER.map(p=>'<button class="filter-chip '+(state.locTempoPer===p[0]?'active':'')+'" data-loc-act="tempo-per" data-v="'+p[0]+'">'+p[1]+'</button>').join('')+'</div>'
+    + '<div class="lt-legs">'+leg+'</div><div class="lt-lista">'+barras+'</div>'+tab+'</div>';
+}
+// dica ao passar o mouse num pedaço da barra
+(function(){
+  let tip = null;
+  document.addEventListener('mousemove', e=>{
+    const s = e.target.closest && e.target.closest('.lt-seg');
+    if (!s){ if (tip) tip.style.display = 'none'; return; }
+    if (!tip){ tip = document.createElement('div'); tip.className = 'lt-tip'; document.body.appendChild(tip); }
+    tip.textContent = s.dataset.tip; tip.style.display = 'block';
+    const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = x + 'px'; tip.style.top = (e.clientY + 16) + 'px';
+  });
+})();
 // Localização (enxuta, 26/11; desde 27/11 todos os cartões num grupo só, "Veículos", sem separar por setor): onde está cada equipamento agora, situação, contadores, Atualizar local, Modo parede e Turnos.
 // Paradas e manutenção ficam na aba Manutenção (renderManut). Clicar num cartão abre as ações do equipamento (gEquipMenu).
 function renderLocais(){
@@ -2734,6 +2810,7 @@ function renderLocais(){
     <div class="wall-dica">Esc para sair da tela cheia · atualiza sozinho a cada minuto</div>
     <div class="nao-parede">
       <p class="hint" style="margin:10px 0 0;">Clique num equipamento para atualizar o local, ver o histórico ou abrir uma ocorrência.</p>
+      ${locBlocoTempo()}
       ${dslBlocoTurnos()}
     </div>`;
   if (state.locHtml === html) return;
@@ -2846,11 +2923,14 @@ function manutExportar(){
     const b = e.target.closest('[data-loc-act]'); if (!b) return;
     const a = b.dataset.locAct;
     if (a==='export-uso') locUsoSheet();
+    else if (a==='tempo-per'){ state.locTempoPer = b.dataset.v; renderLocais(); }
     else if (a==='refresh'){ b.disabled = true; try{ if (db && db.refetchAll) await db.refetchAll(); toast('Atualizado.'); } finally{ b.disabled = false; } }
     else if (a==='parede'){
       try{ await view.requestFullscreen(); }catch(err){ toast('Este navegador não abriu a tela cheia. Tente F11.', 3500); }
     }
   });
+  // a tabela do gráfico continua aberta quando a tela se redesenha (30 s)
+  view.addEventListener('toggle', e=>{ if (e.target.classList && e.target.classList.contains('lt-tab')) state.locTempoTab = e.target.open; }, true);
   view.addEventListener('change', e=>{ const i = e.target; if (i && i.id==='gl-dia' && i.value && i.value <= locDiaStr(Date.now())){ state.glDia = i.value; state.locHtml = ''; renderLocais(); } });
   document.addEventListener('fullscreenchange', ()=>{ state.locHtml = ''; renderLocais(); });
   const man = document.getElementById('view-manut');
