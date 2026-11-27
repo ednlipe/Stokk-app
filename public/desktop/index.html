@@ -2699,7 +2699,7 @@ function dslCartaoParede(x){
     + (s.oa ? '<div class="wall-motivo"><b>'+esc(s.oa.motivo)+'</b> · parado há '+dslFmtHoras(dslOcorrenciaHoras(s.oa))+'<br><span>'+esc(s.oa.descricao)+'</span></div>' : '')
     + '</div>';
 }
-// Localização (enxuta, 26/11): onde está cada equipamento agora, situação, contadores, Atualizar local, Modo parede e Turnos.
+// Localização (enxuta, 26/11; desde 27/11 todos os cartões num grupo só, "Veículos", sem separar por setor): onde está cada equipamento agora, situação, contadores, Atualizar local, Modo parede e Turnos.
 // Paradas e manutenção ficam na aba Manutenção (renderManut). Clicar num cartão abre as ações do equipamento (gEquipMenu).
 function renderLocais(){
   const body = document.getElementById('loc-body'); if (!body) return;
@@ -2730,7 +2730,7 @@ function renderLocais(){
       <div class="wall-hora">${agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
     </div>
     ${state.locaisErr?'<div class="card left-danger"><b>A localização ainda não está no banco.</b> Rode o update_017_localizacao.sql no Supabase para registrar os locais.</div>':''}
-    ${locPorSetor(itens.map(x=>x.e)).map(g=>`<div class="wall-setor">${esc(g.setor)}</div><div class="wall-grid">${g.equips.map(e=>itens.find(x=>x.e.id===e.id)).sort((a,b)=>ordem[a.s.k]-ordem[b.s.k]).map(dslCartaoParede).join('')}</div>`).join('') || '<div class="rend-vazio">Nenhum equipamento cadastrado.</div>'}
+    ${itens.length ? `<div class="wall-setor">Veículos</div><div class="wall-grid">${itens.map(dslCartaoParede).join('')}</div>` : '<div class="rend-vazio">Nenhum equipamento cadastrado.</div>'}
     <div class="wall-dica">Esc para sair da tela cheia · atualiza sozinho a cada minuto</div>
     <div class="nao-parede">
       <p class="hint" style="margin:10px 0 0;">Clique num equipamento para atualizar o local, ver o histórico ou abrir uma ocorrência.</p>

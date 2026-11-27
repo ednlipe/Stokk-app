@@ -5456,9 +5456,10 @@ function gLocalLista(){
   const faixa = '<div class="loc-faixa t'+j.turno+'"><b>'+T.nome+'</b><span>'+T.faixa+' · termina em '+dslFmtHoras((j.fim-agora)/3600000)+'</span></div>';
   const eqs = state.equipamentos.filter(e=>e.ativo!==false)
     .filter(e=>{ if (!q) return true; const l = dslLocalAtual(e.id, state.locais); return (e.codigo+' '+e.nome+' '+(e.setor||'')+' '+(l?locTexto(l)+' '+(l.solicitante||''):'')).toLowerCase().includes(q); });
-  const grupos = locPorSetor(eqs);
-  box.innerHTML = faixa + (grupos.map(g=>'<h2 class="section-title">'+esc(g.setor)+'</h2><div class="card" style="padding:0 14px;">'+g.equips.map(e=>gLocalLinha(e, agora)).join('')+'</div>').join('')
-    || '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>');
+  // desde 27/11 todos num grupo só ("Veículos"), sem separar por setor; o relatório de turno continua por setor
+  const lista = eqs.slice().sort((x,y)=>String(x.codigo).localeCompare(String(y.codigo)));
+  box.innerHTML = faixa + (lista.length ? '<h2 class="section-title">Veículos</h2><div class="card" style="padding:0 14px;">'+lista.map(e=>gLocalLinha(e, agora)).join('')+'</div>'
+    : '<p class="hint">'+(q?'Nada encontrado.':'Nenhum equipamento cadastrado.')+'</p>');
   gLocalTurnos();
   const rec = document.getElementById('gl-recentes'); if (!rec) return;
   const sup = dslEhSup();
